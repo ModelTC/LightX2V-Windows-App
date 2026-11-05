@@ -1,0 +1,128 @@
+name: Build Windows beta
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          global-json-file: global.json
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Check repository and setup pins
+        run: |
+          python scripts/check_repository.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python prepare_setup.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run Python tests
+        run: python -m unittest discover -s Tests -v
+      - name: Compile Windows check projects
+        run: |
+          foreach ($project in @('Checks', 'HeadlessChecks', 'SetupUiChecks')) {
+            dotnet build "$project/$project.csproj" -c Release
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Build and verify portable package
+        run: ./build.ps1
+      - name: Verify release provenance
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          $version = ([xml](Get-Content LightX2V.Windows/LightX2V.Windows.csproj -Raw)).Project.PropertyGroup.Version
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw 'Release tag and project version differ.'
+          }
+          python scripts/verify_package.py "dist/LightX2V-Windows-$version-win-x64.zip" --version $version --source-commit $env:SOURCE_COMMIT --require-clean
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload beta package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: LightX2V-Windows-win-x64-${{ github.sha }}
+          path: |
+            dist/*-win-x64.zip
+            dist/*-win-x64.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Record build scope
+        run: |
+          @'
+          ## Windows beta build
+
+          This artifact is a self-contained Windows x64 package.
+          Compilation, Python tests and package integrity passed.
+          This runner did not install GPU drivers or execute GPU inference.
+          AMD and CUDA hardware acceptance scope is documented in docs/testing.md.
+          Version tags publish a prerelease only after a separate verification job.
+          '@ >> $env:GITHUB_STEP_SUMMARY
+
+  publish:
+    name: Publish Windows beta
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Download the verified Windows build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: LightX2V-Windows-win-x64-${{ github.sha }}
+          path: dist
+      - name: Verify and publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          package="dist/LightX2V-Windows-${version}-win-x64.zip"
+          notes="docs/releases/${RELEASE_TAG}.md"
+          test -f "$notes"
+          python3 scripts/verify_package.py "$package" --version "$version" --source-commit "$SOURCE_COMMIT" --require-clean
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'A release with this tag already exists; refusing to replace its assets.' >&2
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease --latest=false \
+            --title "${RELEASE_TAG} · Windows 首个内测版" --notes-file "$notes" \
+            "$package" "${package}.sha256"
+          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > dist/release.json
+          python3 scripts/verify_release_assets.py dist/release.json "$package" --tag "$RELEASE_TAG"
+          gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          printf '## Windows beta published\n\n[Download %s](https://github.com/%s/releases/tag/%s)\n' "$RELEASE_TAG" "$GH_REPO" "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

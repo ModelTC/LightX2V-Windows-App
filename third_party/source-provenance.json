@@ -1,0 +1,26 @@
+{
+  "upstream": "https://github.com/ModelTC/LightX2V",
+  "revision": "58b8e2592519711457e9fface5a804d7c337a1ae",
+  "archive": "LightX2V.Windows/Resources/Setup/lightx2v-native.zip",
+  "sha256": "0f8a6bf02273ec44192c233a87f50b2a720fc9da384f85ae63a282c37cab0b2a",
+  "modified": [
+    "lightx2v/common/offload/shared_weight_coordinator.py",
+    "lightx2v/common/ops/mm/optimized_linear.py",
+    "lightx2v/common/ops/utils.py",
+    "lightx2v/infer.py",
+    "lightx2v/models/input_encoders/hf/minimax_h3/qwen3vl.py",
+    "lightx2v/models/input_encoders/hf/qwen_image_21/qwen3vl.py",
+    "lightx2v/models/networks/base_model.py",
+    "lightx2v/models/networks/minimax_h3/model.py",
+    "lightx2v/models/runners/base_runner.py",
+    "lightx2v/models/runners/default_runner.py",
+    "lightx2v/models/runners/minimax_h3/minimax_h3_runner.py",
+    "lightx2v/models/runners/qwen_image_21/qwen_image_21_runner.py",
+    "lightx2v/models/video_encoders/hf/minimax_h3/offload.py",
+    "lightx2v/models/video_encoders/hf/minimax_h3/video_vae.py",
+    "lightx2v/utils/profiler.py",
+    "lightx2v/utils/set_config.py"
+  ],
+  "added": [],
+  "deleted": []
+}

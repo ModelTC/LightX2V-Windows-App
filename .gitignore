@@ -1,0 +1,41 @@
+# Build products and downloaded runtimes
+**/bin/
+**/obj/
+dist/
+artifacts/
+LightX2V.Windows/Runtime/
+llama-*-bin-win-*.zip
+source.zip
+*.partial
+
+# Local inference data and acceptance reports
+qa/
+output/
+outputs/
+models/
+environments/
+UserData/
+preferences.json
+workspace.json
+hardware-detection.json
+*.safetensors
+*.gguf
+*.whl
+*.log
+*.dmp
+
+# Editor, OS and Python caches
+.vs/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+**/__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+!.env.example
+*.user
+*.suo

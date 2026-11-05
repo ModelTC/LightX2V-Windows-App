@@ -1,0 +1,43 @@
+name: 内测问题 / Bug report
+description: 报告安装、显卡识别、模型下载或创作问题
+body:
+  - type: input
+    id: version
+    attributes:
+      label: App 版本
+      placeholder: v0.3.5
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: 电脑信息
+      description: Windows 版本、显卡型号、显存、系统内存、驱动版本；不知道的可以留空。
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: 哪一步遇到问题？
+      options:
+        - 打开 App
+        - 识别显卡 / 检查显卡软件
+        - 安装环境
+        - 下载模型
+        - 生成 / 编辑图片
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤与错误信息
+      description: 描述点击了什么、预期结果和实际结果。可以附截图。
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 检测信息 / 日志（可选）
+      description: 显卡识别失败可点“复制检测信息”。请先移除用户名、个人路径、提示词、参考图片等不希望公开的信息。
+      render: text

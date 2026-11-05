@@ -1,0 +1,32 @@
+[
+  {
+    "backend": "amd_rocm",
+    "name": "AMD 安装助手",
+    "page": "https://www.amd.com/en/support/download/drivers.html",
+    "download": {
+      "name": "amd_rocm-driver-assistant",
+      "version": "official-2026-11-04",
+      "file": "amd-software-adrenalin-edition-26.10.2-minimalsetup-261029_web.exe",
+      "url": "https://drivers.amd.com/drivers/installer/26.20/beta/amd-software-adrenalin-edition-26.10.2-minimalsetup-261029_web.exe",
+      "size": 47861064,
+      "sha256": "344db276ed0b12384f56371c409f0c30f7d2a9478c8de636def1c2e8e999a68e",
+      "group": "driver"
+    },
+    "pageZh": "https://www.amd.com/zh-cn/support/download/drivers.html"
+  },
+  {
+    "backend": "cuda",
+    "name": "NVIDIA App",
+    "page": "https://www.nvidia.com/en-us/software/nvidia-app/",
+    "download": {
+      "name": "cuda-driver-assistant",
+      "version": "official-2026-11-04",
+      "file": "NVIDIA_app_v11.0.9.585_x64.exe",
+      "url": "https://us.download.nvidia.com/nvapp/client/11.0.9.585/x64/NVIDIA_app_v11.0.9.585_x64.exe",
+      "size": 184718176,
+      "sha256": "3b5b9e941bd201af8c577eeaf0c20ee6cbf1b0b920dfd277c68370ed61f37788",
+      "group": "driver"
+    },
+    "pageZh": "https://www.nvidia.cn/software/nvidia-app/"
+  }
+]

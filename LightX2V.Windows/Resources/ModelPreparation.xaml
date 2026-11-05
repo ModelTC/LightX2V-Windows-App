@@ -1,0 +1,32 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+ <Style x:Key="EnhancementSwitch" TargetType="CheckBox">
+  <Setter Property="Cursor" Value="Hand"/><Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+  <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="CheckBox">
+   <Border x:Name="Track" Width="28" Height="16" CornerRadius="8" Background="#D8D8D8"><Ellipse x:Name="Thumb" Width="12" Height="12" Fill="White" HorizontalAlignment="Left" Margin="2,0"/></Border>
+   <ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Track" Property="Background" Value="#151515"/><Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.5"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Track" Property="BorderBrush" Value="#A45145"/><Setter TargetName="Track" Property="BorderThickness" Value="1"/></Trigger></ControlTemplate.Triggers>
+  </ControlTemplate></Setter.Value></Setter>
+ </Style>
+ <DataTemplate x:Key="ModelCardTemplate">
+  <Border CornerRadius="12" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="10" Margin="0,0,0,12">
+   <Border.Style><Style TargetType="Border"><Setter Property="Opacity" Value="1"/><Style.Triggers><DataTrigger Binding="{Binding OptionalEnabled}" Value="False"><Setter Property="Opacity" Value="0.58"/></DataTrigger></Style.Triggers></Style></Border.Style>
+   <StackPanel>
+    <Grid Margin="0,2,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+     <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+     <Button Grid.Column="1" AutomationProperties.AutomationId="ModelDownloadGuide" Content="{Binding DataContext.T[Download guide],RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding GuideCommand}" FontSize="10" Padding="4,3" Margin="6,-2,-4,-2"/>
+    </Grid>
+    <Border BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" IsEnabled="{Binding CanChoose}">
+     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/></Grid.ColumnDefinitions>
+      <TextBox Text="{Binding Path,UpdateSourceTrigger=LostFocus}" Background="Transparent" BorderThickness="0" Padding="9,9" FontSize="11" VerticalContentAlignment="Center" ToolTip="{Binding Path}" AutomationProperties.Name="{Binding Title}"/>
+      <Button Grid.Column="1" Width="28" Height="30" Padding="6" Command="{Binding ChooseCommand}" Style="{StaticResource IconButton}" ToolTip="{Binding DataContext.T[Choose],RelativeSource={RelativeSource AncestorType=Window}}"><Viewbox Width="15" Height="14"><Path Data="M2,5 H9 L11,8 H22 V21 H2 Z M2,9 H22" Stroke="{StaticResource Muted}" StrokeThickness="1.5"/></Viewbox></Button>
+     </Grid>
+    </Border>
+    <Grid Margin="-4,8,-3,-3"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="22"/></Grid.ColumnDefinitions>
+     <Button AutomationProperties.AutomationId="AutomaticModelDownload" Command="{Binding DownloadCommand}" IsEnabled="{Binding CanDownload}" Padding="4,3" FontSize="10"><StackPanel Orientation="Horizontal"><TextBlock Text="↓" FontSize="14" Margin="0,-3,5,0"/><TextBlock Text="{Binding DownloadLabel}" FontSize="10"/></StackPanel></Button>
+     <TextBlock Grid.Column="1" Text="{Binding Status}" FontSize="9" Foreground="{StaticResource Muted}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="6,0,3,0" ToolTip="{Binding Status}"/>
+     <Button Grid.Column="2" Style="{StaticResource IconButton}" Width="20" Height="22" Padding="2" Command="{Binding StatusCommand}" ToolTip="{Binding Status}"><Grid Width="13" Height="13"><Ellipse><Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="#A45145"/><Style.Triggers><DataTrigger Binding="{Binding Ready}" Value="True"><Setter Property="Fill" Value="#47755D"/></DataTrigger></Style.Triggers></Style></Ellipse.Style></Ellipse><Path Stroke="White" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"><Path.Style><Style TargetType="Path"><Setter Property="Data" Value="M4,4 L9,9 M4,9 L9,4"/><Style.Triggers><DataTrigger Binding="{Binding Ready}" Value="True"><Setter Property="Data" Value="M3.3,6.5 L5.5,8.7 9.7,4"/></DataTrigger></Style.Triggers></Style></Path.Style></Path></Grid></Button>
+    </Grid>
+    <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent,Mode=OneWay}" Height="3" Margin="0,10,0,1" Foreground="{StaticResource Ink}" Background="{StaticResource Line}" Visibility="{Binding IsDownloading,Converter={StaticResource Bool}}"/>
+   </StackPanel>
+  </Border>
+ </DataTemplate>
+</ResourceDictionary>

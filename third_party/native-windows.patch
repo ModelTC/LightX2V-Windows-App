@@ -1,0 +1,406 @@
+--- a/lightx2v/common/offload/shared_weight_coordinator.py
++++ b/lightx2v/common/offload/shared_weight_coordinator.py
+@@ -26,7 +26,6 @@
+ import torch
+ import torch.distributed as dist
+ from loguru import logger
+-from torch.distributed.distributed_c10d import _get_default_store
+ 
+ from lightx2v.common.offload.shared_pinned_arena import (
+     DEFAULT_REGISTER_CHUNK_BYTES,
+@@ -159,6 +158,8 @@
+ def _exchange_status(stage: str, status: Mapping[str, Any], world_size: int) -> list[Any]:
+     if world_size == 1:
+         return [status]
++    from torch.distributed.distributed_c10d import _get_default_store
++
+     group = dist.group.WORLD
+     if group not in _cpu_status_exchanges:
+         _cpu_status_exchanges[group] = _CPUStatusExchange(_get_default_store())
+--- a/lightx2v/common/ops/mm/optimized_linear.py
++++ b/lightx2v/common/ops/mm/optimized_linear.py
+@@ -10,11 +10,19 @@
+ import torch.nn.functional as F
+ 
+ from lightx2v.common.ops.mm.fp8_f16_accum import cutlass_scaled_fp8_mm_f16_accum
+-from lightx2v.common.ops.mm.fused_gelu_linear import fused_gelu_int8_convrot_linear, fused_gelu_quant_fp8_f16_accum, fused_gelu_quant_fp8_sgl, prepare_convrot_gelu_fusion
+-from lightx2v.common.ops.mm.fused_swiglu_linear import fused_swiglu_quant_fp8_f16_accum
+ from lightx2v.common.ops.mm.mm_weight import MMWeightTP, MMWeightWfp8channelAfp8channelF16Accum, MMWeightWfp8channelAfp8channeldynamicSgl, MMWeightWint8ConvRot
+-from lightx2v.common.ops.mm.projection_group import ConvRotProjectionGroup, FP8F16AccumProjectionGroup, FP8ProjectionGroup, _backend_apis_available
+ from lightx2v.common.ops.mm.sgl_kernel import sgl_fp8_scaled_mm
++
++
++try:
++    from lightx2v.common.ops.mm.fused_gelu_linear import fused_gelu_int8_convrot_linear, fused_gelu_quant_fp8_f16_accum, fused_gelu_quant_fp8_sgl, prepare_convrot_gelu_fusion
++    from lightx2v.common.ops.mm.fused_swiglu_linear import fused_swiglu_quant_fp8_f16_accum
++    from lightx2v.common.ops.mm.projection_group import ConvRotProjectionGroup, FP8F16AccumProjectionGroup, FP8ProjectionGroup, _backend_apis_available
++    _FUSED_PROJECTIONS_AVAILABLE = True
++except ModuleNotFoundError as exc:
++    if exc.name != "triton":
++        raise
++    _FUSED_PROJECTIONS_AVAILABLE = False
+ 
+ 
+ def make_projection_group(modules, *, packed=False, offload_buffers=False):
+@@ -24,6 +32,8 @@
+     returns a tuple of projections from ``.apply(x)`` and falls back to the
+     original linear modules if its input or module state becomes incompatible.
+     """
++    if not _FUSED_PROJECTIONS_AVAILABLE:
++        return None
+     modules = tuple(modules)
+     if not modules:
+         return None
+@@ -59,7 +69,8 @@
+     scale = getattr(linear, "weight_scale", None)
+     qmax = getattr(linear, "fp8_activation_qmax", None)
+     if (
+-        type(linear) is not MMWeightWfp8channelAfp8channelF16Accum
++        not _FUSED_PROJECTIONS_AVAILABLE
++        or type(linear) is not MMWeightWfp8channelAfp8channelF16Accum
+         or qmax is None
+         or linear.has_lora_branch
+         or linear.has_diff
+@@ -203,6 +214,8 @@
+     execution matches compiled GELU with ``emulate_precision_casts=True``.
+     Unsupported cases always return a wrapper executing the original modules.
+     """
++    if not _FUSED_PROJECTIONS_AVAILABLE:
++        return GeluLinear(module)
+     if type(module) is MMWeightTP:
+         local = make_gelu_linear(module._mm, enabled=enabled, offload_buffers=offload_buffers)
+         if module.split_dim == "row" and isinstance(local, OffloadedF16GeluLinear):
+--- a/lightx2v/common/ops/utils.py
++++ b/lightx2v/common/ops/utils.py
+@@ -87,10 +87,11 @@
+     Returns:
+         Pinned memory tensor (on CPU) with optional transposition applied.
+         Falls back to regular CPU tensor if pinned memory allocation fails.
++    LIGHTX2V_PIN_HOST_WEIGHTS=0 explicitly selects pageable CPU storage.
+     """
+     dtype = dtype or tensor.dtype
+     try:
+-        pin_tensor = torch.empty(tensor.shape, pin_memory=True, dtype=dtype)
++        pin_tensor = torch.empty(tensor.shape, pin_memory=os.getenv("LIGHTX2V_PIN_HOST_WEIGHTS", "1") != "0", dtype=dtype)
+     except Exception as e:
+         logger.warning(f"Failed to allocate pinned memory (shape={tensor.shape}, dtype={dtype}): {e}. Falling back to regular CPU memory.")
+         pin_tensor = torch.empty(tensor.shape, dtype=dtype)
+--- a/lightx2v/infer.py
++++ b/lightx2v/infer.py
+@@ -228,7 +228,7 @@
+             if runner is not None:
+                 runner.close()
+         finally:
+-            if dist.is_initialized():
++            if (dist.is_available() and dist.is_initialized()):
+                 dist.destroy_process_group()
+                 logger.info("Distributed process group cleaned up")
+ 
+--- a/lightx2v/models/input_encoders/hf/minimax_h3/qwen3vl.py
++++ b/lightx2v/models/input_encoders/hf/minimax_h3/qwen3vl.py
+@@ -643,7 +643,7 @@
+             raise ValueError("MiniMax-H3 quantized text encoder requires text_encoder_quantized_ckpt")
+         self.tensor_parallel = bool(config.get("text_encoder_tensor_parallel", config.get("tensor_parallel", False)))
+         if self.tensor_parallel:
+-            if not dist.is_initialized():
++            if not (dist.is_available() and dist.is_initialized()):
+                 raise RuntimeError("MiniMax-H3 text encoder TP requires an initialized distributed process group")
+             self.tp_group = dist.group.WORLD
+             self.tp_size = dist.get_world_size(self.tp_group)
+--- a/lightx2v/models/input_encoders/hf/qwen_image_21/qwen3vl.py
++++ b/lightx2v/models/input_encoders/hf/qwen_image_21/qwen3vl.py
+@@ -219,7 +219,7 @@
+         self.cpu_offload = config.get("text_encoder_cpu_offload", False)
+         self.tensor_parallel = bool(config.get("text_encoder_tensor_parallel", False))
+         if self.tensor_parallel:
+-            if not dist.is_initialized():
++            if not (dist.is_available() and dist.is_initialized()):
+                 raise RuntimeError("Qwen-Image-2.1 QwenVL TP requires an initialized distributed process group")
+             self.tp_group = dist.group.WORLD
+             self.tp_size = dist.get_world_size(self.tp_group)
+--- a/lightx2v/models/networks/base_model.py
++++ b/lightx2v/models/networks/base_model.py
+@@ -378,7 +378,7 @@
+         if self.config.get("device_mesh") is None:
+             # Single GPU mode
+             return True
+-        elif dist.is_initialized():
++        elif (dist.is_available() and dist.is_initialized()):
+             if self.use_tp or self.config.get("load_from_rank0", False):
+                 # TP or explicit rank0-only loading: only rank 0 reads from disk
+                 return dist.get_rank() == 0
+@@ -430,7 +430,7 @@
+ 
+     def _load_lora_file(self, file_path, dtype=None):
+         dtype = GET_DTYPE() if dtype is None else dtype
+-        if self.device.type != "cpu" and dist.is_initialized():
++        if self.device.type != "cpu" and (dist.is_available() and dist.is_initialized()):
+             device = f"{AI_DEVICE}:{dist.get_rank()}"
+         else:
+             device = str(self.device)
+@@ -515,7 +515,7 @@
+         # stage only needs a subset of block weights on GPU.
+         if self.config.get("pipefusion_parallel", False):
+             device = "cpu"
+-        elif self.device.type != "cpu" and dist.is_initialized():
++        elif self.device.type != "cpu" and (dist.is_available() and dist.is_initialized()):
+             device = dist.get_rank()
+         else:
+             device = str(self.device)
+--- a/lightx2v/models/networks/minimax_h3/model.py
++++ b/lightx2v/models/networks/minimax_h3/model.py
+@@ -9,6 +9,7 @@
+ from safetensors import safe_open
+ 
+ from lightx2v.common.ops.mm.fp8_f16_accum import fp8_f16_accum_mm_unavailable_reason
++from lightx2v.common.ops.utils import create_pin_tensor
+ from lightx2v.models.networks.base_model import BaseTransformerModel
+ from lightx2v.models.networks.minimax_h3.adaln_cache import validate_adaln_cache_config
+ from lightx2v.models.networks.minimax_h3.adaln_cache_guide import ADALN_CACHE_GUIDE
+@@ -318,10 +319,10 @@
+             lora_weights = {}
+             for normalized_key, source_key in normalized_sources.items():
+                 tensor = source.get_tensor(source_key).to(GET_DTYPE())
+-                lora_weights[normalized_key] = tensor.pin_memory() if torch.device(load_device).type == "cpu" else tensor
++                lora_weights[normalized_key] = create_pin_tensor(tensor) if torch.device(load_device).type == "cpu" else tensor
+             for alpha_name in missing_alpha:
+                 alpha_tensor = torch.tensor(effective_alpha, dtype=GET_DTYPE(), device=load_device)
+-                lora_weights[alpha_name] = alpha_tensor.pin_memory() if alpha_tensor.device.type == "cpu" else alpha_tensor
++                lora_weights[alpha_name] = create_pin_tensor(alpha_tensor) if alpha_tensor.device.type == "cpu" else alpha_tensor
+ 
+         self._pending_dynamic_lora_model_keys = model_keys
+         if effective_alpha is not None:
+@@ -365,7 +366,7 @@
+                 tensor = getattr(weight, attr_name, None)
+                 if isinstance(tensor, torch.Tensor) and tensor.device.type != "cpu":
+                     tensor = tensor.to("cpu")
+-                    setattr(weight, attr_name, tensor.pin_memory())
++                    setattr(weight, attr_name, create_pin_tensor(tensor))
+ 
+         registered = {weight.weight_name for weight in weights if getattr(weight, "has_lora_branch", False)}
+         missing = sorted(self._pending_dynamic_lora_model_keys - registered)
+@@ -499,7 +500,7 @@
+         load_device = self._checkpoint_load_device()
+         logger.info(
+             "MiniMax-H3 rank {} (TP rank {}) loading TP checkpoint shards on {}",
+-            dist.get_rank() if dist.is_initialized() else 0,
++            dist.get_rank() if (dist.is_available() and dist.is_initialized()) else 0,
+             self.tp_rank,
+             load_device,
+         )
+@@ -530,7 +531,7 @@
+         remove_keys = self.remove_keys if hasattr(self, "remove_keys") else []
+         weight_dict = {}
+         load_device = self._checkpoint_load_device()
+-        logger.info(f"MiniMax-H3 rank {dist.get_rank() if dist.is_initialized() else 0} loading TP checkpoint shards on {load_device}")
++        logger.info(f"MiniMax-H3 rank {dist.get_rank() if (dist.is_available() and dist.is_initialized()) else 0} loading TP checkpoint shards on {load_device}")
+         for file_path in files:
+             with safe_open(file_path, framework="pt", device="cpu") as source:
+                 self._record_checkpoint_metadata(source)
+--- a/lightx2v/models/runners/base_runner.py
++++ b/lightx2v/models/runners/base_runner.py
+@@ -383,7 +383,7 @@
+         """Check if the stop signal is received"""
+ 
+         rank, world_size = 0, 1
+-        if dist.is_initialized():
++        if dist.is_available() and dist.is_initialized():
+             rank = dist.get_rank()
+             world_size = dist.get_world_size()
+         stop_rank = int(os.getenv("WORKER_RANK", "0")) % world_size  # same as worker hub target_rank
+--- a/lightx2v/models/runners/default_runner.py
++++ b/lightx2v/models/runners/default_runner.py
+@@ -39,7 +39,7 @@
+         raise NotImplementedError
+ 
+     def reuse_inputs_path(self, cache_dir):
+-        rank = dist.get_rank() if dist.is_initialized() else 0
++        rank = dist.get_rank() if (dist.is_available() and dist.is_initialized()) else 0
+         return os.path.join(cache_dir, f"inputs_rank_{rank:05d}.pt")
+ 
+     def reuse_input_info(self):
+@@ -95,7 +95,7 @@
+         if is_main_process():
+             shutil.rmtree(self.reuse_cache_stage_dir, ignore_errors=True)
+             os.makedirs(self.reuse_cache_stage_dir)
+-        if dist.is_initialized():
++        if (dist.is_available() and dist.is_initialized()):
+             dist.barrier()
+ 
+         if self.reuse:
+@@ -106,7 +106,7 @@
+         else:
+             self.save_reuse_inputs()
+ 
+-        if dist.is_initialized():
++        if (dist.is_available() and dist.is_initialized()):
+             dist.barrier()
+         if is_main_process():
+             with open(os.path.join(self.reuse_cache_stage_dir, "manifest.json"), "w", encoding="utf-8") as f:
+@@ -158,7 +158,7 @@
+         self.run_warmup()
+ 
+         torch_device_module.synchronize()
+-        if dist.is_initialized() and dist.get_world_size() > 1:
++        if (dist.is_available() and dist.is_initialized()) and dist.get_world_size() > 1:
+             dist.barrier()
+ 
+     def run_warmup(self):
+@@ -475,7 +475,7 @@
+     def process_images_after_vae_decoder(self):
+         return_result_tensor = self.input_info.return_result_tensor
+         save_result = self.input_info.save_result_path is not None
+-        main_process = not dist.is_initialized() or dist.get_rank() == 0
++        main_process = not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0
+ 
+         should_process = return_result_tensor or (save_result and main_process)
+         if not should_process:
+--- a/lightx2v/models/runners/minimax_h3/minimax_h3_runner.py
++++ b/lightx2v/models/runners/minimax_h3/minimax_h3_runner.py
+@@ -311,14 +311,14 @@
+         self._vae_decode_tile_shapes = self.config.get("vae_decode_tile_shape", {})
+         self._validate_vae_decode_tile_shapes(self._vae_decode_tile_shapes, video_vae)
+         if self.config.get("vae_encode_parallel", False):
+-            world_size = dist.get_world_size() if dist.is_initialized() else 1
++            world_size = dist.get_world_size() if (dist.is_available() and dist.is_initialized()) else 1
+             if world_size > 1:
+                 video_vae.enable_encode_parallel()
+                 logger.info(f"MiniMax-H3 spatiotemporal-tile VAE encode parallel enabled over {world_size} ranks")
+             else:
+                 logger.info("MiniMax-H3 VAE encode parallel disabled for single-rank inference")
+         if self.config.get("vae_decode_parallel", False):
+-            world_size = dist.get_world_size() if dist.is_initialized() else 1
++            world_size = dist.get_world_size() if (dist.is_available() and dist.is_initialized()) else 1
+             if world_size > 1:
+                 video_vae.enable_decode_parallel()
+                 logger.info(f"MiniMax-H3 VAE spatiotemporal tile parallelism enabled over {world_size} ranks")
+@@ -783,7 +783,7 @@
+             }
+ 
+         output_path = self.input_info.save_result_path
+-        if output_path and (not dist.is_initialized() or dist.get_rank() == 0):
++        if output_path and (not (dist.is_available() and dist.is_initialized()) or dist.get_rank() == 0):
+             if os.path.splitext(output_path)[1].lower() != ".mp4":
+                 raise ValueError(f"MiniMax-H3 AV output uses H.264/AAC; save_result_path must end in .mp4, got {output_path!r}")
+             parent = os.path.dirname(os.path.abspath(output_path))
+--- a/lightx2v/models/runners/qwen_image_21/qwen_image_21_runner.py
++++ b/lightx2v/models/runners/qwen_image_21/qwen_image_21_runner.py
+@@ -302,7 +302,7 @@
+ 
+     def process_images_after_vae_decoder(self, value):
+         input_info = self.input_info
+-        if input_info.save_result_path and not input_info.return_result_tensor and dist.is_initialized() and dist.get_rank() != 0:
++        if input_info.save_result_path and not input_info.return_result_tensor and (dist.is_available() and dist.is_initialized()) and dist.get_rank() != 0:
+             return {"images": None}
+         pixels = (value / 2 + 0.5).clamp(0, 1).float().permute(0, 2, 3, 1).cpu().numpy()
+         # OpenCV expects BGRA; keep alpha as the last channel.
+@@ -310,8 +310,10 @@
+         if input_info.save_result_path and not input_info.return_result_tensor:
+             path = Path(input_info.save_result_path)
+             path.parent.mkdir(parents=True, exist_ok=True)
+-            if not cv2.imwrite(str(path), images[0]):
+-                raise RuntimeError(f"Failed to save image to: {path}")
++            encoded_ok, encoded = cv2.imencode(path.suffix, images[0])
++            if not encoded_ok:
++                raise RuntimeError(f"Failed to encode image for: {path}")
++            path.write_bytes(encoded.tobytes())
+             logger.info(f"✅ Image saved successfully to: {path} ✅")
+         return {"images": images if input_info.return_result_tensor else None}
+ 
+--- a/lightx2v/models/video_encoders/hf/minimax_h3/offload.py
++++ b/lightx2v/models/video_encoders/hf/minimax_h3/offload.py
+@@ -1,4 +1,6 @@
+ """Two-slot offload for the native H3 video decoder, reused across tiles."""
++
++import os
+ 
+ import torch
+ from loguru import logger
+@@ -21,7 +23,7 @@
+                     raise ValueError("Video decoder block sources must remain on CPU")
+                 if shared and not tensor.is_pinned():
+                     raise ValueError(f"Unregistered shared VAE source: {name}")
+-                if not shared and not tensor.is_pinned():
++                if not shared and not tensor.is_pinned() and os.getenv("LIGHTX2V_PIN_HOST_WEIGHTS", "1") != "0":
+                     assign_module_tensor(block, name, tensor.detach().pin_memory())
+         self.sources = [NativeModuleBlockSource(block) for block in blocks]
+         schema = {n: (t.shape, t.dtype, t.stride()) for n, t in self.sources[0].state_dict().items()}
+--- a/lightx2v/models/video_encoders/hf/minimax_h3/video_vae.py
++++ b/lightx2v/models/video_encoders/hf/minimax_h3/video_vae.py
+@@ -941,7 +941,7 @@
+         """Enable tiled parallel decoding; must be called on every rank."""
+         if not self.use_tiling:
+             raise RuntimeError("MiniMax-H3 VAE decode parallel requires tiling")
+-        if not dist.is_initialized() or dist.get_world_size() <= 1:
++        if not (dist.is_available() and dist.is_initialized()) or dist.get_world_size() <= 1:
+             raise RuntimeError("MiniMax-H3 VAE decode parallel requires an initialized multi-rank process group")
+         # Initialize the full-group communicator on the VAE device before subset P2P.
+         self.decode_group = dist.new_group()
+@@ -952,7 +952,7 @@
+         """Enable tiled parallel encoding; must be called on every rank."""
+         if not self.use_tiling:
+             raise RuntimeError("MiniMax-H3 VAE encode parallel requires tiling")
+-        if not dist.is_initialized() or dist.get_world_size() <= 1:
++        if not (dist.is_available() and dist.is_initialized()) or dist.get_world_size() <= 1:
+             raise RuntimeError("MiniMax-H3 VAE encode parallel requires an initialized multi-rank process group")
+         # Initialize the full-group communicator on the VAE device before subset P2P.
+         dist.all_reduce(torch.zeros(1, device=self.execution_device))
+--- a/lightx2v/utils/profiler.py
++++ b/lightx2v/utils/profiler.py
+@@ -142,7 +142,7 @@
+         return memory_suffix
+ 
+     def __enter__(self):
+-        self.rank_info = f"Rank {dist.get_rank()}" if dist.is_initialized() else "Single GPU"
++        self.rank_info = f"Rank {dist.get_rank()}" if (dist.is_available() and dist.is_initialized()) else "Single GPU"
+         self._skip_sync = _is_profiler_no_sync_active()
+         if not self._skip_sync:
+             torch_device_module.synchronize()
+@@ -170,7 +170,7 @@
+         return False
+ 
+     async def __aenter__(self):
+-        self.rank_info = f"Rank {dist.get_rank()}" if dist.is_initialized() else "Single GPU"
++        self.rank_info = f"Rank {dist.get_rank()}" if (dist.is_available() and dist.is_initialized()) else "Single GPU"
+         self._skip_sync = _is_profiler_no_sync_active()
+         if not self._skip_sync:
+             torch_device_module.synchronize()
+@@ -245,7 +245,7 @@
+         self.rank_info = "Single GPU"
+ 
+     def __enter__(self):
+-        self.rank_info = f"Rank {dist.get_rank()}" if dist.is_initialized() else "Single GPU"
++        self.rank_info = f"Rank {dist.get_rank()}" if (dist.is_available() and dist.is_initialized()) else "Single GPU"
+         self._skip_sync = _is_profiler_no_sync_active()
+         if not self._skip_sync:
+             torch_device_module.synchronize()
+@@ -265,7 +265,7 @@
+         return False
+ 
+     async def __aenter__(self):
+-        self.rank_info = f"Rank {dist.get_rank()}" if dist.is_initialized() else "Single GPU"
++        self.rank_info = f"Rank {dist.get_rank()}" if (dist.is_available() and dist.is_initialized()) else "Single GPU"
+         self._skip_sync = _is_profiler_no_sync_active()
+         if not self._skip_sync:
+             torch_device_module.synchronize()
+--- a/lightx2v/utils/set_config.py
++++ b/lightx2v/utils/set_config.py
+@@ -5,7 +5,6 @@
+ import torch
+ import torch.distributed as dist
+ from loguru import logger
+-from torch.distributed.tensor.device_mesh import init_device_mesh
+ 
+ from lightx2v.utils.async_vae import normalize_async_vae_config
+ from lightx2v.utils.input_info import align_num_frames
+@@ -463,6 +462,10 @@
+         # SwiftVR owns its chunk group and validates its parallel settings in the runner.
+         return
+ 
++    if not dist.is_available():
++        raise RuntimeError("Parallel inference requires a PyTorch build with distributed support")
++    from torch.distributed.tensor.device_mesh import init_device_mesh
++
+     tensor_p_size = int(parallel.get("tensor_p_size", 1))
+     cfg_p_size = int(parallel.get("cfg_p_size", 1))
+     seq_p_size = int(parallel.get("seq_p_size", 1))
