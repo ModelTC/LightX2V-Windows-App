@@ -1,0 +1,45 @@
+name: Publish verified draft beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag whose fully uploaded draft should be verified and published
+        required: true
+        type: string
+  push:
+    branches: ['codex/publish-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-draft-beta
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.deleted != true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify uploaded draft and publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+          SOURCE_BRANCH: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$REQUESTED_TAG"
+          if [ -z "$tag" ]; then tag="${SOURCE_BRANCH#codex/publish-}"; fi
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          source_commit="$(git rev-parse --verify "$tag^{commit}")"
+          python3 scripts/publish_verified_draft.py "$tag" "$source_commit" --directory dist/draft-verification

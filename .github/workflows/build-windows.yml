@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   build:
+    if: ${{ !startsWith(github.ref, 'refs/heads/codex/publish-') }}
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -122,7 +123,5 @@ jobs:
           gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease --latest=false \
             --title "${RELEASE_TAG} · Windows 首个内测版" --notes-file "$notes" \
             "$package" "${package}.sha256"
-          gh api "repos/$GH_REPO/releases/tags/$RELEASE_TAG" > dist/release.json
-          python3 scripts/verify_release_assets.py dist/release.json "$package" --tag "$RELEASE_TAG"
-          gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          python3 scripts/publish_verified_draft.py "$RELEASE_TAG" "$SOURCE_COMMIT" --directory dist/upload-verification
           printf '## Windows beta published\n\n[Download %s](https://github.com/%s/releases/tag/%s)\n' "$RELEASE_TAG" "$GH_REPO" "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
