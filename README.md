@@ -8,7 +8,7 @@
 
 | 版本 | Windows x64 下载 | 状态 |
 | --- | --- | --- |
-| v0.3.5 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.5/LightX2V-Windows-0.3.5-win-x64.zip) · [SHA-256](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.5/LightX2V-Windows-0.3.5-win-x64.zip.sha256) | 首个内测版 / Pre-release |
+| v0.3.5 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.5/LightX2V-Windows-0.3.5-win-x64.zip) | 首个内测版 / Pre-release |
 
 [发布说明与已知限制](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/v0.3.5)。请下载上面的 App ZIP；GitHub 的源码下载按钮不包含可运行的 App。
 
@@ -18,7 +18,7 @@
 
 便携包包含 .NET 桌面运行时和固定版本推理源码。向导可自动安装 Python 与推理依赖、复用本机环境，并一键下载模型。**普通用户无需打开终端、安装开发工具或输入下载命令。** 显卡驱动需要安装时，向导提供官方入口及操作指引；Windows 可能要求确认权限或重启。
 
-详细步骤见 [首次使用](docs/getting-started.md)。当前构建未进行代码签名；请核对下载来源和随包 SHA-256，不要关闭系统安全保护。
+详细步骤见 [首次使用](docs/getting-started.md)。当前构建未进行代码签名；请确认安装包来自本仓库的 Release 发布页，不要关闭系统安全保护。
 
 ## 设备与内测范围
 
