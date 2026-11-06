@@ -11,7 +11,7 @@ public partial class MainWindow : Window
     string lastContent = "";
     WindowBounds? bounds;
     public MainViewModel ViewModel { get; }
-    public MainWindow(MainViewModel vm)
+    public MainWindow(MainViewModel vm,Action? requestStartupSetup=null)
     {
         ViewModel = vm;
         DataContext = vm;
@@ -32,7 +32,13 @@ public partial class MainWindow : Window
             lastContent = key;
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => Conversation.ScrollToEnd());
         };
-        Loaded += async (_, _) => {if(vm.NeedsInitialSetup)_ = Dispatcher.BeginInvoke(()=>vm.RequestSetup?.Invoke());else {await vm.CheckAsync();if(!vm.Ready)_ = Dispatcher.BeginInvoke(()=>vm.RequestSetup?.Invoke());else if(!vm.TurboCard.Ready){vm.Setup.ResumeModels();_ = Dispatcher.BeginInvoke(()=>vm.RequestSetup?.Invoke());}}};
+        Loaded += async (_, _) =>
+        {
+            if(vm.Ready&&!vm.NeedsInitialSetup&&vm.RequiredModelsReady)return;
+            Action setup=requestStartupSetup??(()=>vm.RequestSetup?.Invoke());
+            if(vm.NeedsInitialSetup)_ = Dispatcher.BeginInvoke(setup);
+            else{await vm.CheckAsync();if(closing||!IsVisible)return;if(!vm.Ready)_ = Dispatcher.BeginInvoke(setup);else if(!vm.RequiredModelsReady){vm.Setup.ResumeModels();_ = Dispatcher.BeginInvoke(setup);}}
+        };
         Closing += async (_, e) =>
         {
             if(closing)return;
@@ -43,7 +49,7 @@ public partial class MainWindow : Window
             try { await vm.StopAsync(); while (vm.IsRunning) await Task.Delay(25); }
             finally { Close(); }
         };
-        Closed += (_, _) => { bounds?.Dispose(); vm.Dispose(); };
+        Closed += (_, _) => { closing=true;bounds?.Dispose(); vm.Dispose(); };
     }
     protected override void OnSourceInitialized(EventArgs e)
     {

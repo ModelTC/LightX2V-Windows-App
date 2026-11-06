@@ -13,10 +13,11 @@ public sealed class FirstRunWindow : Window
     readonly Button next,back,close;readonly ProgressBar progress;readonly List<Control> locked=[];
     readonly Border[] stepFaces=new Border[4],stepDots=new Border[4];readonly TextBlock[] steps=new TextBlock[4],numbers=new TextBlock[4];
     readonly TextBlock counter;readonly Border statusCard;readonly TextBlock detail;bool closing,refreshing;
-    public FirstRunWindow(MainViewModel owner)
+    public bool Completed {get;private set;}
+    public FirstRunWindow(MainViewModel owner,bool standalone=false)
     {
         this.owner=owner;setup=owner.Setup;DataContext=owner;Title="LightX2V · "+owner.T["First-time setup"];SetupUi.Resources(this);
-        Width=Math.Min(800,SystemParameters.WorkArea.Width);Height=Math.Min(760,SystemParameters.WorkArea.Height);MinWidth=Math.Min(640,Width);MinHeight=Math.Min(520,Height);WindowStartupLocation=WindowStartupLocation.CenterOwner;ShowInTaskbar=false;Background=SetupUi.Subtle;Foreground=SetupUi.Ink;FontFamily=new("Segoe UI, Microsoft YaHei UI");
+        Width=Math.Min(800,SystemParameters.WorkArea.Width);Height=Math.Min(760,SystemParameters.WorkArea.Height);MinWidth=Math.Min(640,Width);MinHeight=Math.Min(520,Height);WindowStartupLocation=standalone?WindowStartupLocation.CenterScreen:WindowStartupLocation.CenterOwner;ShowInTaskbar=standalone;Background=SetupUi.Subtle;Foreground=SetupUi.Ink;FontFamily=new("Segoe UI, Microsoft YaHei UI");
         Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("/LightX2V.Windows;component/Resources/ModelPreparation.xaml",UriKind.Relative)});
         var root=new Grid();root.RowDefinitions.Add(new(){Height=GridLength.Auto});root.RowDefinitions.Add(new());root.RowDefinitions.Add(new(){Height=GridLength.Auto});Content=root;
         var headerBody=new StackPanel{Margin=new Thickness(24,20,24,18)};root.Children.Add(new Border{Background=Brushes.White,BorderBrush=SetupUi.Line,BorderThickness=new Thickness(0,0,0,1),Child=headerBody});
@@ -63,7 +64,7 @@ public sealed class FirstRunWindow : Window
         var right=new StackPanel{Orientation=Orientation.Horizontal};Grid.SetColumn(right,1);footerRow.Children.Add(right);close=SetupUi.Button(this,"Close",false,"SetupClose");close.Margin=new Thickness(0,0,10,0);close.Click+=async(_,_)=>{if(setup.Busy||setup.Driver.Busy||owner.IsRunning||owner.IsDownloading)await setup.CancelAsync();else Close();};right.Children.Add(close);next=SetupUi.Button(this,"Continue",true,"SetupContinue");next.MinWidth=100;next.Click+=async(_,_)=>await Next();right.Children.Add(next);var footer=SetupUi.Footer(footerRow);Grid.SetRow(footer,2);root.Children.Add(footer);
         locked.AddRange([workspace,choose,language,discover,enhance]);setup.PropertyChanged+=Changed;owner.PropertyChanged+=Changed;owner.T.PropertyChanged+=Changed;
         Closing+=async(_,e)=>{if(closing||!setup.Busy&&!setup.Driver.Busy&&!owner.IsDownloading&&!owner.IsRunning)return;e.Cancel=true;closing=true;await setup.CancelAsync();while(setup.Busy||setup.Driver.Busy||owner.IsRunning||owner.IsDownloading)await Task.Delay(50);Close();};
-        Closed+=(_,_)=>{computer.Dispose();setup.PropertyChanged-=Changed;owner.PropertyChanged-=Changed;owner.T.PropertyChanged-=Changed;};Loaded+=async(_,_)=>{if(setup.Page==1&&!setup.ComputerScanned&&!setup.Busy)await setup.ScanComputerAsync();};Refresh();
+        Closed+=(_,_)=>{computer.Dispose();setup.PropertyChanged-=Changed;owner.PropertyChanged-=Changed;owner.T.PropertyChanged-=Changed;};Loaded+=async(_,_)=>{if(standalone&&!owner.NeedsInitialSetup)await setup.ResumeStartupAsync();if(!closing&&setup.Page==1&&!setup.ComputerScanned&&!setup.Busy)await setup.ScanComputerAsync();};Refresh();
     }
     static void AddHint(Panel panel,string key,double size=12){var text=SetupUi.Text(key,size,false,true);text.Margin=new Thickness(0,8,0,0);panel.Children.Add(text);}
     void Changed(object? sender,PropertyChangedEventArgs e)=>Refresh();
@@ -89,6 +90,6 @@ public sealed class FirstRunWindow : Window
     }
     async Task Next()
     {
-        if(setup.Page==0)await setup.BeginWorkspaceAsync();else if(setup.Page==1){if(!setup.ComputerScanned){await setup.ScanComputerAsync();return;}if(!setup.Driver.Checked)await setup.Driver.CheckAsync();if(!setup.Driver.CanContinue){if(setup.Driver.CanDownload)await setup.Driver.DownloadAndOpenAsync();else await setup.Driver.CheckAsync(true);}else await setup.PrepareEnvironmentAsync(!setup.UseExisting);}else if(setup.Page==2){if(setup.CanContinue)setup.Page=3;else await setup.DownloadModelsAsync();}else Close();Refresh();
+        if(setup.Page==0)await setup.BeginWorkspaceAsync();else if(setup.Page==1){if(!setup.ComputerScanned){await setup.ScanComputerAsync();return;}if(!setup.Driver.Checked)await setup.Driver.CheckAsync();if(!setup.Driver.CanContinue){if(setup.Driver.CanDownload)await setup.Driver.DownloadAndOpenAsync();else await setup.Driver.CheckAsync(true);}else await setup.PrepareEnvironmentAsync(!setup.UseExisting);}else if(setup.Page==2){if(setup.CanContinue)setup.Page=3;else await setup.DownloadModelsAsync();}else{Completed=true;Close();}Refresh();
     }
 }

@@ -11,7 +11,7 @@ using LightX2V.Windows;
 
 internal static partial class Program
 {
-    static bool smoke,signatures,completionOnly,hardwareOnly;static string root="";static readonly List<string> passed=[];
+    static bool smoke,signatures,completionOnly,hardwareOnly,startupOnly;static string root="";static readonly List<string> passed=[];
     static void Check(bool condition,string message){if(!condition)throw new Exception(message);passed.Add(message);}
     static IEnumerable<T> Children<T>(DependencyObject parent) where T:DependencyObject
     {
@@ -33,13 +33,15 @@ internal static partial class Program
     static EnvironmentCandidate Valid(string path)=>new(path,true,"AMD Radeon 8060S · 2.11.0+rocm7.13.0"){PythonVersion="3.12.10",TorchVersion="2.11.0+rocm7.13.0",HipVersion="7.13.0",Device="AMD Radeon 8060S",Packages=new Dictionary<string,string>{{"transformers","5.20.2"},{"diffusers","0.42.0"},{"safetensors","0.8.0"},{"accelerate","1.15.0"}}};
     [STAThread]static int Main(string[] args)
     {
-        hardwareOnly=args.Contains("hardware");completionOnly=args.Contains("completion");smoke=args.Contains("smoke");signatures=args.Contains("signatures");root=Path.GetFullPath(args[0]);Directory.CreateDirectory(root);RenderOptions.ProcessRenderMode=System.Windows.Interop.RenderMode.SoftwareOnly;
+        startupOnly=args.Contains("startup");hardwareOnly=args.Contains("hardware");completionOnly=args.Contains("completion");smoke=args.Contains("smoke");signatures=args.Contains("signatures");root=Path.GetFullPath(args[0]);Directory.CreateDirectory(root);RenderOptions.ProcessRenderMode=System.Windows.Interop.RenderMode.SoftwareOnly;
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};app.Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("pack://application:,,,/LightX2V.Windows;component/Resources/Theme.xaml")});int result=1;
         PresentationTraceSources.DataBindingSource.Switch.Level=SourceLevels.Error;PresentationTraceSources.DataBindingSource.Listeners.Add(new TextWriterTraceListener(Path.Combine(root,"bindings.log")));
         app.Dispatcher.BeginInvoke(async()=>{try{await Run();File.WriteAllText(Path.Combine(root,"checks.json"),JsonSerializer.Serialize(new{passed,completedAt=DateTimeOffset.Now,offscreenRendering=true,realUiAutomation=false},new JsonSerializerOptions{WriteIndented=true}));result=0;}catch(Exception e){File.WriteAllText(Path.Combine(root,"failure.txt"),e.ToString());}finally{Trace.Flush();app.Shutdown();}});app.Run();return result;
     }
     static async Task Run()
     {
+        await StartupChecks();
+        if(startupOnly)return;
         if(hardwareOnly){await HardwareDetectionChecks();await DriverChecks();await WizardPreparationChecks();await CompletionChecks();return;}
         await HardwareDetectionChecks();if(completionOnly){await CompletionChecks();return;}
         await CompletionChecks();await DriverChecks();await WizardPreparationChecks();await ModelDownloadChecks();
@@ -100,9 +102,10 @@ internal static partial class Program
     }
     sealed class FakeCatalog : IEnvironmentCatalog
     {
-        public List<EnvironmentCandidate> Found=[];public EnvironmentCandidate? ProbeResult;public string InstallResult="";public int InstallCalls;public bool LastMirror,Delayed,DelayInstall;public string LastBackend="",SearchBackend="";public List<string>? Events;
-        public async Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token){SearchBackend=settings.Backend;Events?.Add("search:"+SearchBackend);if(Delayed)await Task.Delay(Timeout.Infinite,token);return Found;}
-        public Task<EnvironmentCandidate> Probe(string path,string workspace,CancellationToken token,string backend="auto")=>Task.FromResult(ProbeResult??new EnvironmentCandidate(path,false,"Unavailable"));
+        public List<EnvironmentCandidate> Found=[];public EnvironmentCandidate? ProbeResult;public string InstallResult="";public int InstallCalls,SearchCalls,ProbeCalls,InstalledProbeCalls;public bool LastMirror,Delayed,DelayInstall,DelayProbe;public string LastBackend="",SearchBackend="";public List<string>? Events;
+        public async Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token){SearchCalls++;SearchBackend=settings.Backend;Events?.Add("search:"+SearchBackend);if(Delayed)await Task.Delay(Timeout.Infinite,token);return Found;}
+        public async Task<EnvironmentCandidate> Probe(string path,string workspace,CancellationToken token,string backend="auto"){ProbeCalls++;if(DelayProbe)await Task.Delay(Timeout.Infinite,token);return ProbeResult??new EnvironmentCandidate(path,false,"Unavailable");}
+        public async Task<EnvironmentCandidate> ProbeInstalled(string path,string workspace,CancellationToken token,string backend="auto"){InstalledProbeCalls++;if(DelayProbe)await Task.Delay(Timeout.Infinite,token);return ProbeResult??new EnvironmentCandidate(path,false,"Unavailable");}
         public async Task<string> Install(string workspace,bool mirror,IProgress<SetupProgress> progress,CancellationToken token,string backend="amd_rocm"){InstallCalls++;LastMirror=mirror;LastBackend=backend;progress.Report(new("Preparing your environment","Python / AMD PyTorch",45));if(DelayInstall)await Task.Delay(Timeout.Infinite,token);return InstallResult;}
     }
 }

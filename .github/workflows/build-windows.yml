@@ -53,6 +53,19 @@ jobs:
           }
       - name: Build and verify portable package
         run: ./build.ps1
+      - name: Check first-run lifecycle offscreen
+        run: |
+          dotnet publish SetupUiChecks/SetupUiChecks.csproj -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o artifacts/startup-checks
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $report = Join-Path $env:GITHUB_WORKSPACE 'artifacts/startup-results'
+          $executable = Join-Path $env:GITHUB_WORKSPACE 'artifacts/startup-checks/SetupUiChecks.exe'
+          $check = Start-Process -FilePath $executable -ArgumentList ('"' + $report + '" startup') -PassThru -Wait
+          if ($check.ExitCode -ne 0) {
+            Get-Content "$report/failure.txt" -Raw -ErrorAction SilentlyContinue
+            throw 'First-run lifecycle checks failed.'
+          }
+          $result = Get-Content "$report/checks.json" -Raw | ConvertFrom-Json
+          Write-Output "Passed $($result.passed.Count) offscreen first-run checks; no GPU inference or real desktop input."
       - name: Verify release provenance
         env:
           SOURCE_COMMIT: ${{ github.sha }}
@@ -121,7 +134,7 @@ jobs:
             exit 1
           fi
           gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease --latest=false \
-            --title "${RELEASE_TAG} · Windows 首个内测版" --notes-file "$notes" \
+            --title "${RELEASE_TAG} · Windows 内测版" --notes-file "$notes" \
             "$package" "${package}.sha256"
           python3 scripts/publish_verified_draft.py "$RELEASE_TAG" "$SOURCE_COMMIT" --directory dist/upload-verification
           printf '## Windows beta published\n\n[Download %s](https://github.com/%s/releases/tag/%s)\n' "$RELEASE_TAG" "$GH_REPO" "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"

@@ -7,11 +7,13 @@ public interface IEnvironmentCatalog
     Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token);
     Task<EnvironmentCandidate> Probe(string path,string workspace,CancellationToken token,string backend="auto");
     Task<string> Install(string workspace,bool mirror,IProgress<SetupProgress> progress,CancellationToken token,string backend="amd_rocm");
+    Task<EnvironmentCandidate> ProbeInstalled(string python,string workspace,CancellationToken token,string backend="auto")=>Probe(python,workspace,token,backend);
 }
 public sealed class NativeEnvironmentCatalog : IEnvironmentCatalog
 {
     public Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)=>SetupDiscovery.Search(settings,progress,token);
     public Task<EnvironmentCandidate> Probe(string path,string workspace,CancellationToken token,string backend="auto")=>SetupDiscovery.Probe(path,workspace,token,backend);
+    public Task<EnvironmentCandidate> ProbeInstalled(string path,string workspace,CancellationToken token,string backend="auto")=>SetupDiscovery.Probe(path,workspace,token,backend,180);
     public Task<string> Install(string workspace,bool mirror,IProgress<SetupProgress> progress,CancellationToken token,string backend="amd_rocm")
     {
         var legacy=AppSettings.FindBackend();return SetupInstaller.Install(workspace,mirror,legacy.Length>0?[Path.Combine(legacy,"downloads")]:[],progress,token,backend);
@@ -42,7 +44,7 @@ public sealed class EnvironmentSelectionModel : Observable,IDisposable
     public string Error {get=>error;private set=>Set(ref error,value);}
     public double Percent {get=>percent;private set=>Set(ref percent,value);}
     public bool Searched=>searched;
-    public string Summary=>Busy?T[Installing?"Preparing your environment":"Searching local environments"]:!searched?T["Search your computer for a compatible environment"]:string.Format(T["Found {0} compatible environments"],Candidates.Count(c=>c.Ready));
+    public string Summary=>Busy?T[Installing?"Preparing your environment":"Searching local environments"]:!searched?T["Search your computer for a compatible environment"]:string.Format(T["Found {0} compatible environments"],Candidates.Count(c=>c.Ready&&c.Backend==Backend));
     public string Requirements=>"Python "+SetupManifest.Read(Backend).Python.Version+" · "+string.Join(" · ",new[]{"torch","transformers","diffusers","safetensors"}.Select(name=>SetupManifest.Read(Backend).Packages.Single(p=>p.Name==name)).Select(p=>p.Name+" "+p.Version));
     public string ManagedDescription=>"Python "+SetupManifest.Read(Backend).Python.Version+" · "+Backends.Label(Backend);
     public ParameterCommand SelectCommand {get;}
@@ -83,7 +85,7 @@ public sealed class EnvironmentSelectionModel : Observable,IDisposable
     public Task InstallAsync()
     {
         if(!ManagedSupported){Error=T[Backends.Unsupported];return Task.CompletedTask;}
-        return Start(true,async(token,progress)=>{if(!await Driver.EnsureReadyAsync(token))throw new InvalidOperationException(T["Complete the graphics software step first, then continue."]);var path=await catalog.Install(settings.Workspace,Mirror,progress,token,Backend);var candidate=await catalog.Probe(path,settings.Workspace,token,Backend);token.ThrowIfCancellationRequested();Upsert(candidate);if(!candidate.Ready)throw new InvalidOperationException(candidate.Detail);stage="Environment ready";Changed(nameof(Stage));Percent=100;});
+        return Start(true,async(token,progress)=>{if(!await Driver.EnsureReadyAsync(token))throw new InvalidOperationException(T["Complete the graphics software step first, then continue."]);var path=await catalog.Install(settings.Workspace,Mirror,progress,token,Backend);var candidate=await catalog.ProbeInstalled(path,settings.Workspace,token,Backend);token.ThrowIfCancellationRequested();Upsert(candidate);if(!candidate.Ready||candidate.Backend!=Backend)throw new InvalidOperationException(candidate.Detail);settings.Python=candidate.Path;Selected=candidate;Changed(nameof(Selected));stage="Environment ready";Changed(nameof(Stage));Percent=100;});
     }
     public async Task CancelAsync(){cancel?.Cancel();await Driver.CancelAsync();if(operation!=null)await operation;}
     public void Dispose(){Driver.PropertyChanged-=DriverChanged;Driver.Dispose();disposed=true;cancel?.Cancel();T.PropertyChanged-=LanguageChanged;}

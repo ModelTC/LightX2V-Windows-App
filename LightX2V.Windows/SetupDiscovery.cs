@@ -47,18 +47,18 @@ public static class SetupDiscovery
         foreach(var root in new[]{"Documents","Desktop","Projects","Developer"})Scan(Path.Combine(home,root),0);
         return found.Take(40).ToArray();
     }
-    public static async Task<EnvironmentCandidate> Probe(string python,string workspace,CancellationToken token,string backend="auto")
+    public static async Task<EnvironmentCandidate> Probe(string python,string workspace,CancellationToken token,string backend="auto",int timeoutSeconds=90)
     {
         var folder=Path.Combine(workspace,"setup","probes",Guid.NewGuid().ToString("N"));var request=Path.Combine(folder,"request.json");Files.Write(request,new{protocol=1,backend});
         using var bridge=new BridgeClient();var ready=false;var detail="";var gate=new object();EnvironmentCandidate? metadata=null;
-        using var timeout=CancellationTokenSource.CreateLinkedTokenSource(token);timeout.CancelAfter(TimeSpan.FromSeconds(90));
+        using var timeout=CancellationTokenSource.CreateLinkedTokenSource(token);timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
             var code=await bridge.RunAsync(python,"check",request,Path.Combine(workspace,"tmp"),e=>{lock(gate)File.AppendAllText(Path.Combine(folder,"probe.ndjson"),JsonSerializer.Serialize(e)+Environment.NewLine);var type=e.GetProperty("type").GetString();if(type=="ready"){ready=true;detail=e.GetProperty("device").GetString()+" · "+e.GetProperty("torch").GetString();metadata=ReadCandidate(python,e);}else if(type=="error")detail=e.GetProperty("message").GetString()??"";},timeout.Token);
             return (metadata??new EnvironmentCandidate(python,false,"")) with{Ready=ready&&code==0,Detail=detail.Length>0?detail:$"Python exited without a ready event (code {code})."};
         }
         catch(OperationCanceledException) when(token.IsCancellationRequested){throw;}
-        catch(OperationCanceledException){return new(python,false,"Environment check timed out after 90 seconds.");}
+        catch(OperationCanceledException){return new(python,false,$"Environment check timed out after {timeoutSeconds} seconds.");}
         catch(Exception e){return new(python,false,e.Message);}
     }
     internal static EnvironmentCandidate ReadCandidate(string python,JsonElement value)

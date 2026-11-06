@@ -17,7 +17,7 @@ public sealed class SetupController : Observable,IDisposable
     public bool ManagedSupported=>Hardware.Supports(Backend);
     public string HardwareLabel=>string.Join("\n",Hardware.All.Where(d=>d.Backend.Length>0).Select(d=>d.Name+" · "+d.Driver));
     public string ResourceLabel {get{try{var r=ResourceSnapshot.Read(Workspace);return $"{T["System memory"]} {r.TotalRam/1073741824.0:F1} GiB · {T["Free"]} {r.AvailableRam/1073741824.0:F1} GiB · {T["Disk"]} {r.DiskFree/1073741824.0:F1} GiB {T["Free"]}";}catch(Exception e){return e.Message;}}}
-    public int Page {get=>page;set{Set(ref page,value);Changed(nameof(PageTitle));}}
+    public int Page {get=>page;set{if(!Set(ref page,value))return;if(value==3)Error="";Changed(nameof(PageTitle));}}
     public string PageTitle=>T[Page==0?"Choose workspace":Page==1?"Prepare environment":Page==2?"Prepare models":"Setup complete"];
     public string Workspace {get=>workspace;set{if(Driver?.Pending==true&&value!=workspace)return;Set(ref workspace,value);Changed(nameof(ResourceLabel));}}
     public bool Mirror {get=>mirror;set=>Set(ref mirror,value);}
@@ -32,14 +32,14 @@ public sealed class SetupController : Observable,IDisposable
     public double Percent {get=>percent;private set=>Set(ref percent,value);}
     public ObservableCollection<EnvironmentCandidate> Environments {get;}=[];
     public EnvironmentCandidate? Selected {get=>selected;set{Set(ref selected,value);if(value?.Ready==true){UseExisting=true;Driver?.ConfirmComputeReady();}}}
-    public SetupController(MainViewModel owner,IEnvironmentCatalog? catalog=null,DriverSetupModel? driver=null){this.catalog=catalog??new NativeEnvironmentCatalog();this.owner=owner;workspace=owner.Settings.Workspace;backend=Backends.Resolve(owner.Settings.Backend,HardwareInfo.Read());Driver=driver??new(backend,()=>Workspace,T);Driver.PropertyChanged+=DriverChanged;backend=Driver.Backend;if(Driver.Pending)page=1;Mirror=owner.T.Language=="zh";owner.T.PropertyChanged+=LanguageChanged;}
+    public SetupController(MainViewModel owner,IEnvironmentCatalog? catalog=null,DriverSetupModel? driver=null,IDriverPlatform? driverPlatform=null){this.catalog=catalog??new NativeEnvironmentCatalog();this.owner=owner;workspace=owner.Settings.Workspace;backend=Backends.Resolve(owner.Settings.Backend,HardwareInfo.Read());Driver=driver??new(backend,()=>Workspace,T,driverPlatform);Driver.PropertyChanged+=DriverChanged;backend=Driver.Backend;if(Driver.Pending)page=1;Mirror=owner.T.Language=="zh";owner.T.PropertyChanged+=LanguageChanged;}
     void DriverChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(HardwareLabel));Changed(nameof(ManagedSupported));Changed(nameof(BackendRecommendation));owner.SetupStateChanged();}
     void LanguageChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(PageTitle));Changed(nameof(Stage));Changed(nameof(ResourceLabel));Changed(nameof(EnvironmentSummary));Changed(nameof(BackendRecommendation));}
     public void Restart(){Backend=Backends.Resolve(owner.Settings.Backend,Hardware);Workspace=owner.Settings.Workspace;Page=0;Stage="";Detail="";Error="";Percent=0;EnvironmentReady=owner.Ready;ComputerScanned=false;environmentsSearched=false;Changed(nameof(EnvironmentSummary));}
     void Progress(SetupProgress value){if(value.Stage.Length>0)Stage=value.Stage;Detail=value.Detail;Percent=value.Percent;if(value.Log!=null){Logs+=value.Log+System.Environment.NewLine;if(Logs.Length>40000)Logs=Logs[^30000..];}}
     async Task Execute(Func<CancellationToken,IProgress<SetupProgress>,Task> action)
     {
-        if(Busy||Driver.Busy)return;Error="";Busy=true;cancel=new();var progress=new Progress<SetupProgress>(Progress);
+        if(Busy||Driver.Busy||owner.IsChecking)return;Error="";Busy=true;cancel=new();var progress=new Progress<SetupProgress>(Progress);
         try{operation=action(cancel.Token,progress);await operation;}
         catch(OperationCanceledException) when(cancel.IsCancellationRequested){Error=T["Setup cancelled; progress is saved"] ;Stage="Setup cancelled";}
         catch(Exception e){Logs+=e+System.Environment.NewLine;Error=FriendlySetupError(e.Message);Stage="Setup failed";}
@@ -55,6 +55,16 @@ public sealed class SetupController : Observable,IDisposable
     }
     public AppSettings EnvironmentSettings(){var settings=owner.Settings.Clone();settings.Workspace=Workspace;settings.Backend=Backend;return settings;}
     public void ResumeModels(){Workspace=owner.Settings.Workspace;EnvironmentReady=true;Page=2;}
+    public Task ResumeStartupAsync()=>Execute(async(token,progress)=>
+    {
+        if(!owner.Ready)await owner.CheckAsync(token);token.ThrowIfCancellationRequested();
+        if(owner.Ready)
+        {
+            if(owner.VerifiedEnvironment is {} candidate){Upsert(candidate);Selected=candidate;UseExisting=true;}
+            ResumeModels();
+        }
+        else{Page=1;await ScanComputerCore(token,progress);await SearchEnvironmentsCore(token,progress);}
+    });
     public void AcceptCandidate(EnvironmentCandidate candidate)
     {
         if(Busy||Driver.Busy||!candidate.Ready||candidate.Backend!=Backend||!Environments.Contains(candidate))return;
@@ -115,17 +125,19 @@ public sealed class SetupController : Observable,IDisposable
     {
         await Execute(async(token,progress)=>{
             var settings=owner.Settings.Clone();settings.Workspace=Workspace.Trim();settings.Backend=Backend;settings.ValidateWorkspace();
+            EnvironmentReady=false;
             if(!await Driver.EnsureReadyAsync(token))throw new InvalidOperationException(T["Complete the graphics software step first, then continue."]);
             if(install)
             {
-                var seeds=new List<string>();var legacy=AppSettings.FindBackend();if(legacy.Length>0)seeds.Add(Path.Combine(legacy,"downloads"));
-                settings.Python=await SetupInstaller.Install(settings.Workspace,Mirror,seeds,progress,token,Backend);
+                settings.Python=await catalog.Install(settings.Workspace,Mirror,progress,token,Backend);
             }
             else if(Selected?.Ready==true&&Selected.Backend==Backend)settings.Python=Selected.Path;
             else throw new InvalidOperationException(T["Choose a compatible environment"]);
-            progress.Report(new("Preparing LightX2V source"));settings.Repository=await SetupInstaller.PrepareSource(settings.Workspace,token);
-            progress.Report(new("Checking environment"));var probe=await SetupDiscovery.Probe(settings.Python,settings.Workspace,token,Backend);if(!probe.Ready)throw new InvalidOperationException(probe.Detail);
-            settings.Backend=probe.Backend;owner.CommitSetup(settings);await owner.CheckAsync(token);if(!owner.Ready)throw new InvalidOperationException(owner.Toast);
+            progress.Report(new("Checking environment"));var probe=install?await catalog.ProbeInstalled(settings.Python,settings.Workspace,token,Backend):await catalog.Probe(settings.Python,settings.Workspace,token,Backend);token.ThrowIfCancellationRequested();Upsert(probe);
+            if(!probe.Ready||probe.Backend!=Backend)throw new InvalidOperationException(probe.Detail);
+            Selected=probe;UseExisting=true;
+            progress.Report(new("Preparing LightX2V source"));settings.Repository=await SetupInstaller.PrepareSource(settings.Workspace,token);token.ThrowIfCancellationRequested();
+            settings.Backend=probe.Backend;owner.CommitVerifiedEnvironment(settings,probe);
             EnvironmentReady=true;Stage="Environment ready";Percent=100;await DiscoverModelsCore(token,progress);Page=2;
         });
     }
@@ -151,7 +163,7 @@ public sealed partial class MainViewModel
     public SetupController Setup {get;private set;}=null!;
     public bool IsPreparingSetup=>Setup?.Busy==true||Setup?.Driver.Busy==true;
     public Action? RequestSetup;
-    void InitializeSetup()=>Setup=new(this);
+    void InitializeSetup(IEnvironmentCatalog? catalog=null,IDriverPlatform? driverPlatform=null)=>Setup=new(this,catalog,driverPlatform:driverPlatform);
     internal void SetupStateChanged(){RefreshStatus();Changed(nameof(IsPreparingSetup));}
     internal void CommitSetup(AppSettings value)
     {

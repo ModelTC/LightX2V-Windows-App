@@ -51,14 +51,14 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public ParameterCommand OpenLogCommand { get; }
     public ParameterCommand RemoveCommand { get; }
     public Action? RequestSettings; public event Action? ContentUpdated;
-    public MainViewModel(string? preferencesRoot = null,IModelDownloader? modelDownloader=null)
+    public MainViewModel(string? preferencesRoot = null,IModelDownloader? modelDownloader=null,IEnvironmentCatalog? environmentCatalog=null,IDriverPlatform? driverPlatform=null)
     {
         this.modelDownloader=modelDownloader??new NativeModelDownloader();
         dispatcher = Dispatcher.CurrentDispatcher; var useDefaultPreferences=preferencesRoot==null; preferencesRoot ??= AppSettings.PreferencesRoot(); preferencesPath = Path.Combine(preferencesRoot, "preferences.json");
         Preferences? prefs = null; try { if (File.Exists(preferencesPath)) prefs = Files.Read<Preferences>(preferencesPath); else if(useDefaultPreferences&&AppSettings.LegacyPreferences() is {} old) {prefs=Files.Read<Preferences>(old);Files.Write(preferencesPath,prefs);} } catch (Exception e) { Debug.WriteLine(e); }
         T.Use(prefs?.Language ?? "zh"); Settings = prefs?.Settings ?? AppSettings.Detect();
         modelExpanded=prefs?.ModelExpanded??true;parametersExpanded=prefs?.ParametersExpanded??true;
-        InitializeImages();InitializeModels();InitializeSetup();
+        InitializeImages();InitializeModels();InitializeSetup(environmentCatalog,driverPlatform);
         LoadWorkspace();
         NewCommand = new(NewCreation,()=>!IsImporting); GenerateCommand = new(() => { if (IsRunning) _ = StopAsync(); else _ = GenerateAsync(); }, () => IsRunning && !IsStopping || CanGenerate);
         SettingsCommand = new(() => RequestSettings?.Invoke(), () => !IsRunning && !IsChecking && !IsImporting && !IsDownloading && !IsPreparingSetup); CheckCommand = new(() => _ = CheckAsync(), () => !IsRunning && !IsChecking && !IsDownloading);
@@ -95,15 +95,26 @@ public sealed partial class MainViewModel : Observable, IDisposable
             Settings.ValidateEnvironment();
             if(Settings.Repository.Equals(SetupInstaller.SourceDirectory(Settings.Workspace),StringComparison.OrdinalIgnoreCase)||!File.Exists(Path.Combine(Settings.Repository,"lightx2v","infer.py")))
             {Settings.Repository=await SetupInstaller.PrepareSource(Settings.Workspace,token);Changed(nameof(Settings));}
-            var probe=await SetupDiscovery.Probe(Settings.Python,Settings.Workspace,token,Settings.Backend);Ready=probe.Ready;
-            if(Ready){Settings.Backend=probe.Backend;ResourceWarning=ResourceWarnings(probe);Changed(nameof(ResourceWarning));}
-            if(Ready)Device=probe.Detail.Split(" · ")[0].Replace("(TM)","").Replace(" Graphics","");
-            foreach(var card in ModelCards)RefreshModel(card);ModelStateChanged();
-            Toast=Ready?T["Environment connected"]:T["Environment check failed"]+": "+probe.Detail;SavePreferences();
+            var probe=await SetupDiscovery.Probe(Settings.Python,Settings.Workspace,token,Settings.Backend);ApplyEnvironmentProbe(probe);
         }
         catch(OperationCanceledException) when(token.IsCancellationRequested){throw;}
         catch(Exception e){Toast=T["Environment check failed"]+": "+e.Message;}
         finally{IsChecking=false;}
+    }
+    internal void CommitVerifiedEnvironment(AppSettings settings,EnvironmentCandidate probe)
+    {
+        settings.ValidateEnvironment();
+        if(!probe.Ready||probe.Backend!=settings.Backend||!probe.Path.Equals(settings.Python,StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("The environment probe does not match the chosen Python and backend.");
+        CommitSetup(settings);ApplyEnvironmentProbe(probe);
+    }
+    internal EnvironmentCandidate? VerifiedEnvironment {get;private set;}
+    void ApplyEnvironmentProbe(EnvironmentCandidate probe)
+    {
+        VerifiedEnvironment=probe.Ready?probe:null;
+        Ready=probe.Ready;
+        if(Ready){Settings.Backend=probe.Backend;ResourceWarning=ResourceWarnings(probe);Changed(nameof(ResourceWarning));Device=probe.Detail.Split(" · ")[0].Replace("(TM)","").Replace(" Graphics","");}
+        foreach(var card in ModelCards)RefreshModel(card);ModelStateChanged();
+        Toast=Ready?T["Environment connected"]:T["Environment check failed"]+": "+probe.Detail;SavePreferences();
     }
     public async Task GenerateAsync()
     {
