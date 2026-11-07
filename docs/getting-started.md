@@ -30,3 +30,5 @@ v0.3.7 会在后台根据当前资源选择模型驻留、卸载或流式读取�
 作品和参数保存在工作目录的 `outputs` 中，历史索引是 `workspace.json`。偏好设置通常在 `%LOCALAPPDATA%\LightX2V\configuration\preferences.json`。升级时关闭旧 App，完整解压新版到新文件夹，继续使用原来的工作目录即可；已有完整模型和安装包可以复用。
 
 下载停止后可重试。生成失败可以查看任务日志；v0.3.7 还保存 `resource-plan.json`、阶段遥测和主机内存采样。显卡识别异常可在“更多帮助与电脑信息”中点击“复制检测信息”，也可查看工作目录的 `setup/hardware-detection.json`。分享前检查用户名、路径、提示词和参考图等个人信息。
+
+升级 v0.3.8 可继续复用 v0.3.7 的模型、Python 环境与工作区，无需清理目录。新版本修复 Windows 权重读取并完善崩溃诊断，相关说明见 [Windows 权重读取](windows-checkpoint-io.md)。

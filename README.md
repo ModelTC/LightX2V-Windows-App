@@ -1,16 +1,16 @@
-# LightX2V Windows App v0.3.7
+# LightX2V Windows App v0.3.8
 
 在 Windows 上用文字或参考图片创作图像。界面与 [LightX2V Mac App](https://github.com/ModelTC/LightX2V-Mac-App) 保持一致，使用 [LightX2V](https://github.com/ModelTC/LightX2V) 进行本地推理，支持 Qwen-Image-2.1-Turbo 和可选的 llama.cpp 提示词增强。
 
-**当前内测版本：v0.3.7。** 原生 Windows x64，无需 WSL。本版新增后台自动资源规划、受限容量下的 BF16 流式读取与阶段资源诊断，保留现有界面。AMD Radeon 8060S 为已有实测平台，本版验收结果见发布说明；NVIDIA CUDA 仍为预览支持，完整 RTX 出图待实机验收。
+**当前内测版本：v0.3.8。** 原生 Windows x64，无需 WSL。本版修复 Windows 大权重文件映射的风险路径，流式词表改为按需读取，并完善原生崩溃诊断；自动资源规划与现有界面保持原有行为。AMD Radeon 8060S 为已有实测平台，本版验收结果见发布说明；NVIDIA CUDA 仍为预览支持，完整 RTX 出图待实机验收。
 
 ## 下载与开始使用
 
 | 版本 | Windows x64 下载 | 状态 |
 | --- | --- | --- |
-| v0.3.7 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.7/LightX2V-Windows-0.3.7-win-x64.zip) | 内测版 / Pre-release |
+| v0.3.8 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.8/LightX2V-Windows-0.3.8-win-x64.zip) | 内测版 / Pre-release |
 
-[发布说明与已知限制](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/v0.3.7)。请下载上面的 App ZIP；GitHub 的源码下载按钮不包含可运行的 App。
+[发布说明与已知限制](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/v0.3.8)。请下载上面的 App ZIP；GitHub 的源码下载按钮不包含可运行的 App。
 
 1. 完整解压 ZIP，运行文件夹内的 `LightX2V.Windows.exe`。
 2. 按向导选择保存位置、检查电脑并准备组件、下载模型。
@@ -49,9 +49,9 @@ Windows 11 x64 是当前验证平台。CPU-only、Intel GPU、Windows ARM64、RT
 .\build.ps1
 ```
 
-输出为 `dist/LightX2V-Windows-0.3.7-win-x64.zip` 及 `.sha256`。构建校验提交的依赖清单，并从官方 GitHub Release 获取固定版本 llama.cpp；不会自动更换已锁定依赖。无需 GPU 即可编译，实际推理需要支持的 GPU 与对应环境。
+输出为 `dist/LightX2V-Windows-0.3.8-win-x64.zip` 及 `.sha256`。构建校验提交的依赖清单，并从官方 GitHub Release 获取固定版本 llama.cpp；不会自动更换已锁定依赖。无需 GPU 即可编译，实际推理需要支持的 GPU 与对应环境。
 
-参阅 [构建与测试](docs/development.md)、[验收范围](docs/testing.md)、[版本发布说明](docs/releases/v0.3.7.md) 和 [第三方组件](THIRD_PARTY_NOTICES.md)。
+参阅 [构建与测试](docs/development.md)、[验收范围](docs/testing.md)、[版本发布说明](docs/releases/v0.3.8.md) 和 [第三方组件](THIRD_PARTY_NOTICES.md)。
 
 ## 反馈问题
 

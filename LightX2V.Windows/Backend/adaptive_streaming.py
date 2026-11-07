@@ -6,6 +6,8 @@ The ordinary LightX2V path is retained unless the plan requests streaming.
 """
 import re
 
+from checkpoint_reader import BoundedSafetensorsCheckpoint
+
 _INSTALLED = False
 _LIFECYCLE_INSTALLED = False
 
@@ -190,10 +192,9 @@ class CheckpointEmbedding:
         self.dtype = dtype
 
     def apply(self, ids):
-        weights = self.checkpoint.load_tensors([self.weight_name])
-        # safetensors returns a file-backed CPU view; this touches selected rows,
-        # without making a pinned copy of the entire vocabulary.
-        value = self.torch.nn.functional.embedding(ids.cpu(), weights[self.weight_name])
+        # Read only requested rows into owned CPU storage. A file offset can
+        # never become a borrowed data pointer or require whole-file mapping.
+        value = self.checkpoint.read_rows(self.weight_name, ids.cpu())
         return value.to(device=self.device, dtype=self.dtype)
 
 
@@ -265,7 +266,6 @@ def install(config):
 
     import torch
     from loguru import logger
-    from lightx2v.common.offload.safetensors_checkpoint import SafetensorsCheckpoint
     from lightx2v.common.ops.norm.layer_norm_weight import LNWeightTemplate
     from lightx2v.models.input_encoders.hf.qwen_image_21.qwen3vl import (
         Qwen3VLTextLayer, Qwen3VLVision, QwenImage21TextEncoder,
@@ -282,7 +282,7 @@ def install(config):
     class StreamingTextEncoder(QwenImage21TextEncoder):
         def _load_weights(self, path, runtime_config):
             _validate_streaming(runtime_config)
-            checkpoint = SafetensorsCheckpoint(path)
+            checkpoint = BoundedSafetensorsCheckpoint(path)
             self.add_module('embedding', CheckpointEmbedding(checkpoint, self.embedding.weight_name, AI_DEVICE, GET_DTYPE(), torch))
             self.add_module('layers', CheckpointBlockStream(
                 checkpoint, lambda: Qwen3VLTextLayer(0, self.text_config, runtime_config),
@@ -318,7 +318,7 @@ def install(config):
         if not _enabled(self.config, 'dit_streaming'):
             return original_weights(self, weight_dict)
         _validate_streaming(self.config)
-        checkpoint = SafetensorsCheckpoint(self.model_path)
+        checkpoint = BoundedSafetensorsCheckpoint(self.model_path)
         if checkpoint.block_indices != tuple(range(self.config['num_layers'])):
             raise ValueError('The DiT checkpoint has unexpected block indices.')
         self.transformer_weights = CheckpointBlockStream(
@@ -371,7 +371,7 @@ def install(config):
     QwenImage21Runner._offload_transformer = offload_transformer
     QwenImage21Runner.end_run = end_run
     _INSTALLED = True
-    logger.info('[AdaptiveStreaming] Worker-local BF16 adapters installed')
+    logger.info('[AdaptiveStreaming] Worker-local BF16 adapters installed; owned row/block reads without mmap')
     return True
 
 

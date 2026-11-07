@@ -15,6 +15,7 @@ from pathlib import Path
 import sys
 import threading
 import time
+import uuid
 
 _ACTIVE = None
 
@@ -40,6 +41,7 @@ def _windows_commit():
         return {"system_commit_bytes": int(info.CommitTotal) * page,
                 "system_commit_limit_bytes": int(info.CommitLimit) * page,
                 "system_commit_peak_bytes": int(info.CommitPeak) * page,
+                "system_commit_peak_scope": "system_since_boot",
                 "system_commit_source": "GetPerformanceInfo",
                 "system_commit_exact": True}
     except Exception as error:
@@ -62,7 +64,13 @@ def sample_host(pid=None):
     except Exception as error:
         result["system_memory_error"] = str(error)
     try:
-        memory = psutil.Process(result["pid"]).memory_info()
+        process = psutil.Process(result["pid"])
+        created = process.create_time() if callable(getattr(process, "create_time", None)) else None
+        memory = process.memory_info()
+        if callable(getattr(process, "is_running", None)) and not process.is_running():
+            raise RuntimeError("Observed process exited or its PID was reused during sampling")
+        if created is not None:
+            result["process_create_time"] = created
         result["process_rss_bytes"] = int(memory.rss)
         private = getattr(memory, "private", None)
         if private is not None:
@@ -116,16 +124,27 @@ def _atomic_json(path, value):
 
 
 class _Journal:
-    def __init__(self, output_dir, filename, summary_name):
+    def __init__(self, output_dir, filename, summary_name, run_id=None):
         self.directory = Path(output_dir)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / filename
         self.summary_path = self.directory / summary_name
         self.lock = threading.RLock()
         self.started = time.monotonic()
-        self.summary = {"schema": 1, "status": "running", "pid": os.getpid(),
+        self.session_id = uuid.uuid4().hex
+        self.run_id = run_id or os.environ.get("LIGHTX2V_TASK_RUN_ID") or uuid.uuid4().hex
+        self.task_id = os.environ.get("LIGHTX2V_TASK_ID") or (
+            self.directory.parent.name if self.directory.name == "enhancement" else self.directory.name)
+        self._event_sequence = 0
+        self.summary = {"schema": 2, "status": "running", "pid": os.getpid(),
+                        "pid_scope": "producer", "producer_pid": os.getpid(),
+                        "observed_pid": os.getpid(), "observed_pids": [os.getpid()],
+                        "task_id": self.task_id, "run_id": self.run_id,
+                        "session_id": self.session_id,
+                        "metrics_scope": "successfully_written_events_in_this_session",
                         "started_at": time.time(), "sample_count": 0,
-                        "peaks": {}, "minimums": {}, "errors": []}
+                        "peaks": {}, "minimums": {}, "historical_peaks": {},
+                        "historical_peak_scopes": {}, "processes": {}, "errors": []}
         self.closed = False
 
     def _observe(self, snapshot, prefix=""):
@@ -134,9 +153,14 @@ class _Journal:
                 self._observe(value, prefix + name + ".")
             elif isinstance(value, (int, float)) and not isinstance(value, bool) and name.endswith("_bytes"):
                 key = prefix + name
-                if "available" in name or "free" in name:
-                    previous = self.summary["minimums"].get(key, value)
-                    self.summary["minimums"][key] = min(previous, value)
+                if name in ("system_commit_peak_bytes", "process_peak_rss_bytes"):
+                    scope = "system_since_boot" if name == "system_commit_peak_bytes" else "observed_process_lifetime"
+                    self.summary["historical_peaks"][key] = max(
+                        self.summary["historical_peaks"].get(key, 0), value)
+                    self.summary["historical_peak_scopes"][key] = scope
+                elif "available" in name or "free" in name:
+                    self.summary["minimums"][key] = min(
+                        self.summary["minimums"].get(key, value), value)
                 else:
                     self.summary["peaks"][key] = max(self.summary["peaks"].get(key, 0), value)
 
@@ -144,27 +168,48 @@ class _Journal:
         with self.lock:
             if self.closed:
                 return
-            item = {"schema": 1, "event": event, "timestamp": time.time(),
-                    "elapsed_seconds": time.monotonic() - self.started, **fields}
-            self._observe(fields)
-            self.summary["sample_count"] += 1
-            self.summary["last_event"] = event
-            self.summary["last_timestamp"] = item["timestamp"]
-            if event in ("stage_error", "guard_trigger", "instrumentation_error"):
-                self.summary["errors"].append({k: v for k, v in item.items()
-                    if k not in ("host", "gpu")})
-                self.summary["errors"] = self.summary["errors"][-50:]
+            sequence = self._event_sequence + 1
+            item = {**fields, "schema": 2, "event": event, "timestamp": time.time(),
+                    "elapsed_seconds": time.monotonic() - self.started,
+                    "sequence": sequence, "session_id": self.session_id,
+                    "run_id": self.run_id, "task_id": self.task_id,
+                    "producer_pid": os.getpid(),
+                    "observed_pid": self.summary["observed_pid"]}
+            # Aggregate only after the event was written and flushed. A failed
+            # append must never contribute an otherwise unobservable peak.
             with self.path.open("a", encoding="utf-8") as output:
                 output.write(json.dumps(item, ensure_ascii=False, default=str) + "\n")
                 output.flush()
+            self._event_sequence = sequence
+            self._observe(fields)
+            self.summary["sample_count"] += 1
+            self.summary["last_sequence"] = sequence
+            self.summary["last_event"] = event
+            self.summary["last_timestamp"] = item["timestamp"]
+            host = fields.get("host", {})
+            if isinstance(host, dict) and host.get("pid") is not None and not host.get("process_identity_mismatch"):
+                identity = str(host["pid"]) + ":" + str(host.get("process_create_time", "unknown"))
+                process = self.summary["processes"].setdefault(identity,
+                    {"pid": host["pid"], "create_time": host.get("process_create_time"), "peaks": {}})
+                for key, value in host.items():
+                    if key.startswith("process_") and key.endswith("_bytes") and isinstance(value, (int, float)):
+                        process["peaks"][key] = max(process["peaks"].get(key, 0), value)
+            if event == "stage_begin":
+                counts = self.summary.setdefault("stage_counts", {})
+                counts[fields["stage"]] = counts.get(fields["stage"], 0) + 1
+            if event in ("stage_error", "guard_trigger", "instrumentation_error"):
+                self.summary["errors"].append({key: value for key, value in item.items()
+                    if key not in ("host", "gpu")})
+                self.summary["errors"] = self.summary["errors"][-50:]
             _atomic_json(self.summary_path, self.summary)
 
     def safe_record(self, event, **fields):
         try:
             self.record(event, **fields)
-        except Exception:
+        except Exception as error:
             # Observability must never replace the original inference exception.
-            pass
+            self.summary["diagnostic_write_errors"] = self.summary.get("diagnostic_write_errors", 0) + 1
+            self.summary["last_diagnostic_write_error"] = str(error)
 
     def close(self, error=None):
         with self.lock:
@@ -216,8 +261,6 @@ class StageRecorder(_Journal):
         with self.lock:
             self.sequence += 1
             sequence = self.sequence
-            counts = self.summary["stage_counts"]
-            counts[name] = counts.get(name, 0) + 1
         parent = stack[-1] if stack else None
         stack.append(sequence)
         started = time.monotonic()
@@ -310,9 +353,12 @@ class ResourceMonitor(_Journal):
     """
     def __init__(self, output_dir, pid=None, interval=1.0, on_guard=None,
                  min_available_bytes=0, min_commit_headroom_bytes=0,
-                 guard_consecutive=3):
-        super().__init__(output_dir, "host-telemetry.jsonl", "host-resource-usage.json")
-        self.pid = pid
+                 guard_consecutive=3, run_id=None):
+        super().__init__(output_dir, "host-telemetry.jsonl", "host-resource-usage.json", run_id=run_id)
+        self.pid = os.getpid() if pid is None else int(pid)
+        self._expected_create_time = None
+        self.summary["observed_pid"] = self.pid
+        self.summary["observed_pids"] = [self.pid]
         self.interval = max(0.1, float(interval))
         self.on_guard = on_guard
         self.min_available_bytes = max(0, int(min_available_bytes))
@@ -324,11 +370,30 @@ class ResourceMonitor(_Journal):
         self._thread = None
 
     def set_pid(self, pid):
-        self.pid = pid
+        self.pid = int(pid)
+        self._expected_create_time = None
+        self.summary["observed_pid"] = self.pid
+        if self.pid not in self.summary["observed_pids"]:
+            self.summary["observed_pids"].append(self.pid)
         self._low_count = 0
 
     def sample(self):
         host = sample_host(self.pid)
+        actual_pid = host.get("pid", self.pid)
+        created = host.get("process_create_time")
+        if actual_pid != self.pid or (created is not None and self._expected_create_time is not None
+                                     and created != self._expected_create_time):
+            host = dict(host)
+            for name in tuple(host):
+                if name.startswith("process_") and name.endswith("_bytes"):
+                    host.pop(name)
+            host["process_identity_mismatch"] = {
+                "expected_pid": self.pid, "sample_pid": actual_pid,
+                "expected_create_time": self._expected_create_time,
+                "sample_create_time": created}
+        elif created is not None:
+            self._expected_create_time = created
+            self.summary["observed_process_create_time"] = created
         self.safe_record("host_sample", host=host)
         reasons = []
         available = host.get("system_available_bytes")

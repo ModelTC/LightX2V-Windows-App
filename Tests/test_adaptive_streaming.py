@@ -34,6 +34,11 @@ class MemoryCheckpoint:
         return {name: self.tensors[name].to(device) for name in names}
 
 
+    def read_rows(self, name, ids):
+        self.reads.append((name,))
+        return torch.nn.functional.embedding(ids, self.tensors[name])
+
+
 class MatrixLeaf:
     def __init__(self):
         self.base_attrs = [('layers.0.weight', 'weight', True)]
@@ -314,7 +319,7 @@ class NativeGpuStreamingTests(unittest.TestCase):
     def test_official_qwen_language_layers_match_resident(self):
         """Use two actual official layers and actual dimensions, with seven tokens."""
         import json
-        from lightx2v.common.offload.safetensors_checkpoint import SafetensorsCheckpoint
+        from checkpoint_reader import BoundedSafetensorsCheckpoint as SafetensorsCheckpoint
         from lightx2v.models.input_encoders.hf.qwen_image_21.qwen3vl import Qwen3VLTextLayer
         self.assertTrue(torch.cuda.is_available())
         model = Path(os.environ['LIGHTX2V_TEST_MODEL'])
@@ -348,7 +353,7 @@ class NativeGpuStreamingTests(unittest.TestCase):
     def test_official_qwen_dit_layers_match_resident(self):
         """Exercise real DiT matrix transposes, RMSNorm, attention and FFN weights."""
         import json
-        from lightx2v.common.offload.safetensors_checkpoint import SafetensorsCheckpoint
+        from checkpoint_reader import BoundedSafetensorsCheckpoint as SafetensorsCheckpoint
         from lightx2v.models.networks.qwen_image_21.weights.transformer_weights import QwenImage21BlockWeights
         from lightx2v.models.networks.qwen_image_21.infer.transformer_infer import QwenImage21TransformerInfer
         model = Path(os.environ['LIGHTX2V_TEST_MODEL'])
