@@ -113,12 +113,18 @@ def run(request, config, parent):
             references.append(path.relative_to(folder.resolve()).as_posix())
         if request.get('referenceResolution',512)!=512: raise ValueError('Use the accepted 512 reference resolution.')
     folder.mkdir(parents=True,exist_ok=True)
+    scratch=folder/'tmp'
+    scratch.mkdir(exist_ok=True)
+    os.environ['TEMP']=os.environ['TMP']=str(scratch)
     started=time.monotonic()
-    if request.get('promptEnhancement') is not None:
+    from runtime_profile import inspect_runtime, inference_profile, inference_environment
+    runtime=inspect_runtime(request.get('backend','auto'))
+    had_enhancement=request.get('promptEnhancement') is not None
+    if had_enhancement:
         from prompt_enhancement import run_enhancement, WindowsSupervisor, EnhancementCancelled, ratio_value
         supervisor=WindowsSupervisor(folder,parent,emit)
         try:
-            request=run_enhancement(request,folder,emit,supervisor)
+            request=run_enhancement(request,folder,emit,supervisor,runtime=runtime)
         except EnhancementCancelled:
             emit('done',status='cancelled',seconds=time.monotonic()-started);return 130
         finally: supervisor.close()
@@ -135,16 +141,23 @@ def run(request, config, parent):
         request.update(width=width,height=height)
         atomic_json(folder/'effective_request.json',request)
         emit('effective_request',prompt=prompt,width=width,height=height)
-    from runtime_profile import inspect_runtime, inference_profile, inference_environment
-    runtime=inspect_runtime(request.get('backend','auto'))
+    if had_enhancement: runtime=inspect_runtime(request.get('backend','auto'))
     backend=runtime['backend']
-    if psutil.virtual_memory().available < 8*1024**3:
-        raise RuntimeError('Less than 8 GiB of system memory is available. Close other applications before generating.')
+    from resource_plan import plan_resources, memory_pressure
+    pressure=memory_pressure(runtime['ramAvailable'],runtime['ramTotal'])
+    if pressure['severe']:
+        raise RuntimeError('System memory is critically low before loading the model. Close other applications and retry.')
     free_vram=runtime['free']
     large_image=width*height > 1100000
-    config,profile=inference_profile(backend,config,width,height,free_vram)
+    plan=plan_resources(request['model'],runtime,width,height,task=task,prompt=prompt,reference_count=len(references),reference_resolution=512)
+    config,profile=inference_profile(backend,config,width,height,free_vram,plan=plan)
+    atomic_json(folder/'resource-plan.json',plan)
+    if not plan['feasible']:
+        raise RuntimeError('Current available memory is below the estimated budget even with streaming. Close other applications and retry. See resource-plan.json in the task directory.')
+    emit('log',message='Automatic resource plan: '+profile)
+    config['_app_one_shot_worker']=True
     frozen=folder/'config.json'; atomic_json(frozen,config)
-    env=inference_environment(backend,os.environ,request['repository'],large_image)
+    env=inference_environment(backend,os.environ,request['repository'],large_image,plan=plan)
     cmd=[sys.executable,'-X','utf8','-u',str(Path(__file__).with_name('worker.py')),request['repository'],'--model_cls','qwen_image_21','--task',task,'--model_path',request['model'],'--config_json',str(frozen),'--prompt',prompt,'--size',str(height),str(width),'--seed',str(seed),'--save_result_path',str(output)]
     if references: cmd+=['--image_path',','.join(references),'--resolution','512']
     atomic_json(folder/'invocation.json',{'argv':cmd,'cwd':str(folder),'platform':sys.platform,
@@ -153,12 +166,14 @@ def run(request, config, parent):
     cancel=folder/'cancel.signal'; cancelled=False; memory_error=False; tail=[]; lines=queue.Queue()
     if cancel.exists() or not parent_alive(parent):
         emit('done',status='cancelled',seconds=time.monotonic()-started);return 130
-    job=OwnedJob(); child=None
+    from telemetry import ResourceMonitor
+    job=OwnedJob(); child=None; monitor=None; pressure_since=None
     emit('status',phase='loading',message='Loading model')
     try:
         child=subprocess.Popen(cmd,cwd=folder,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace',bufsize=1,creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
         job.assign(child)
         emit('child_started',pid=child.pid)
+        monitor=ResourceMonitor(folder,pid=child.pid).start()
         def read():
             try:
                 for line in child.stdout: lines.put(line)
@@ -166,8 +181,15 @@ def run(request, config, parent):
         reader=threading.Thread(target=read,daemon=True); reader.start(); ended=False
         with (folder/'inference.log').open('w',encoding='utf-8') as log:
             while not ended:
-                if psutil.virtual_memory().available < 8*1024**3:
-                    memory_error=True;job.terminate()
+                memory=psutil.virtual_memory()
+                pressure=memory_pressure(memory.available,memory.total)
+                if pressure['severe']:
+                    if pressure_since is None: pressure_since=time.monotonic()
+                    if time.monotonic()-pressure_since >= 2 and not memory_error:
+                        memory_error=True
+                        if monitor is not None: monitor.record_guard('host_memory_pressure',**pressure)
+                        job.terminate()
+                else: pressure_since=None
                 if cancel.exists() or not parent_alive(parent):
                     cancelled=True;job.terminate()
                 try: raw=lines.get(timeout=.2)
@@ -182,7 +204,7 @@ def run(request, config, parent):
                 elif 'Onload Text Encoder' in line: emit('status',phase='encoding',message='Encoding prompt')
                 elif 'Run DiT cost' in line: emit('status',phase='decoding',message='Decoding image')
         code=child.wait()
-        if memory_error: raise RuntimeError('Available system memory fell below 8 GiB. Try a smaller image or close other memory-intensive applications.')
+        if memory_error: raise RuntimeError('Generation stopped because system memory remained critically low. See host-telemetry.jsonl and resource-plan.json in the task directory.')
         if cancelled:
             emit('done',status='cancelled',seconds=time.monotonic()-started); return 130
         if code: raise RuntimeError('Inference exited with code '+str(code)+'\n'+'\n'.join(tail[-8:]))
@@ -193,6 +215,7 @@ def run(request, config, parent):
         emit('done',status='completed',output=str(output),width=width,height=height,seconds=time.monotonic()-started)
         return 0
     finally:
+        if monitor is not None: monitor.stop(error='host_memory_pressure' if memory_error else 'cancelled' if cancelled else sys.exc_info()[1])
         job.close()
         if child is not None:
             if child.poll() is None: child.kill()
@@ -209,6 +232,12 @@ def main():
         config=validate(request)
         return run(request,config,args.parent)
     except Exception as exc:
+        detail=traceback.format_exc()
+        try:
+            if args.mode=='run' and isinstance(request,dict) and request.get('output'):
+                folder=Path(request['output']).parent
+                if folder.is_dir(): (folder/'supervisor-error.log').write_text(detail,encoding='utf-8')
+        except Exception: pass
         emit('error',message=str(exc));emit('done',status='failed',message=str(exc));return 1
 
 if __name__=='__main__': raise SystemExit(main())

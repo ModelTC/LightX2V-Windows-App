@@ -29,23 +29,17 @@ def detect_backend(torch, expected='auto'):
     return backend
 
 
-def inference_profile(backend, config, width, height, free_vram=None):
+def inference_profile(backend, config, width, height, free_vram=None, plan=None):
+    """Apply a model/task resource plan; hardware tiers are never UI modes."""
     if backend not in BACKENDS:
         raise ValueError('Unknown inference backend.')
-    config = dict(config)
-    large = width * height > 1100000
-    if backend == 'amd_rocm':
-        if large:
-            config.update(cpu_offload=True, offload_granularity='model', use_tiling_vae=True, vae_tile_size=1024)
-        return config, 'qwen-2k' if large else 'standard'
-    # BF16 weights must not assume the large shared-memory budget of the AMD test host.
-    block = free_vram is None or free_vram < 28 * GIB
-    config.update(cpu_offload=True, offload_granularity='block' if block else 'model',
-                  text_encoder_cpu_offload=True, use_tiling_vae=True, vae_tile_size=512 if block else 1024)
-    return config, 'cuda-block-offload' if block else 'cuda-model-offload'
+    if plan is None:
+        raise ValueError('Automatic inference requires a model resource plan.')
+    from resource_plan import apply_resource_plan
+    return apply_resource_plan(config, plan), plan['strategy']
 
 
-def inference_environment(backend, parent, repository, large):
+def inference_environment(backend, parent, repository, large, plan=None):
     env = dict(parent)
     env.update(PLATFORM=backend, DTYPE='BF16', SENSITIVE_LAYER_DTYPE='None', PYTHONUTF8='1',
                PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1', PYTHONDONTWRITEBYTECODE='1',
@@ -56,7 +50,7 @@ def inference_environment(backend, parent, repository, large):
         env.pop(key, None)
     if backend == 'amd_rocm' and large:
         env['TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL'] = '1'
-    env['LIGHTX2V_PIN_HOST_WEIGHTS'] = '1'
+    env['LIGHTX2V_PIN_HOST_WEIGHTS'] = '1' if plan is None or plan.get('pin_host_weights', True) else '0'
     return env
 
 
@@ -71,7 +65,21 @@ def inspect_runtime(expected='auto'):
                             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     if result.returncode:
         raise RuntimeError(result.stderr.strip()[-2000:] or 'GPU runtime inspection failed.')
-    return json.loads(result.stdout)
+    # Native runtimes may write compiler diagnostics to stdout during GPU init.
+    # Read the explicit JSON result instead of treating diagnostics as the result.
+    return parse_runtime_output(result.stdout)
+
+
+def parse_runtime_output(output):
+    import json
+    for line in reversed(output.splitlines()):
+        try:
+            value=json.loads(line)
+        except (ValueError,TypeError):
+            continue
+        if isinstance(value,dict) and value.get('backend') in BACKENDS and all(k in value for k in ('free','total','ramAvailable','ramTotal')):
+            return value
+    raise RuntimeError('GPU runtime inspection did not return a valid resource result.')
 
 
 if __name__ == '__main__':
@@ -80,4 +88,11 @@ if __name__ == '__main__':
     import torch
     backend = detect_backend(torch, sys.argv[1])
     free, total = torch.cuda.mem_get_info(0)
-    print(json.dumps(dict(backend=backend, free=free, total=total)))
+    import psutil
+    properties = torch.cuda.get_device_properties(0)
+    memory = psutil.virtual_memory()
+    print(json.dumps(dict(backend=backend, free=free, total=total,
+                         ramAvailable=memory.available, ramTotal=memory.total,
+                         shared_memory=bool(getattr(properties, 'is_integrated', False)),
+                         device=properties.name,
+                         capability=list(torch.cuda.get_device_capability(0)))))

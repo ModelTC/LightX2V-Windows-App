@@ -22,19 +22,31 @@ class RuntimeProfileTests(unittest.TestCase):
             with self.subTest(value=value),self.assertRaises(RuntimeError):runtime.detect_backend(value)
     def test_ampere_ada_blackwell(self):
         for cap in [(8,0),(8,6),(8,9),(9,0),(12,0)]:self.assertEqual(runtime.detect_backend(torch(capability=cap)),'cuda')
-    def test_amd_config_preserved_for_all_sizes(self):
+    def test_automatic_plan_applies_identically_to_both_backends(self):
+        base={'infer_steps':8,'sigmas':[1,.5],'cpu_offload':False}
+        plan={'strategy':'ssd_streaming','dit_streaming':True,'text_encoder_streaming':True,
+              'config_changes':{'cpu_offload':True,'offload_granularity':'block','text_encoder_cpu_offload':True}}
+        for backend in runtime.BACKENDS:
+            actual,name=runtime.inference_profile(backend,base,512,512,plan=plan)
+            self.assertEqual(name,'ssd_streaming')
+            self.assertTrue(actual['cpu_offload'])
+            self.assertIs(actual['_app_resource_plan'],plan)
+            self.assertEqual(actual['sigmas'],base['sigmas'])
+        self.assertFalse(base['cpu_offload'])
+    def test_model_plan_is_required_instead_of_fixed_gpu_thresholds(self):
+        with self.assertRaisesRegex(ValueError,'resource plan'):
+            runtime.inference_profile('cuda',{},512,512,8*runtime.GIB)
+    def test_native_compiler_stdout_does_not_replace_probe_result(self):
         import json
-        base=json.loads((ROOT/'LightX2V.Windows/Resources/qwen_image_21_turbo.json').read_text())
-        for width,height in [(512,512),(1376,768),(1024,1024),(2048,2048),(2752,1536)]:
-            expected=dict(base)
-            if width*height>1100000:expected.update(cpu_offload=True,offload_granularity='model',use_tiling_vae=True,vae_tile_size=1024)
-            actual,profile=runtime.inference_profile('amd_rocm',base,width,height)
-            self.assertEqual(actual,expected);self.assertEqual(base['cpu_offload'],False)
-    def test_cuda_memory_policy(self):
-        for memory in [None,8,12,16,24]:
-            config,profile=runtime.inference_profile('cuda',{},1024,1024,None if memory is None else memory*runtime.GIB)
-            self.assertEqual(config['offload_granularity'],'block');self.assertTrue(config['use_tiling_vae']);self.assertEqual(config['vae_tile_size'],512)
-        self.assertEqual(runtime.inference_profile('cuda',{},512,512,32*runtime.GIB)[0]['offload_granularity'],'model')
+        expected={'backend':'amd_rocm','free':7,'total':8,'ramAvailable':18,'ramTotal':32}
+        self.assertEqual(runtime.parse_runtime_output('#define native_diagnostic 1\n'+json.dumps(expected)+'\n'),expected)
+        with self.assertRaisesRegex(RuntimeError,'resource result'):
+            runtime.parse_runtime_output('not a result')
+    def test_plan_controls_pinning_in_both_directions(self):
+        for backend in runtime.BACKENDS:
+            for pin in (False,True):
+                actual=runtime.inference_environment(backend,{'LIGHTX2V_PIN_HOST_WEIGHTS':'1' if not pin else '0'},'repo',False,{'pin_host_weights':pin})
+                self.assertEqual(actual['LIGHTX2V_PIN_HOST_WEIGHTS'],'1' if pin else '0')
     def test_backend_environment_isolation(self):
         parent={'PLATFORM':'amd_rocm','TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL':'1','RANK':'1','PYTORCH_NO_HIP_MEMORY_CACHING':'1','WORLD_SIZE':'2'}
         for backend in runtime.BACKENDS:

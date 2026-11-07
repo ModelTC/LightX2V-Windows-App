@@ -47,7 +47,6 @@ public sealed record ResourceSnapshot(ulong TotalRam,ulong AvailableRam,long Dis
     }
     public static long FreeDisk(string directory){var path=Path.GetFullPath(directory);while(!Directory.Exists(path))path=Path.GetDirectoryName(path)??throw new IOException("Choose a local workspace drive.");return new DriveInfo(Path.GetPathRoot(path)!).AvailableFreeSpace;}
     public string Summary=> $"RAM {TotalRam/1073741824.0:F1} GiB · {AvailableRam/1073741824.0:F1} GiB free · Disk {DiskFree/1073741824.0:F1} GiB free";
-    public static void RequireMemory(ulong available){if(available<8UL*1024*1024*1024)throw new IOException("Less than 8 GiB of system memory is available. Close other applications before generating.");}
 }
 
 public sealed class CudaDriverException(DriverCondition condition,string message) : InvalidOperationException(message)
