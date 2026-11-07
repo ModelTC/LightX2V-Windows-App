@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import traceback
+import uuid
 
 sys.dont_write_bytecode = True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
@@ -42,6 +43,77 @@ def validate(request):
     if config.get('attn_type') != 'torch_sdpa' or config.get('do_time_shift') is not False or config.get('enable_cfg') is not False:
         raise ValueError('Use the bundled native Qwen Turbo configuration.')
     return config
+
+
+def find_existing_crash_dumps(folder, worker_pid, executable, started_at, roots=None):
+    """Locate accessible, existing PID-matched dumps; never configure WER or copy dumps."""
+    if roots is None:
+        roots = [Path(folder), Path(folder) / "crash"]
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            roots.append(Path(local) / "CrashDumps")
+    executable_name = Path(executable).name
+    pattern = re.compile(re.escape(executable_name) + r"\." + str(int(worker_pid))
+                         + r"(?:\.[^.]+)?\.dmp$", re.IGNORECASE)
+    found = []
+    for directory in dict.fromkeys(Path(root) for root in roots):
+        try:
+            candidates = directory.glob(executable_name + "." + str(int(worker_pid)) + "*.dmp")
+            for path in candidates:
+                try:
+                    info = path.stat()
+                    if (pattern.fullmatch(path.name) and path.is_file() and info.st_size > 0
+                            and info.st_mtime >= float(started_at) - 2):
+                        found.append({"path": str(path.resolve()), "size_bytes": info.st_size,
+                                      "modified_at": info.st_mtime})
+                except OSError:
+                    continue
+        except OSError:
+            continue
+    return sorted(found, key=lambda item: item["modified_at"], reverse=True)
+
+
+def worker_exit_details(code, worker_pid, folder, executable, started_at, dump_roots=None):
+    unsigned = int(code) & 0xFFFFFFFF
+    native = (unsigned & 0xC0000000) == 0xC0000000
+    details = {"schema": 1, "worker_pid": int(worker_pid), "producer_pid": os.getpid(),
+               "exit_code": int(code), "exit_code_unsigned": unsigned,
+               "exit_code_hex": f"0x{unsigned:08X}", "native_failure": native,
+               "worker_started_at": started_at, "worker_finished_at": time.time(),
+               "task_id": Path(folder).name,
+               "reason": "access violation" if unsigned == 0xC0000005 else
+                         "native process failure" if native else "process exit"}
+    details["dumps"] = (find_existing_crash_dumps(folder, worker_pid, executable,
+                        started_at, roots=dump_roots) if native else [])
+    details["dump_collection"] = "existing_files_only; WER_configuration_unchanged"
+    fault = Path(folder) / "worker-fault.log"
+    try:
+        if fault.is_file() and fault.stat().st_size > 0:
+            details["faulthandler_log"] = str(fault.resolve())
+    except OSError:
+        pass
+    try:
+        atomic_json(Path(folder) / "worker-exit.json", details)
+    except Exception as error:
+        details["diagnostic_write_error"] = str(error)
+    return details
+
+
+def worker_failure_message(details, tail):
+    identity = details["exit_code_hex"] + "; worker PID " + str(details["worker_pid"])
+    if details["native_failure"]:
+        message = "Native inference process crashed (" + details["reason"] + ", " + identity + ")."
+        if details.get("faulthandler_log"):
+            message += "\nPython fault log: " + details["faulthandler_log"]
+        if details["dumps"]:
+            message += "\nFound existing crash dump: " + "\n".join(
+                item["path"] for item in details["dumps"])
+        else:
+            message += "\nNo matching existing crash dump was found in the checked task and default CrashDumps locations."
+        message += "\nSee worker-exit.json and inference.log in the task directory."
+        return message
+    return ("Inference exited with code " + str(details["exit_code"]) + " (" + identity
+            + ")\n" + "\n".join(tail[-8:]))
 
 
 class IO_COUNTERS(ctypes.Structure):
@@ -158,6 +230,8 @@ def run(request, config, parent):
     config['_app_one_shot_worker']=True
     frozen=folder/'config.json'; atomic_json(frozen,config)
     env=inference_environment(backend,os.environ,request['repository'],large_image,plan=plan)
+    env['LIGHTX2V_TASK_RUN_ID']=uuid.uuid4().hex
+    env['LIGHTX2V_TASK_ID']=folder.name
     cmd=[sys.executable,'-X','utf8','-u',str(Path(__file__).with_name('worker.py')),request['repository'],'--model_cls','qwen_image_21','--task',task,'--model_path',request['model'],'--config_json',str(frozen),'--prompt',prompt,'--size',str(height),str(width),'--seed',str(seed),'--save_result_path',str(output)]
     if references: cmd+=['--image_path',','.join(references),'--resolution','512']
     atomic_json(folder/'invocation.json',{'argv':cmd,'cwd':str(folder),'platform':sys.platform,
@@ -167,13 +241,14 @@ def run(request, config, parent):
     if cancel.exists() or not parent_alive(parent):
         emit('done',status='cancelled',seconds=time.monotonic()-started);return 130
     from telemetry import ResourceMonitor
-    job=OwnedJob(); child=None; monitor=None; pressure_since=None
+    job=OwnedJob(); child=None; monitor=None; pressure_since=None; worker_started_at=None
     emit('status',phase='loading',message='Loading model')
     try:
+        worker_started_at=time.time()
         child=subprocess.Popen(cmd,cwd=folder,env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace',bufsize=1,creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
         job.assign(child)
         emit('child_started',pid=child.pid)
-        monitor=ResourceMonitor(folder,pid=child.pid).start()
+        monitor=ResourceMonitor(folder,pid=child.pid,run_id=env['LIGHTX2V_TASK_RUN_ID']).start()
         def read():
             try:
                 for line in child.stdout: lines.put(line)
@@ -204,10 +279,15 @@ def run(request, config, parent):
                 elif 'Onload Text Encoder' in line: emit('status',phase='encoding',message='Encoding prompt')
                 elif 'Run DiT cost' in line: emit('status',phase='decoding',message='Decoding image')
         code=child.wait()
+        exit_details=worker_exit_details(code,child.pid,folder,sys.executable,worker_started_at)
+        if monitor is not None:
+            monitor.safe_record('worker_exit',worker_pid=child.pid,
+                exit_code=code,exit_code_hex=exit_details['exit_code_hex'],
+                native_failure=exit_details['native_failure'])
         if memory_error: raise RuntimeError('Generation stopped because system memory remained critically low. See host-telemetry.jsonl and resource-plan.json in the task directory.')
         if cancelled:
             emit('done',status='cancelled',seconds=time.monotonic()-started); return 130
-        if code: raise RuntimeError('Inference exited with code '+str(code)+'\n'+'\n'.join(tail[-8:]))
+        if code: raise RuntimeError(worker_failure_message(exit_details,tail))
         from PIL import Image
         with Image.open(output) as im:
             im.load()
@@ -215,7 +295,12 @@ def run(request, config, parent):
         emit('done',status='completed',output=str(output),width=width,height=height,seconds=time.monotonic()-started)
         return 0
     finally:
-        if monitor is not None: monitor.stop(error='host_memory_pressure' if memory_error else 'cancelled' if cancelled else sys.exc_info()[1])
+        if monitor is not None:
+            try:
+                monitor.stop(error='host_memory_pressure' if memory_error else 'cancelled' if cancelled else sys.exc_info()[1])
+            except Exception:
+                # A monitor cleanup failure must not replace the inference error.
+                pass
         job.close()
         if child is not None:
             if child.poll() is None: child.kill()

@@ -35,6 +35,16 @@ class WorkerEntryTests(unittest.TestCase):
             (package / "__init__.py").write_text("", encoding="utf-8")
             (package / "entry_helper.py").write_text(
                 "IMPORT_MARKER = 'selected repository helper'\n", encoding="utf-8")
+            (backend / "checkpoint_io.py").write_text(PRELUDE + r'''
+import faulthandler
+import sys
+def install_windows_checkpoint_io():
+    event("checkpoint_policy_install", fault_enabled=faulthandler.is_enabled(),
+          torch_imported="torch" in sys.modules)
+    if os.environ.get("WORKER_FIXTURE_MODE") == "bootstrap_error":
+        raise RuntimeError("original bootstrap failure")
+    return {"enabled": True, "backend": "test_pread"}
+''', encoding="utf-8")
             (backend / "adaptive_streaming.py").write_text(PRELUDE + r'''
 def install(config):
     event("stream_install", config=config)
@@ -47,23 +57,31 @@ class Recorder:
         event("telemetry_close",
               error_type=None if error is None else type(error).__name__,
               error=None if error is None else str(error))
+        if os.environ.get("WORKER_FIXTURE_MODE") == "runtime_error_with_close_failure":
+            raise OSError("observer close failure")
 def install(config, output_dir):
     event("telemetry_install", config=config, output_dir=str(output_dir))
     return Recorder()
 ''', encoding="utf-8")
             (package / "infer.py").write_text(PRELUDE + r'''
 import sys
+import __main__ as entry
+import faulthandler
 from lightx2v.entry_helper import IMPORT_MARKER
 config_path = Path(sys.argv[sys.argv.index("--config_json") + 1])
 config = json.loads(config_path.read_text(encoding="utf-8-sig"))
 event("infer_begin", argv=sys.argv, isolated=sys.flags.isolated,
-      helper=IMPORT_MARKER, source=str(Path(__file__).resolve()))
-if config["fixture_mode"] == "runtime_error":
+      helper=IMPORT_MARKER, source=str(Path(__file__).resolve()),
+      fault_enabled=faulthandler.is_enabled())
+faulthandler.dump_traceback(file=entry._FAULT_FD, all_threads=True)
+if config["fixture_mode"] in ("runtime_error", "runtime_error_with_close_failure"):
     raise RuntimeError("original inference failure")
 if config["fixture_mode"] == "interrupt":
     raise KeyboardInterrupt("original inference interruption")
 if config["fixture_mode"] == "system_exit":
     raise SystemExit(7)
+if config["fixture_mode"] == "system_exit_zero":
+    raise SystemExit(0)
 event("infer_return")
 ''', encoding="utf-8")
             # These would fail if the child used cwd/PYTHONPATH as module sources.
@@ -83,6 +101,7 @@ event("infer_return")
             event_path = folder / "entry-events.jsonl"
             environment = os.environ.copy()
             environment.update(WORKER_ENTRY_EVENTS=str(event_path),
+                               WORKER_FIXTURE_MODE=mode,
                                PYTHONPATH=str(hostile))
             prompt = "中文 prompt with spaces, commas\nand a second line"
             arguments = ["--model_cls", "qwen_image_21", "--config_json",
@@ -97,19 +116,32 @@ event("infer_return")
             return result, entries, {
                 "config": config, "folder": str(folder),
                 "argv": ["lightx2v.infer", *arguments],
-                "source": str((package / "infer.py").resolve())}
+                "source": str((package / "infer.py").resolve()),
+                "startup": json.loads((folder / "worker-start.json").read_text()),
+                "fault_log": (folder / "worker-fault.log").read_text(encoding="utf-8", errors="replace"),
+                "python_error": ((folder / "worker-python-error.log").read_text(encoding="utf-8")
+                                 if (folder / "worker-python-error.log").exists() else ""),
+                "diagnostic_error": ((folder / "worker-diagnostics-error.log").read_text(encoding="utf-8")
+                                     if (folder / "worker-diagnostics-error.log").exists() else "")}
 
     def assert_installed_in_order(self, entries, expected):
-        self.assertGreaterEqual(len(entries), 4)
-        self.assertEqual([entry['event'] for entry in entries[:4]],
-                         ['stream_install','lifecycle_install','telemetry_install','infer_begin'])
-        for entry in entries[:3]:
-            self.assertEqual(entry['config'],expected['config'])
-        self.assertEqual(entries[2]['output_dir'],expected['folder'])
-        self.assertEqual(entries[3]['isolated'],1)
-        self.assertEqual(entries[3]['argv'],expected['argv'])
-        self.assertEqual(entries[3]['source'],expected['source'])
-        self.assertEqual(entries[3]['helper'],'selected repository helper')
+        self.assertGreaterEqual(len(entries), 5)
+        self.assertEqual([entry['event'] for entry in entries[:5]],
+                         ['checkpoint_policy_install','stream_install','lifecycle_install',
+                          'telemetry_install','infer_begin'])
+        self.assertTrue(entries[0]['fault_enabled'])
+        self.assertFalse(entries[0]['torch_imported'])
+        for event in entries[1:4]:
+            self.assertEqual(event['config'], expected['config'])
+        self.assertEqual(entries[3]['output_dir'], expected['folder'])
+        self.assertEqual(entries[4]['isolated'], 1)
+        self.assertEqual(entries[4]['argv'], expected['argv'])
+        self.assertEqual(entries[4]['source'], expected['source'])
+        self.assertTrue(entries[4]['fault_enabled'])
+        self.assertEqual(entries[4]['helper'], 'selected repository helper')
+        self.assertIn("Worker PID:", expected['fault_log'])
+        self.assertIn("infer.py", expected['fault_log'])
+        self.assertTrue(expected['startup']['faulthandler_enabled'])
 
     def test_isolated_worker_finds_backend_and_repository_then_closes(self):
         result, entries, expected = self.run_worker("normal")
@@ -149,6 +181,30 @@ event("infer_return")
         self.assertEqual(entries[-1]["error_type"], "SystemExit")
         self.assertEqual(entries[-1]["error"], "7")
 
+
+    def test_bootstrap_failure_already_has_persistent_fault_and_python_logs(self):
+        result, entries, expected = self.run_worker("bootstrap_error")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([event["event"] for event in entries], ["checkpoint_policy_install"])
+        self.assertTrue(entries[0]["fault_enabled"])
+        self.assertIn("Worker PID:", expected["fault_log"])
+        self.assertIn("original bootstrap failure", expected["python_error"])
+        self.assertEqual(expected["startup"]["status"], "failed")
+
+    def test_recorder_cleanup_cannot_replace_original_inference_error(self):
+        result, entries, expected = self.run_worker("runtime_error_with_close_failure")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("RuntimeError: original inference failure", result.stderr)
+        self.assertIn("observer close failure", expected["diagnostic_error"])
+        self.assertEqual(expected["startup"]["error"], "original inference failure")
+
+    def test_successful_system_exit_is_not_marked_failed(self):
+        result, entries, expected = self.run_worker("system_exit_zero")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_installed_in_order(entries, expected)
+        self.assertIsNone(entries[-1]["error_type"])
+        self.assertEqual(expected["startup"]["status"], "completed")
+        self.assertEqual(expected["python_error"], "")
 
 if __name__ == "__main__":
     unittest.main()

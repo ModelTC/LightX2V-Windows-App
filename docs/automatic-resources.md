@@ -55,6 +55,9 @@ Prompt 增强结束、其子进程退出后，会重新检查资源再规划图�
 | `host-telemetry.jsonl` | 监督进程对所属子进程和主机内存的周期采样，以及内存保护事件。 |
 | `host-resource-usage.json` | 主机采样摘要。 |
 | `supervisor-error.log` | 监督进程捕获的错误详情，发生相关错误时生成。 |
+| `worker-start.json` | worker 启动身份、读取策略及正常 Python 路径的运行状态。 |
+| `worker-fault.log` | 提前启用的 faulthandler 日志；正常运行时可能只有身份信息。 |
+| `worker-exit.json` | 监督进程记录的实际退出码、worker PID、原生异常及已找到的 dump 路径。 |
 
 Prompt 增强的计划、命令、原始输出和诊断位于 `enhancement` 子目录，例如 `resource-plan.json`、`invocation.json` 和 `llama.log`。
 
@@ -88,3 +91,9 @@ Prompt 增强的计划、命令、原始输出和诊断位于 `enhancement` 子�
 Windows 上的 worker 还在开始与结束时记录本进程 DXGI LOCAL/NON_LOCAL 预算。它们用于诊断，不作为 GPU 分配器峰值或固定快池容量；同名适配器无法唯一匹配时保留全部结果。任务使用自己的可写临时目录，供原生运行时编译器和子进程使用。
 
 提示词增强读取 GGUF 的完整注意力与 recurrent 层布局，分别预算 KV 和固定状态；图像编辑还计入视觉投影模型及图像工作区。资源充分时保留完整 GPU 层，受限时自动减少 GPU 层，保留上下文、输出预算、参考图和采样设置。
+
+## v0.3.8 Windows 读取修复
+
+Windows 普通加载改用 pread；流式词表只显式读取所需行，流式层使用自有缓冲区。该修复不改变资源路径的自动选择，详见 [Windows 权重读取](windows-checkpoint-io.md)。
+
+原生崩溃可能使 worker 来不及写入 `stage_end` 或结束状态；此时结合 `worker-exit.json` 判断实际退出。v0.3.8 遥测的 `historical_peaks` 单独保存系统启动以来的 commit 峰值等历史指标，`peaks` 只汇总该会话成功写入日志的样本；通过 `run_id`、`session_id`、`producer_pid` 与 `observed_pid` 区分所属任务及进程。

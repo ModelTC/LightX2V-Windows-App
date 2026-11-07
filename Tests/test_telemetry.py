@@ -200,3 +200,108 @@ class TelemetryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TelemetryOwnershipTests(unittest.TestCase):
+    def test_producer_and_observed_process_are_explicit_and_journal_matches_summary(self):
+        with tempfile.TemporaryDirectory() as folder:
+            monitor = telemetry.ResourceMonitor(folder, pid=29212, run_id="task-run-fixture")
+            sample = {"pid": 29212, "process_create_time": 100.0,
+                      "process_private_bytes": 10, "system_commit_bytes": 20}
+            with patch.object(telemetry, "sample_host", return_value=sample):
+                monitor.sample()
+            monitor.close()
+            summary = json.loads((Path(folder) / "host-resource-usage.json").read_text())
+            rows = events(folder, "host-telemetry.jsonl")
+            self.assertEqual(summary["producer_pid"], os.getpid())
+            self.assertEqual(summary["pid_scope"], "producer")
+            self.assertEqual(summary["observed_pid"], 29212)
+            self.assertEqual(summary["run_id"], "task-run-fixture")
+            self.assertEqual(summary["sample_count"], len(rows))
+            self.assertEqual(summary["last_sequence"], rows[-1]["sequence"])
+            for row in rows:
+                self.assertEqual(row["session_id"], summary["session_id"])
+                self.assertEqual(row["observed_pid"], 29212)
+                self.assertEqual(row["producer_pid"], os.getpid())
+
+    def test_failed_journal_append_cannot_pollute_summary_peak(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal = telemetry._Journal(folder, "events.jsonl", "summary.json")
+            journal.record("baseline", host={"process_private_bytes": 10})
+            original_open = Path.open
+            def failing_open(path, *args, **kwargs):
+                if path == journal.path:
+                    raise OSError("simulated append failure")
+                return original_open(path, *args, **kwargs)
+            with patch.object(Path, "open", new=failing_open):
+                journal.safe_record("not_written", host={"process_private_bytes": 999999})
+            journal.record("after", host={"process_private_bytes": 20})
+            journal.close()
+            summary = json.loads(journal.summary_path.read_text())
+            rows = events(folder, "events.jsonl")
+            self.assertEqual(summary["peaks"]["host.process_private_bytes"], 20)
+            self.assertEqual(summary["sample_count"], len(rows))
+            self.assertEqual(summary["diagnostic_write_errors"], 1)
+            self.assertNotIn("not_written", [item["event"] for item in rows])
+
+    def test_reused_directory_starts_new_session_without_old_peak(self):
+        with tempfile.TemporaryDirectory() as folder:
+            first = telemetry._Journal(folder, "events.jsonl", "summary.json")
+            first.record("sample", host={"process_private_bytes": 999})
+            first.close()
+            second = telemetry._Journal(folder, "events.jsonl", "summary.json")
+            second.record("sample", host={"process_private_bytes": 10})
+            second.close()
+            rows = events(folder, "events.jsonl")
+            summary = json.loads(second.summary_path.read_text())
+            self.assertNotEqual(first.session_id, second.session_id)
+            current = [row for row in rows if row["session_id"] == summary["session_id"]]
+            self.assertEqual(summary["sample_count"], len(current))
+            self.assertEqual(summary["peaks"]["host.process_private_bytes"], 10)
+            self.assertGreater(len(rows), len(current))
+
+    def test_system_history_peak_is_not_an_observed_task_commit_peak(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal = telemetry._Journal(folder, "events.jsonl", "summary.json")
+            journal.record("sample", host={"system_commit_bytes": 20,
+                                          "system_commit_peak_bytes": 900})
+            journal.close()
+            summary = json.loads(journal.summary_path.read_text())
+            self.assertEqual(summary["peaks"]["host.system_commit_bytes"], 20)
+            self.assertNotIn("host.system_commit_peak_bytes", summary["peaks"])
+            self.assertEqual(summary["historical_peaks"]["host.system_commit_peak_bytes"], 900)
+            self.assertEqual(summary["historical_peak_scopes"]["host.system_commit_peak_bytes"],
+                             "system_since_boot")
+
+    def test_pid_reuse_sample_does_not_contribute_new_process_memory(self):
+        with tempfile.TemporaryDirectory() as folder:
+            monitor = telemetry.ResourceMonitor(folder, pid=29212)
+            samples = [
+                {"pid": 29212, "process_create_time": 100.0, "process_private_bytes": 10},
+                {"pid": 29212, "process_create_time": 200.0, "process_private_bytes": 999999},
+            ]
+            with patch.object(telemetry, "sample_host", side_effect=samples):
+                monitor.sample()
+                monitor.sample()
+            monitor.close()
+            summary = json.loads(monitor.summary_path.read_text())
+            rows = events(folder, "host-telemetry.jsonl")
+            self.assertEqual(summary["peaks"]["host.process_private_bytes"], 10)
+            mismatched = [row["host"] for row in rows if row.get("host", {}).get("process_identity_mismatch")]
+            self.assertEqual(len(mismatched), 1)
+            self.assertNotIn("process_private_bytes", mismatched[0])
+            self.assertNotIn("29212:200.0", summary["processes"])
+
+    def test_summary_recovers_after_atomic_summary_write_failure(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal = telemetry._Journal(folder, "events.jsonl", "summary.json")
+            with patch.object(telemetry, "_atomic_json", side_effect=OSError("summary busy")):
+                journal.safe_record("persisted_sample", host={"process_private_bytes": 10})
+            journal.record("after", host={"process_private_bytes": 30})
+            journal.close()
+            summary = json.loads(journal.summary_path.read_text())
+            rows = events(folder, "events.jsonl")
+            self.assertEqual(summary["sample_count"], len(rows))
+            self.assertEqual(summary["last_sequence"], len(rows))
+            replay = max(row.get("host", {}).get("process_private_bytes", 0) for row in rows)
+            self.assertEqual(summary["peaks"]["host.process_private_bytes"], replay)
