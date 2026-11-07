@@ -38,10 +38,10 @@ def probe(request, emit):
     torch.testing.assert_close(actual, expected, rtol=.03, atol=.3)
     q = torch.randn(1,2,32,32,dtype=torch.bfloat16)
     value = F.scaled_dot_product_attention(q.cuda(),q.cuda(),q.cuda()).float().cpu()
-    if not bool(torch.isfinite(value).all()): raise RuntimeError('AMD attention check returned invalid values.')
+    if not bool(torch.isfinite(value).all()): raise RuntimeError('GPU attention check returned invalid values.')
     torch.cuda.synchronize()
     import psutil
     free_vram, total_vram = torch.cuda.mem_get_info(0)
     memory = psutil.virtual_memory()
-    emit('ready', backend=backend, cuda=getattr(torch.version, 'cuda', None), gpuFree=free_vram, gpuTotal=total_vram, ramAvailable=memory.available, ramTotal=memory.total, device=device, python=platform.python_version(), torch=str(torch.__version__), hip=torch.version.hip, packages=versions, gpuTests='BF16 GEMM and SDPA passed')
+    emit('ready', backend=backend, cuda=getattr(torch.version, 'cuda', None), gpuFree=free_vram, gpuTotal=total_vram, ramAvailable=memory.available, ramTotal=memory.total, device=device, python=platform.python_version(), torch=str(torch.__version__), hip=torch.version.hip, packages=versions, sharedMemory=bool(getattr(torch.cuda.get_device_properties(0), 'is_integrated', False)), gpuTests='BF16 GEMM and SDPA passed')
     return 0

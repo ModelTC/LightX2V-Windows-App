@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import time
 import threading
 
@@ -25,21 +26,33 @@ class WindowsSupervisor:
         self.cancelled = False
         self.memory_error = False
         self.child = None
+        self.resource_monitor = None
         self.monitor = threading.Thread(target=self.watch, daemon=True)
 
     def watch(self):
         import psutil
         from bridge import parent_alive
+        pressure_since = None
+        from resource_plan import memory_pressure
         while not self.stopped.wait(.2):
             if (self.folder / 'cancel.signal').exists() or not parent_alive(self.parent):
                 self.cancelled = True; self.job.terminate(); return
-            if psutil.virtual_memory().available < 8 * 1024**3:
-                self.memory_error = True; self.job.terminate(); return
+            memory=psutil.virtual_memory()
+            pressure=memory_pressure(memory.available,memory.total)
+            if pressure['severe']:
+                if pressure_since is None: pressure_since=time.monotonic()
+                if time.monotonic()-pressure_since >= 2:
+                    self.memory_error = True
+                    if self.resource_monitor is not None: self.resource_monitor.record_guard('host_memory_pressure',**pressure)
+                    self.job.terminate(); return
+            else: pressure_since=None
 
     def spawn(self, args, **kwargs):
         self.child = subprocess.Popen(args, stdin=subprocess.DEVNULL, **kwargs)
         self.job.assign(self.child)
         self.emit('enhancement_child_started',pid=self.child.pid)
+        from telemetry import ResourceMonitor
+        self.resource_monitor=ResourceMonitor(self.folder/'enhancement',pid=self.child.pid).start()
         self.monitor.start()
         return self.child
 
@@ -48,11 +61,14 @@ class WindowsSupervisor:
         child.wait()
 
     def check_cancelled(self):
-        if self.memory_error: raise RuntimeError('Available system memory fell below 8 GiB during prompt enhancement.')
+        if self.memory_error: raise RuntimeError('Prompt enhancement stopped because system memory remained critically low.')
         if self.cancelled or (self.folder / 'cancel.signal').exists(): raise EnhancementCancelled()
 
     def close(self):
         self.stopped.set()
+        if self.resource_monitor is not None:
+            error='host_memory_pressure' if self.memory_error else 'cancelled' if self.cancelled else sys.exc_info()[1]
+            self.resource_monitor.stop(error=error)
         self.job.close()
         if self.child is not None: self.child.wait()
         if self.monitor.is_alive(): self.monitor.join(timeout=2)
@@ -87,7 +103,111 @@ def validate_resources(settings, mode):
     return str(executable)
 
 
-def command(request, folder):
+
+def _gguf_topology(path):
+    """Inspect GGUF metadata, including the hybrid attention/recurrent layout."""
+    from gguf import GGUFReader
+    reader = GGUFReader(str(path), mode='r')
+    def value(name, default=None):
+        field = reader.fields.get(name)
+        if field is None:
+            return default
+        part = field.parts[field.data[0]]
+        # GGUF text is stored in uint8 arrays as well as numeric scalar fields.
+        if isinstance(default, str):
+            return bytes(part).decode('utf-8')
+        return int(part[0])
+    architecture = value('general.architecture', '')
+    layers = value(architecture + '.block_count', 0)
+    key_dim = value(architecture + '.attention.key_length', 128)
+    recurrent_mask = None
+    field = reader.fields.get(architecture + '.attention.recurrent_layers')
+    if field is not None:
+        entries = [item for index in field.data
+                   for item in field.parts[index].reshape(-1).tolist()]
+        if len(entries) == layers and all(item in (False, True) for item in entries):
+            recurrent_mask = [bool(item) for item in entries]
+    interval = value(architecture + '.full_attention_interval', 0)
+    if recurrent_mask is not None:
+        full_layers = sum(not item for item in recurrent_mask)
+        layout_source = 'recurrent_mask'
+    elif interval > 0 and layers > 0:
+        full_layers = (layers + interval - 1) // interval
+        layout_source = 'full_attention_interval'
+    else:
+        full_layers = layers
+        layout_source = 'conservative_all_layers'
+    return dict(architecture=architecture, layers=layers,
+                kv_heads=value(architecture + '.attention.head_count_kv', 8),
+                head_dim=key_dim, key_dim=key_dim,
+                value_dim=value(architecture + '.attention.value_length', key_dim),
+                full_attention_interval=interval, recurrent_mask=recurrent_mask,
+                full_attention_layers=full_layers,
+                recurrent_layers=max(0, layers - full_layers),
+                cache_layout_source=layout_source,
+                ssm_inner_size=value(architecture + '.ssm.inner_size', 0),
+                ssm_state_size=value(architecture + '.ssm.state_size', 0),
+                ssm_conv_kernel=value(architecture + '.ssm.conv_kernel', 0),
+                ssm_group_count=value(architecture + '.ssm.group_count', 0),
+                ssm_time_step_rank=value(architecture + '.ssm.time_step_rank', 0))
+
+
+def plan_enhancement(model_bytes, runtime, topology=None, context=32768, auxiliary_gpu_bytes=0):
+    """Budget weights, full-attention KV and fixed recurrent state separately."""
+    runtime = runtime or {}
+    topology = topology or {}
+    layers = max(0, int(topology.get('layers', 0)))
+    free = max(0, int(runtime.get('free', 0)))
+    if runtime.get('shared_memory'):
+        free = min(free, max(0, int(runtime.get('ramAvailable', 0))))
+    reserve = max(256 * 1024**2, int(free * .08))
+    mask = topology.get('recurrent_mask')
+    interval = max(0, int(topology.get('full_attention_interval', 0)))
+    if isinstance(mask, (list, tuple)) and len(mask) == layers and layers and all(type(item) is bool for item in mask):
+        full_layers = sum(not item for item in mask)
+        layout_source = 'recurrent_mask'
+    elif interval > 0 and layers:
+        full_layers = (layers + interval - 1) // interval
+        layout_source = 'full_attention_interval'
+    else:
+        full_layers = layers
+        layout_source = 'conservative_all_layers'
+    recurrent_layers = layers - full_layers
+    key_dim = max(1, int(topology.get('key_dim', topology.get('head_dim', 128))))
+    value_dim = max(1, int(topology.get('value_dim', key_dim)))
+    kv_heads = max(1, int(topology.get('kv_heads', 8)))
+    kv_layers = full_layers if layers else 1
+    kv_bytes = context * kv_layers * kv_heads * (key_dim + value_dim) * 2
+    # Recurrent state does not grow with context. Float32 states and an upper
+    # bound of three inner-size convolution inputs keep this estimate cautious.
+    inner = max(1, int(topology.get('ssm_inner_size', 0) or 4096))
+    state = max(1, int(topology.get('ssm_state_size', 0) or 128))
+    kernel = max(1, int(topology.get('ssm_conv_kernel', 0) or 4))
+    recurrent_state_bytes = recurrent_layers * inner * state * 4
+    recurrent_conv_bytes = recurrent_layers * inner * kernel * 3 * 4
+    recurrent_bytes = recurrent_state_bytes + recurrent_conv_bytes
+    compute_bytes = 512 * 1024**2
+    weight_budget = max(0, free - reserve - kv_bytes - recurrent_bytes
+                        - compute_bytes - auxiliary_gpu_bytes)
+    if free and model_bytes <= weight_budget:
+        gpu_layers = 'all'
+    elif layers and model_bytes:
+        gpu_layers = str(max(0, min(layers - 1, int(layers * weight_budget / model_bytes))))
+    else:
+        gpu_layers = '0'
+    return dict(schema=1, gpu_layers=gpu_layers, context=context, batch=512, ubatch=512,
+                model_bytes=model_bytes, free_gpu_bytes=free, reserve_bytes=reserve,
+                full_attention_layers=full_layers, recurrent_layers=recurrent_layers,
+                cache_layout_source=layout_source,
+                estimated_kv_bytes=kv_bytes,
+                estimated_recurrent_state_bytes=recurrent_state_bytes,
+                estimated_recurrent_conv_bytes=recurrent_conv_bytes,
+                estimated_recurrent_bytes=recurrent_bytes,
+                estimated_compute_bytes=compute_bytes, auxiliary_gpu_bytes=auxiliary_gpu_bytes,
+                reason='GPU residency selected from weights, full-attention KV, recurrent states and auxiliary workspace; CPU retains remaining layers.')
+
+
+def command(request, folder, runtime=None):
     settings = request["promptEnhancement"]
     images = request.get("inputImages", [])
     mode = "i2i" if images else "t2i"
@@ -117,7 +237,16 @@ def command(request, folder):
         system_file.write_text(system, encoding="utf-8")
         args += ["-f", prompt_file.relative_to(folder.parent).as_posix(), "-sys", system, "--jinja", "--chat-template", CHAT_TEMPLATE,
                  "--no-warmup", "--image-max-tokens", str(image_tokens)]
-    args += ["--no-escape", "-ngl", "all", "-c", "32768", "-n", "16256" if mode == "t2i" else "24000",
+    try: topology=_gguf_topology(settings[mode + "Model"])
+    except Exception: topology={}
+    auxiliary=0
+    if mode=='i2i':
+        # Vision projection weights and image feature workspace share the GPU.
+        auxiliary=Path(settings['visionProjector']).stat().st_size + image_tokens*len(images)*512*1024
+    plan=plan_enhancement(Path(settings[mode + "Model"]).stat().st_size,runtime,topology,auxiliary_gpu_bytes=auxiliary)
+    (folder / "resource-plan.json").write_text(json.dumps(plan,indent=2),encoding="utf-8")
+    if plan['gpu_layers']=='0': args += ['--no-kv-offload']
+    args += ["--no-escape", "-ngl", plan['gpu_layers'], "-c", str(plan['context']), "-n", "16256" if mode == "t2i" else "24000",
              "-b", "512", "-ub", "512", "--flash-attn", "on", "--temp", "1.0", "--top-p", "0.95",
              "--top-k", "20", "--min-p", "0", "--repeat-penalty", "1", "--seed", "42", "--perf", "--log-verbosity", "4"]
     return args, mode
@@ -346,10 +475,10 @@ def inference_request(request, result):
     return effective
 
 
-def run_enhancement(request, destination, emit, supervisor):
+def run_enhancement(request, destination, emit, supervisor, runtime=None):
     folder = destination / "enhancement"
     folder.mkdir(exist_ok=True)
-    args, mode = command(request, folder)
+    args, mode = command(request, folder, runtime=runtime)
     (folder / "invocation.json").write_text(json.dumps({"argv": args, "cwd": str(destination)}, ensure_ascii=False, indent=2), encoding="utf-8")
     emit("status", message="Loading enhancement model", phase="enhancement")
     emit("enhancement_phase", phase="thinking", mode=mode)
@@ -374,6 +503,9 @@ def run_enhancement(request, destination, emit, supervisor):
                 supervisor.release(child)
             supervisor.check_cancelled()
             if code != 0:
+                detail=(folder / "llama.log").read_text(encoding="utf-8",errors="replace")
+                if any(marker in detail for marker in ('ErrorOutOfDeviceMemory','out of memory','unable to allocate')):
+                    raise RuntimeError('Prompt enhancement ran out of memory. See enhancement/llama.log and resource-plan.json in the task directory.')
                 raise RuntimeError(f"Prompt enhancement process exited ({code}); see enhancement/llama.log in the task directory")
         stream.finish()
         result = parse_result(stream.raw, mode, len(request.get("inputImages", [])))

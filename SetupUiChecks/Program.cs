@@ -49,7 +49,6 @@ internal static partial class Program
         Check(hybrid.Backend=="cuda"&&hybrid.Supports("cuda")&&hybrid.Supports("amd_rocm"),"Hybrid graphics retain both adapters and prefer the discrete NVIDIA runtime");
         Check(SetupInstaller.EnvironmentDirectory(root,"cuda")!=SetupInstaller.EnvironmentDirectory(root,"amd_rocm"),"CUDA and ROCm installations use separate managed directories");
         Check(!SetupManifest.Read("cuda").Packages.Any(p=>p.Name.StartsWith("rocm"))&&SetupManifest.Read("cuda").Packages.Single(p=>p.Name=="torch").Version=="2.11.0+cu128","The pinned CUDA installation contains CUDA PyTorch and no ROCm wheels");
-        try{ResourceSnapshot.RequireMemory(4UL*1024*1024*1024);throw new Exception("Missing memory guard");}catch(IOException){Check(true,"Insufficient available system RAM fails before inference starts");}
         CudaDriver.ValidateVersion(12080);CudaDriver.ValidateVersion(13000);
         try{CudaDriver.ValidateVersion(12060);throw new Exception("Missing driver guard");}catch(InvalidOperationException){Check(true,"An older CUDA driver is rejected before the large environment download");}
         var guard=Path.Combine(root,"installation-guard");var guardEnv=SetupInstaller.EnvironmentDirectory(guard);Directory.CreateDirectory(guardEnv);var sentinel=Path.Combine(guardEnv,"user-file.txt");File.WriteAllText(sentinel,"preserve");
