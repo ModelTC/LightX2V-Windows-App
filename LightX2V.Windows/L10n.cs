@@ -106,6 +106,9 @@ public sealed class L10n : Observable
         ["Export image"] = "导出图像",
         ["Show in Explorer"] = "在资源管理器中显示",
         ["Reuse settings"] = "复用参数",
+        ["Ready to create"] = "可以开始创作",
+        ["Use as reference"] = "图生图",
+        ["Add this image as a reference to the current prompt"] = "将此图片添加为参考图，继续编辑",
         ["Remove from history"] = "移出历史（保留文件）",
         ["Connect environment"] = "连接环境",
         ["Choose"] = "选择",
@@ -129,7 +132,7 @@ public sealed class L10n : Observable
         ["encoding"] = "正在编码提示词",
         ["sampling"] = "正在生成图像",
         ["decoding"] = "正在解码图像",
-        ["Interrupted message"] = "上次退出前生成未完成，可以复用参数重新生成。",
+        ["Interrupted message"] = "上次退出前生成未完成，可复制原提示词重新生成。",
         ["Generation failed"] = "生成失败，请查看日志了解原因。",
         ["Environment connected"] = "环境已连接",
         ["Environment check failed"] = "环境检查失败",
@@ -145,7 +148,7 @@ public sealed class L10n : Observable
         ["Maximize"] = "最大化",
         ["2K memory"] = "2K 图像需要更多可用内存",
         ["Exit while running"] = "正在生成图像。退出将停止本次任务。",
-        ["Generation cancelled"] = "本次生成已停止，可以复用参数重新生成。"
+        ["Generation cancelled"] = "本次生成已停止，可复制上方提示词重新生成。"
     };
-    static readonly Dictionary<string, string> English = new() { ["Launch location restricts desktop integration"]="This launch location restricts opening websites and folders. Close this copy and reopen LightX2V from its desktop shortcut or a normal installation folder.", ["Requested browser to open model page"]="The model page was sent to your browser. If no window appears, copy the link into your browser.", ["Link copied"]="Link copied. Paste it into your browser to open the page.", ["enhancement"]="Enhancing prompt",["Model download help"]="Automatic download retrieves and verifies all model files. For a manual download, run this command with the corresponding official CLI.",["Configure Python first"]="Choose a native Windows Python environment in Settings first.", ["missing_image"]="The selected image is missing.",["image_too_large"]="Choose an image under 50 MB and 50 million pixels.",["unsupported_image"]="Choose a PNG, JPEG, WebP, BMP or TIFF image.",["invalid_image"]="Unable to read this image.",["Up to 3 reference images"]="Add up to 3 reference images.",["Settings summary"]="3 settings. You can switch language at any time.", ["Generated"]="Generated", ["running"] = "Generating", ["completed"] = "Completed", ["failed"] = "Failed", ["cancelled"] = "Cancelled", ["interrupted"] = "Interrupted", ["loading"] = "Loading model", ["encoding"] = "Encoding prompt", ["sampling"] = "Generating image", ["decoding"] = "Decoding image", ["Interrupted message"] = "The app exited before generation finished. Reuse the settings to try again.", ["Generation failed"] = "Generation failed. Open the log for details.", ["2K memory"] = "2K images need more available memory", ["Enter a valid seed"] = "Enter an integer seed between 0 and 4294967295.", ["Settings description"] = "Connect a native Windows inference environment. Creation history, parameters and images are stored in the workspace.", ["Generation cancelled"] = "Generation stopped. Reuse the settings to try again." };
+    static readonly Dictionary<string, string> English = new() { ["Launch location restricts desktop integration"]="This launch location restricts opening websites and folders. Close this copy and reopen LightX2V from its desktop shortcut or a normal installation folder.", ["Requested browser to open model page"]="The model page was sent to your browser. If no window appears, copy the link into your browser.", ["Link copied"]="Link copied. Paste it into your browser to open the page.", ["enhancement"]="Enhancing prompt",["Model download help"]="Automatic download retrieves and verifies all model files. For a manual download, run this command with the corresponding official CLI.",["Configure Python first"]="Choose a native Windows Python environment in Settings first.", ["missing_image"]="The selected image is missing.",["image_too_large"]="Choose an image under 50 MB and 50 million pixels.",["unsupported_image"]="Choose a PNG, JPEG, WebP, BMP or TIFF image.",["invalid_image"]="Unable to read this image.",["Up to 3 reference images"]="Add up to 3 reference images.",["Settings summary"]="3 settings. You can switch language at any time.", ["Generated"]="Generated", ["running"] = "Generating", ["completed"] = "Completed", ["failed"] = "Failed", ["cancelled"] = "Cancelled", ["interrupted"] = "Interrupted", ["loading"] = "Loading model", ["encoding"] = "Encoding prompt", ["sampling"] = "Generating image", ["decoding"] = "Decoding image", ["Interrupted message"] = "The app exited before generation finished. Copy the earlier prompt to try again.", ["Generation failed"] = "Generation failed. Open the log for details.", ["2K memory"] = "2K images need more available memory", ["Enter a valid seed"] = "Enter an integer seed between 0 and 4294967295.", ["Settings description"] = "Connect a native Windows inference environment. Creation history, parameters and images are stored in the workspace.", ["Generation cancelled"] = "Generation stopped. Copy the earlier prompt to try again." };
 }

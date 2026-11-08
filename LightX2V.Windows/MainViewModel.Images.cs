@@ -13,12 +13,14 @@ public sealed partial class MainViewModel
     Process? importer;
     public bool IsImporting{get=>importing;private set{Set(ref importing,value);RefreshStatus();Changed(nameof(CanAddImages));}}
     public bool HasInputImages=>InputImages.Count>0;
-    public bool CanAddImages=>Ready&&!IsRunning&&!IsImporting&&!IsDownloading;
+    public bool CanAddImages=>File.Exists(Settings.Python)&&!IsRunning&&!IsPreflighting&&!IsImporting&&!IsDownloading;
     public Command AddImagesCommand{get;private set;}=null!;
     public ParameterCommand RemoveImageCommand{get;private set;}=null!;
+    public ParameterCommand ReferenceGenerationCommand{get;private set;}=null!;
     void InitializeImages()
     {
         AddImagesCommand=new(()=>_=ChooseImagesAsync(),()=>CanAddImages);
+        ReferenceGenerationCommand=new(p=>_=ReferenceGenerationAsync(p as Generation));
         RemoveImageCommand=new(p=>{if(CanAddImages&&p is InputImage image)InputImages.Remove(image);});
         InputImages.CollectionChanged+=(_,_)=>{Changed(nameof(HasInputImages));Changed(nameof(SizeText));Changed(nameof(CanGenerate));CommandManager.InvalidateRequerySuggested();};
     }
@@ -27,6 +29,11 @@ public sealed partial class MainViewModel
         if(!CanAddImages)return;
         var dialog=new OpenFileDialog{Title=T["Add reference images"],Filter="Images|*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.tif;*.tiff",Multiselect=true};
         if(dialog.ShowDialog()==true)await AddImagePathsAsync(dialog.FileNames);
+    }
+    public async Task ReferenceGenerationAsync(Generation? generation)
+    {
+        if(disposed||generation?.Completed!=true||!CanAddImages)return;
+        await AddImagePathsAsync([generation.Request.Output]);
     }
     public async Task AddImagePathsAsync(IEnumerable<string> paths)
     {

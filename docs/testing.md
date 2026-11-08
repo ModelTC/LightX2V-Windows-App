@@ -59,3 +59,7 @@ python rtx_acceptance.py --app C:\Apps\LightX2V --python C:\LightX2V\environment
 AMD 开发机完成 135 项 Python 检查（含真实 GPU / 官方 checkpoint 专项）、四个 C# 项目编译、30 项 startup 离屏检查，以及三次新 worker 流式 512、驻留 512、流式 1K / 参考图编辑和部分 GPU 增强串联。输出一致性、逐会话遥测核对和实际验收边界见 [v0.3.8](releases/v0.3.8.md)。
 
 已收到 v0.3.7 的 RTX 4070 Laptop 间歇性原生崩溃报告及单次独立 worker 出图证据；这不代表 App 已稳定通过 CUDA 验收。v0.3.8 需要以同参数重复和重新启动 App 的实际任务确认，不能用 AMD 或无 GPU CI 替代。
+
+## RTX 4070 Laptop v0.3.8 实机反馈
+
+已收到用户测试机 4/4 次成功出图记录，覆盖 512 增强关 / 开、1K 与 2K 增强开，均采用 pread 流式路径，未再出现此前原生访问异常。型号、耗时、资源指标与尚未覆盖的重启 / I2I 范围见 [RTX 实机记录](rtx-4070-laptop-results.md)。这部分是后续收到的实机反馈，不回溯修改 v0.3.8 发布时的开发机验收记录。

@@ -25,7 +25,7 @@ public sealed class ModelCard : Observable
     public string DownloadLabel=>owner.T[IsDownloading?"Stop":Ready?"Files ready":Failed?"Retry download":"Download automatically"];
     public bool OptionalEnabled=>Key=="turbo"||owner.EnhancementEnabled||owner.IsDownloadingAll||owner.DownloadingKey==Key;
     public bool CanChoose=>owner.CanConfigureModels&&OptionalEnabled;
-    public bool CanDownload=>(!Ready||IsDownloading)&&OptionalEnabled&&!owner.IsPreparingSetup&&!owner.IsRunning&&!owner.IsImporting&&!owner.IsChecking&&(!owner.IsDownloading||owner.DownloadingKey==Key);
+    public bool CanDownload=>(!Ready||IsDownloading)&&OptionalEnabled&&!owner.IsPreparingSetup&&!owner.IsGenerationBusy&&!owner.IsImporting&&!owner.IsChecking&&(!owner.IsDownloading||owner.DownloadingKey==Key);
     public Command ChooseCommand {get;}
     public Command DownloadCommand {get;}
     public Command GuideCommand {get;}
@@ -36,7 +36,7 @@ public sealed class ModelCard : Observable
         ChooseCommand=new(()=>{var dialog=new OpenFolderDialog{Title=owner.T["Choose"]+" "+Title};if(dialog.ShowDialog()==true){AssignPath(dialog.FolderName);owner.SetModelPath(this,dialog.FolderName);}},()=>CanChoose);
         DownloadCommand=new(()=>{if(owner.DownloadingKey==Key)_=owner.StopModelDownloadAsync();else _=owner.DownloadModelAsync(Key);},()=>CanDownload);
         GuideCommand=new(()=>owner.ShowModelGuide(this));
-        StatusCommand=new(()=>owner.RecheckModel(this),()=>!owner.IsDownloading&&!owner.IsRunning);
+        StatusCommand=new(()=>owner.RecheckModel(this),()=>!owner.IsDownloading&&!owner.IsGenerationBusy);
     }
     internal void Refresh(){foreach(var n in new[]{nameof(DownloadLabel),nameof(IsDownloading),nameof(OptionalEnabled),nameof(CanChoose),nameof(CanDownload),nameof(Indicator),nameof(Status),nameof(ShowProgress)})Changed(n);}
 }
@@ -52,7 +52,7 @@ public sealed partial class MainViewModel
     public bool UseModelScope {get=>Settings.DownloadSource=="modelScope";set{if(value)SetDownloadSource("modelScope");}}
     public bool IsDownloading=>downloadCancellation!=null;
     public bool IsDownloadingAll=>downloadingAll;
-    public bool CanConfigureModels=>!IsPreparingSetup&&!IsRunning&&!IsChecking&&!IsImporting&&!IsDownloading;
+    public bool CanConfigureModels=>!IsPreparingSetup&&!IsGenerationBusy&&!IsImporting&&!IsDownloading;
     public string DownloadAllLabel=>T[IsDownloading?"Stop downloads":"Download all models"];
     public string? DownloadingKey {get;private set;}
     public Command DownloadAllCommand {get;private set;}=null!;
@@ -73,7 +73,7 @@ public sealed partial class MainViewModel
         T2ICard=new(this,"t2i","PE-T2I","lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0");
         I2ICard=new(this,"i2i","PE-I2I","lightx2v/Qwen-Image-2.1-PE-I2I-GGUF-Q8_0");
         RequiredModelsDownloadCommand=new(()=>{if(IsDownloading)_=StopModelDownloadAsync();else _=Setup.DownloadModelsAsync();},()=>IsDownloading||CanConfigureModels&&!RequiredModelsReady);
-        DownloadAllCommand=new(()=>{if(IsDownloading)_=StopModelDownloadAsync();else _=DownloadAllModelsAsync();},()=>!IsPreparingSetup&&!IsRunning&&!IsImporting&&!IsChecking);
+        DownloadAllCommand=new(()=>{if(IsDownloading)_=StopModelDownloadAsync();else _=DownloadAllModelsAsync();},()=>!IsPreparingSetup&&!IsGenerationBusy&&!IsImporting&&!IsChecking);
         CopyEnhancedCommand=new(p=>{if(p is Generation g&&g.EnhancedPrompt.Length>0){Clipboard.SetText(g.EnhancedPrompt);Toast=T["Copied"];}});
         ReloadModelPaths();
     }
@@ -184,7 +184,7 @@ public sealed partial class MainViewModel
         finally
         {
             downloadCancellation=null;DownloadingKey=null;downloadingAll=false;source.Dispose();ModelStateChanged();
-            if(cards.Any(c=>c.Key=="turbo")&&TurboCard.Ready&&!source.IsCancellationRequested&&!Ready&&!modelsDisposed)await CheckAsync();
+            // GPU readiness is checked on send; finishing a download must not start a background torch import.
         }
     }
     async Task<bool> DownloadOneAsync(ModelCard card,CancellationToken token)
