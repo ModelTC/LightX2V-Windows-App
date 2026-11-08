@@ -1,38 +1,38 @@
-# 构建与目录
+# Building and Repository Layout
 
-本仓库独立于机器验证工作区，可直接克隆构建。首次整理基于 v0.3.5，后续首次配置修复见对应版本发布说明。
+This repository is independent of the machine-validation workspace and can be cloned and built directly. The initial cleanup was based on v0.3.5; see the corresponding release notes for later first-time setup fixes.
 
 ```text
-LightX2V.Windows/       WPF App、Python 桥接后端、样式和固定安装清单
-Checks/                早期完整桌面/推理验收，仅手动运行
-HeadlessChecks/        Windows Shell 分发检查
-SetupUiChecks/         向导、下载、硬件与离屏 UI 检查
-Tests/                 不依赖 GPU 的 Python 单元测试
-scripts/               发布包装、仓库检查及本地验证入口
-third_party/           固定推理源码的来源、兼容补丁与许可证
-docs/                  使用、测试、发布说明
-build.ps1              Windows 构建与 ZIP 入口
-prepare_setup.py       离线校验固定安装清单和源码归档
-prepare_runtime.py     获取并校验固定版本 llama.cpp Vulkan 运行时
-prepare_cuda_profile.py 维护者显式刷新 CUDA 清单的工具，普通构建不调用
-rtx_acceptance.py      使用 App 已准备的环境进行实际 RTX 出图验收
+LightX2V.Windows/       WPF app, Python bridge backend, styles, and pinned setup manifests
+Checks/                Early full desktop/inference acceptance checks; manual execution only
+HeadlessChecks/        Windows Shell distribution checks
+SetupUiChecks/         Wizard, download, hardware, and off-screen UI checks
+Tests/                 Python unit tests that do not require a GPU
+scripts/               Release packaging, repository checks, and local validation entry points
+third_party/           Pinned inference source provenance, compatibility patches, and licenses
+docs/                  Usage, testing, and release notes
+build.ps1              Windows build and ZIP entry point
+prepare_setup.py       Offline validation of pinned setup manifests and source archives
+prepare_runtime.py     Fetch and validate the pinned llama.cpp Vulkan runtime
+prepare_cuda_profile.py Explicit maintainer tool for refreshing CUDA manifests; not used by normal builds
+rtx_acceptance.py      Real RTX image-generation acceptance using the environment prepared by the app
 ```
 
-## 本地构建
+## Local Build
 
-使用 Windows x64、.NET SDK 10.0.403（`global.json` 允许该 feature band 的后续补丁）、Python 3.12。普通构建不需要安装 GPU 推理环境。
+Use Windows x64, .NET SDK 10.0.403 (`global.json` allows later patches in that feature band), and Python 3.12. Normal builds do not require a GPU inference environment.
 
 ```powershell
 .\build.ps1 -Dotnet dotnet -Python python
 ```
 
-构建会校验 `Resources/Setup` 中两个后端的固定清单、源码 ZIP 和显卡助手下载清单，再校验并解压固定 llama.cpp 归档，最后生成自包含 win-x64 程序和 ZIP。网络需求主要是 NuGet、官方 llama.cpp Release；这里不会下载数十 GB 模型。
+The build validates the pinned manifests for both backends, the source ZIP, and the graphics helper download manifest in `Resources/Setup`. It then validates and extracts the pinned llama.cpp archive and produces a self-contained win-x64 application and ZIP. Network access is mainly for NuGet and the official llama.cpp release; this process does not download tens of gigabytes of models.
 
-可以用 `-Destination C:\Builds\LightX2V-Windows-0.3.6` 指定全新输出目录。为避免混入旧版文件，输出目录必须不存在，或为空目录。构建会同时复制用户文档、组件声明及 .NET 许可证，并生成逐文件 SHA-256 清单；版本从项目文件读取。
+Use `-Destination C:\Builds\LightX2V-Windows-0.3.6` to specify a fresh output directory. The directory must not exist or must be empty to avoid mixing in files from an older version. The build also copies user documentation, component notices, and the .NET license, and generates a per-file SHA-256 manifest. The version is read from the project file.
 
-`scripts/package_app.py` 也能单独包装一个已 publish 的完整文件夹。它会验证固定载荷和 llama.cpp 实际文件，检查缺失组件和版本，不把编译成功描述成实机验收通过。已有私有验收数据不参与公共打包。
+`scripts/package_app.py` can also package a complete, already-published application folder on its own. It validates the pinned payloads and actual llama.cpp files and checks for missing components and version mismatches. A successful build is not reported as successful hardware acceptance. Existing private acceptance data is excluded from public packages.
 
-## 测试
+## Testing
 
 ```powershell
 python prepare_setup.py
@@ -43,18 +43,20 @@ dotnet build HeadlessChecks/HeadlessChecks.csproj -c Release
 dotnet build Checks/Checks.csproj -c Release
 ```
 
-GitHub Actions 运行这些检查并构建安装包，产物保存在 workflow artifact。普通分支不修改 Releases；推送与项目版本一致的 `v*` 标签时，在独立发布任务中再次验证源码提交、完整文件哈希和上传资产，再发布 Pre-release。CI 不声称 GPU 已验收。见 [测试范围](testing.md)。
+GitHub Actions runs these checks and builds the package, saving the output as a workflow artifact. Ordinary branches do not modify Releases. Pushing a `v*` tag that matches the project version triggers a separate publishing job, which verifies the source commit, all file hashes, and uploaded assets again before publishing a pre-release. CI does not claim GPU acceptance. See [Testing Scope](testing.md).
 
-## 安装载荷与源码来源
+## Setup Payloads and Source Provenance
 
-两个环境清单固定 Python、PyTorch 及每个 wheel 的版本、大小和 SHA-256，构建时不解析“最新版本”。`prepare_cuda_profile.py` 会改动固定清单，只在明确更新依赖时运行，并重新验收。
+The two environment manifests pin the versions, sizes, and SHA-256 hashes of Python, PyTorch, and every wheel. Builds do not resolve the "latest version." `prepare_cuda_profile.py` changes the pinned manifests; run it only when deliberately updating dependencies, followed by renewed acceptance testing.
 
-`LightX2V.Windows/Resources/Setup/lightx2v-native.zip` 是运行时必需的推理源码，约 13 MB，因此作为唯一的大型固定源码归档入库，未使用 Git LFS。它以 LightX2V 提交 `58b8e2592519711457e9fface5a804d7c337a1ae` 为基线；16 个原生 Windows 兼容文件的差异见 `third_party/native-windows.patch`，准确归档哈希和变更文件见 `third_party/source-provenance.json`。归档内容保留上游许可证。
+`LightX2V.Windows/Resources/Setup/lightx2v-native.zip` contains the inference source required at runtime. At about 13 MB, it is the only large pinned source archive committed to the repository and does not use Git LFS. It is based on LightX2V commit `58b8e2592519711457e9fface5a804d7c337a1ae`. Changes to the 16 native Windows compatibility files are in `third_party/native-windows.patch`; the exact archive hash and changed files are recorded in `third_party/source-provenance.json`. The archive retains upstream licenses.
 
-不提交模型、环境、下载缓存、生成图片、个人设置、QA 日志、开发 SSH 配置或历史安装包。原始开发验收记录留在仓库外。维护用户偏好和已有环境的兼容读取逻辑仍保留，不因整理首版而更改推理行为。
+Do not commit models, environments, download caches, generated images, personal settings, QA logs, development SSH configuration, or historical packages. Raw development acceptance records remain outside the repository. Compatibility logic for reading user preferences and existing environments is retained; the initial repository cleanup did not change inference behavior.
 
-## 首次窗口与环境状态
+## Initial Window and Environment State
 
-`StartupCoordinator` 在 Python 或所需模型缺失时先打开独立向导；`WpfStartupHost` 使用普通 `Show()`、任务栏入口和显式退出控制，完成后才创建工作区。已有用户在工作区初始化时发现配置不可用，会先隐藏工作区再恢复向导。不要把首次向导改回盖在主窗口上的 `ShowDialog()`。
+`StartupCoordinator` opens a separate wizard first when Python or required models are missing. `WpfStartupHost` uses ordinary `Show()`, a taskbar entry, and explicit exit control, and creates the workspace only after setup finishes. If workspace initialization finds that an existing user's configuration is unavailable, it hides the workspace before restoring the wizard. Do not change the initial wizard back to a `ShowDialog()` over the main window.
 
-自动安装通过环境服务进行一次实际 GPU 检查，检查通过后回填并选中候选环境，使用该结果连接工作区；没有第二个重复检查。新安装环境首次检查为 180 秒，普通发现为 90 秒，均可取消。测试用注入服务覆盖安装、检查、失败与取消；夹具不代表实际 CUDA 安装或出图已验证。
+In v0.3.9, a configured workspace opens without an automatic GPU probe. The first generation request performs cancellable preflight checks and can reuse an existing session. Configuration snapshots and epoch guards prevent stale asynchronous results from being applied after the configuration changes. Explicit first-time setup can still probe the GPU.
+
+Automatic installation performs one real GPU check through the environment service. After it succeeds, the candidate environment is added to the list and selected, and that result is used to connect the workspace without a second duplicate check. The first check for a newly installed environment has a 180-second timeout; ordinary discovery uses 90 seconds. Both are cancellable. Injected test services cover installation, checks, failure, and cancellation; fixtures do not validate real CUDA installation or image generation.

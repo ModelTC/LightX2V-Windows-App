@@ -1,36 +1,36 @@
-# 首次使用
+# Getting started
 
-## 准备安装包
+## Prepare the app
 
-从本仓库 Releases 下载 Windows x64 ZIP，右键选择“全部解压缩”。进入解压后的文件夹，双击 `LightX2V.Windows.exe`。不要只取出 EXE，也不要直接在压缩包内运行；旁边的文件同样需要保留。
+Download the Windows x64 ZIP from this repository's Releases page and choose **Extract All**. Open the extracted folder and run `LightX2V.Windows.exe`. Keep the entire folder: extracting only the EXE or running it directly inside the ZIP is not supported.
 
-这是内测版，尚未代码签名。下载页提供 SHA-256，供核对文件完整性。如系统拦截，请先确认文件来自本项目的发布页；不需要关闭 Windows 防护或修改系统安全设置。
+This is an unsigned preview build. A SHA-256 file is provided for checking download integrity. If Windows blocks the app, first confirm that it came from this project's Releases page. You do not need to disable Windows protection or change system security settings.
 
-## 四步完成配置
+## Complete setup in four steps
 
-1. **保存位置**：选择一个空间充足、自己能读写的目录。环境、模型和作品会保存在这里；建议约 100 GB 可用空间。路径较深而安装失败时，换成较短的目录，例如 `D:\LightX2V`。
-2. **准备这台电脑**：App 自动扫描显卡并推荐后端。“显卡软件”也叫驱动，是让 Windows 使用显卡的软件。已安装且可用就跳过；确实缺少时按官方安装助手指引安装，要求重启时先保存其他文件。回到 App 重新检查，再选择找到的可用组件，或点击自动准备。
-3. **下载图片文件**：点击“一键下载所需模型”。Qwen 模型约 32 GB；提示词增强需要另外的模型文件，可先不选。下载源可选择 Hugging Face 或 ModelScope；网络中断后可以重试并复用已下载部分。
-4. **配置完成**：点击“开始创作”进入工作区。不强制生成示例图片。
+1. **Workspace:** Choose a folder you can read and write, with enough space for the environment, models, and creations. Allow about 100 GB of free space. If a long path causes installation problems, choose a shorter location such as `D:\LightX2V`.
+2. **Prepare your computer:** The app scans your graphics hardware and recommends a backend. Graphics software, also called a driver, lets Windows use the GPU. Keep a working installed driver; if one is missing, follow the official installation assistant. Save other work before a requested restart. Return to the app, check again, and choose a compatible environment or use automatic preparation.
+3. **Download model files:** Click **Download required files automatically**. The Qwen image model is about 32 GB; prompt enhancement requires additional model files and can be left disabled initially. Choose Hugging Face or ModelScope. Interrupted downloads can be retried and completed data reused.
+4. **Finish setup:** Click **Start creating** to enter the workspace. Generating a sample image is not required.
 
-App 自带 .NET 运行时，自动准备会在所选目录安装自己的 Python，不替换系统 Python，不要求安装 WSL 或系统 CUDA Toolkit。NVIDIA 需要兼容的显卡驱动；当前 CUDA 配置要求驱动 API 支持 CUDA 12.8 或以上，最终还要通过实际 GPU 环境检查。
+The app includes the .NET runtime. Automatic preparation installs its own Python in the selected workspace without replacing system Python. WSL and a system CUDA Toolkit are not required. NVIDIA needs a compatible graphics driver; the current CUDA profile requires a driver exposing CUDA 12.8 or newer and must pass the actual GPU environment check.
 
-## 第一次创作
+## Create your first image
 
-输入自己的场景描述，选择尺寸和比例，再点击生成。需要参考图时用加号添加；Prompt 增强仍由原有开关控制。笔记本建议接通电源，关闭占用显存和内存较多的软件。
+Enter a scene description, choose a size and aspect ratio, and generate. Use the plus button to add reference images. The existing Prompt enhancement switch controls enhancement. For laptops, connect power and close applications using substantial GPU or system memory.
 
-v0.3.7 会在后台根据当前资源选择模型驻留、卸载或流式读取方式，无需手动选择运行模式。容量充足时保留普通推理路径；受限时可能需要更多 CPU 与 SSD 读取时间，首次加载也可能较慢。
+Starting with v0.3.7, the app automatically chooses model residency, offloading, or streaming from currently available resources. No manual performance mode is needed. Machines with sufficient capacity keep the ordinary inference path; constrained devices may spend more time reading from the CPU and SSD, including on first load.
 
-512 比 1K/2K 的图像计算开销小，但不会减小模型权重。模型在加载阶段内存不足时，不能仅凭换成 512 就判断能够解决。生成失败后应查看本次任务的资源计划和日志，再判断是加载、图像计算、增强还是运行环境问题。
+512 output requires less image working memory than 1K or 2K, but does not shrink model weights. Choosing 512 alone does not establish that a model-loading memory failure is resolved. Check the task's resource plan and logs to distinguish loading, image computation, enhancement, and runtime failures.
 
-8 GB 显存和 32 GB 内存的 RTX 笔记本仍处于待实机验收范围，不能保证生成成功；不要把“环境检查通过”当作所有尺寸均能生成的保证。自动策略与诊断记录见 [自动资源规划](automatic-resources.md)。
+The documented RTX 4070 Laptop with 8 GB VRAM and 32 GB RAM completed four v0.3.8 text-to-image tasks, including 512, 1K, 2K, and prompt enhancement. Repeated app restarts and reference-image editing on that test machine still need verification. These samples do not guarantee every size or 8 GB configuration; passing an environment check alone is not proof that all generation paths work. See [RTX hardware results](rtx-4070-laptop-results.md) and [Automatic resource planning](automatic-resources.md).
 
-## 数据与升级
+## Data and upgrades
 
-作品和参数保存在工作目录的 `outputs` 中，历史索引是 `workspace.json`。偏好设置通常在 `%LOCALAPPDATA%\LightX2V\configuration\preferences.json`。升级时关闭旧 App，完整解压新版到新文件夹，继续使用原来的工作目录即可；已有完整模型和安装包可以复用。
+Creations and parameters are saved under the workspace's `outputs` folder; `workspace.json` indexes the history. Preferences are normally stored at `%LOCALAPPDATA%\LightX2V\configuration\preferences.json`. To upgrade, close the old app, fully extract the new version into a new program folder, and continue using the existing workspace. Complete models and downloaded installation packages can be reused.
 
-下载停止后可重试。生成失败可以查看任务日志；v0.3.7 还保存 `resource-plan.json`、阶段遥测和主机内存采样。显卡识别异常可在“更多帮助与电脑信息”中点击“复制检测信息”，也可查看工作目录的 `setup/hardware-detection.json`。分享前检查用户名、路径、提示词和参考图等个人信息。
+Stopped downloads can be retried. For generation failures, inspect the task logs. Starting with v0.3.7, tasks also save `resource-plan.json`, stage telemetry, and host-memory samples. For GPU detection problems, copy the detection information under **More help and computer information**, or inspect `setup/hardware-detection.json` in the workspace. Review usernames, local paths, prompts, and reference images before sharing diagnostic data.
 
-升级 v0.3.8 可继续复用 v0.3.7 的模型、Python 环境与工作区，无需清理目录。新版本修复 Windows 权重读取并完善崩溃诊断，相关说明见 [Windows 权重读取](windows-checkpoint-io.md)。
+v0.3.8 reuses v0.3.7 models, Python environments, and workspaces without clearing directories. It fixes Windows weight-reading paths and improves crash diagnostics; see [Windows checkpoint I/O](windows-checkpoint-io.md).
 
-v0.3.9 起，已发送的提示词可选中后按 Ctrl+C 或右键复制。生成结果下方的图生图按钮可将该图片追加为参考图；输入编辑要求后点击生成即可，现有草稿和参数不会被恢复成旧任务。工作区启动后可直接编辑，发送时按需完成必要的环境检查，支持取消，失败后保留草稿。
+Starting with v0.3.9, select a sent prompt and use Ctrl+C or the context menu to copy it. The image-as-reference button below a generated result appends that image to the draft. Enter editing instructions and generate; existing draft text and parameters are not restored from the old task. A configured workspace is interactive on launch. Necessary environment checks run on submission, support cancellation, and preserve the draft on failure.

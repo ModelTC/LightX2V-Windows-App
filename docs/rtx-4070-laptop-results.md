@@ -1,28 +1,28 @@
-# RTX 4070 Laptop 实机记录：v0.3.8
+# RTX 4070 Laptop hardware results: v0.3.8
 
-本页整理用户提供的 Windows 测试机记录，源码提交 `c5c1f713be99aa3ab1e59e50425c91025f84e866`。这不是 AMD 开发机模拟 CUDA 的结果；原始日志与作品不随公共源码发布。
+This page summarizes user-provided records from a Windows test machine, using source commit `c5c1f713be99aa3ab1e59e50425c91025f84e866`. These are not results from simulating CUDA on the AMD development machine. The raw logs and generated images are not distributed with the public source.
 
-## 测试机与结果
+## Test machine and results
 
-Intel i9-14900HX、31.80 GiB 物理内存、RTX 4070 Laptop 8188 MiB 显存，Windows 11 25H2，驱动 621.01。环境使用锁定的 PyTorch 2.11.0+cu128、safetensors 0.8.0 与 BF16 Qwen-Image-2.1-Turbo。
+Intel i9-14900HX, 31.80 GiB physical memory, RTX 4070 Laptop with 8188 MiB GPU memory, Windows 11 25H2, and driver 621.01. The environment uses pinned PyTorch 2.11.0+cu128, safetensors 0.8.0, and BF16 Qwen-Image-2.1-Turbo.
 
-| 输出 | Prompt 增强 | 任务总耗时 | 图像 pipeline | GPU allocated / reserved 峰值 |
+| Output | Prompt enhancement | Total task time | Image pipeline | Peak GPU allocated / reserved |
 | --- | --- | --- | --- | --- |
-| 512×512 | 关 | 82.69 s | 47.04 s | 1.57 / 2.05 GiB |
-| 512×512 | 开 | 372.27 s | 50.00 s | 1.75 / 2.05 GiB |
-| 1248×832 | 开 | 426.05 s | 68.97 s | 2.68 / 3.85 GiB |
-| 2496×1664 | 开 | 554.89 s | 174.74 s | 3.73 / 4.74 GiB |
+| 512×512 | Off | 82.69 s | 47.04 s | 1.57 / 2.05 GiB |
+| 512×512 | On | 372.27 s | 50.00 s | 1.75 / 2.05 GiB |
+| 1248×832 | On | 426.05 s | 68.97 s | 2.68 / 3.85 GiB |
+| 2496×1664 | On | 554.89 s | 174.74 s | 3.73 / 4.74 GiB |
 
-四次均完成 8 步、生成可解码 PNG，worker 退出码为 0，使用 `ssd_streaming` 和 Windows `pread` 策略；该轮未再出现 v0.3.7 的 `torch_cpu.dll / 0xC0000005`。
+All four runs completed 8 steps, produced decodable PNGs, and had worker exit code 0, using `ssd_streaming` and the Windows `pread` strategy. The v0.3.7 `torch_cpu.dll / 0xC0000005` failure did not recur in this round.
 
-1K 与 2K 自动使用 512 tile 的 VAE 分块，512 使用未分块解码。PE 自动选择 17 层 GPU，其余层由 CPU 运行；PE 耗时约 301–358 秒，是开启增强时的主要耗时来源，未缩短上下文或改变输出预算。
+1K and 2K automatically used tiled VAE decoding with a tile size of 512; 512 used untiled decoding. PE automatically selected 17 GPU layers, with the remaining layers running on the CPU. PE took approximately 301–358 seconds and accounted for most of the time with enhancement enabled. Context was not shortened and the output budget was not changed.
 
-## 数据口径与边界
+## Metric definitions and limits
 
-- 本机这些样本说明 8 GB 显存 / 32 GB 系统内存已能完成所列文生图任务，不代表所有 8 GB 设备、提示词、比例和并发环境均已验收。
-- allocator reserved 峰值不等于整个独显专用内存的完整占用。
-- 四次是连续任务；未记录逐次完全退出重启，也没有覆盖参考图编辑、PE-I2I、取消或连续 2K。
-- 2K 单次 commit 峰值为 34.61 / 35.31 GiB，余量约 0.70 GiB；可用物理内存仍较多，不能把两者混为一谈。
-- 首次 worker 启动 / 导入比后续样本慢，但本报告没有测量 App 启动至可交互时间，不能直接作为本轮启动界面改动的耗时基线。
+- These samples demonstrate that this machine with 8 GB GPU memory / 32 GB system memory can complete the listed text-to-image tasks. They do not establish acceptance for all 8 GB devices, prompts, aspect ratios, or concurrent workloads.
+- The peak allocator reserved value does not represent total dedicated memory use across the discrete GPU.
+- The four runs were consecutive tasks. Full exits and relaunches before each run were not recorded, and the tests did not cover reference image editing, PE-I2I, cancellation, or consecutive 2K runs.
+- The single 2K run had a commit peak of 34.61 / 35.31 GiB, leaving approximately 0.70 GiB of headroom. Substantial physical memory was still available; the two metrics must not be conflated.
+- The first worker startup / import was slower than later samples. However, this report did not measure the time from App launch to an interactive interface, so it cannot directly serve as a timing baseline for this round of startup interface changes.
 
-因此 CUDA 的完整验收仍保留 `pending`，并把本页作为已经收到的 RTX 文生图实测范围。后续应补重启、参考图与停止恢复；Windows 当前参考图上限仍为 3 张。
+Full CUDA acceptance therefore remains `pending`, with this page documenting the scope of RTX text-to-image hardware results received so far. Follow-up testing should cover relaunches, reference images, and recovery after stopping a task. Windows currently still supports at most 3 reference images.

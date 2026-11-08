@@ -1,99 +1,99 @@
-# 自动资源规划
+# Automatic resource planning
 
-v0.3.7 在后台根据当前设备、可用内存和模型元数据选择运行策略。AMD ROCm 与 NVIDIA CUDA 使用同一套规划逻辑；显卡后端、已选择的尺寸、参考图和 Prompt 增强开关仍沿用现有界面，不增加性能模式或手动卸载选项。
+v0.3.7 selects a runtime strategy in the background based on the current device, available memory, and model metadata. AMD ROCm and NVIDIA CUDA use the same planning logic. The existing interface still controls the GPU backend, selected dimensions, reference images, and Prompt enhancement switch; no performance modes or manual offload options are added.
 
-这项改动不代表所有 8 GB 显卡已经通过验收。RTX 4070 Laptop 8 GB + 32 GB 系统内存仍需完整实机测试；环境检查通过只能说明运行环境可用。
+This change does not mean that all 8 GB GPUs have passed acceptance testing. The RTX 4070 Laptop 8 GB + 32 GB system memory configuration still requires complete testing on the actual hardware. Passing the environment check only confirms that the runtime environment is available.
 
-## 规划使用什么信息
+## Information used for planning
 
-每次生成会检查 GPU 运行环境，并读取 safetensors 的文件头，统计实际使用的 DiT、文本编码器和 VAE 权重、单层大小以及加载缓冲区。模型权重不会为了规划而整体载入内存。
+Each generation checks the GPU runtime environment and reads safetensors headers to determine the sizes of the DiT, text encoder, and VAE weights actually used, individual layers, and loading buffers. Planning does not load the complete model weights into memory.
 
-规划同时考虑当前可用 GPU 内存、系统可用物理内存、输出像素数和文生图或参考图编辑任务。工作区开销和安全余量是保守估计，不是硬件实测最低要求；其他程序占用、驱动和算子仍会影响实际峰值。
+Planning also considers currently available GPU memory, available physical system memory, output pixel count, and whether the task is text-to-image or reference image editing. Workspace overhead and safety margins are conservative estimates, not minimum requirements measured on the hardware. Other applications, drivers, and operators still affect actual peaks.
 
-- **独立显卡**：显存与系统内存分别预算。放在 CPU 的模型权重、传输缓冲区和 GPU 上的活动权重都计入相应开销。
-- **共享内存设备**：例如 Radeon 8060S，GPU 与 CPU 使用同一物理内存池。规划不会把标称显存与系统内存相加，并会考虑 CPU 源权重与 GPU 副本同时存在的开销。
+- **Discrete GPUs**: GPU memory and system memory are budgeted separately. Model weights on the CPU, transfer buffers, and active weights on the GPU count toward their respective budgets.
+- **Shared-memory devices**: On devices such as the Radeon 8060S, the GPU and CPU use the same physical memory pool. Planning does not add nominal GPU memory to system memory, and accounts for the overhead of CPU source weights and GPU copies existing at the same time.
 
-Prompt 增强结束、其子进程退出后，会重新检查资源再规划图像推理。运行环境检查使用短生命周期子进程，监督进程不保留 PyTorch GPU 上下文。
+After Prompt enhancement finishes and its subprocess exits, resources are checked again before planning image inference. Runtime environment checks use short-lived subprocesses; the supervisor does not retain a PyTorch GPU context.
 
-## 自动选择的路径
+## Automatically selected paths
 
-| 路径 | 使用方式 |
+| Path | Behavior |
 | --- | --- |
-| 完整驻留 | 容量足够时，模型保持在 GPU 上，沿用普通推理路径，避免无意义的逐层读取和传输。 |
-| 按组件卸载 | 文本编码器与 DiT 等组件按阶段移入 GPU，阶段结束后释放相应占用。 |
-| 按 block 卸载 | 系统内存保存 DiT 权重，GPU 只保留当前计算需要的 block 与缓冲区。 |
-| 磁盘流式 | CPU 或 GPU 容量不足以保存完整组件时，按需读取 BF16 层；文本编码器可在 CPU 查询词表并仅传输所需 embedding。 |
+| Full residency | When capacity is sufficient, models remain on the GPU and use the normal inference path, avoiding unnecessary layer-by-layer reads and transfers. |
+| Component offloading | Components such as the text encoder and DiT move to the GPU by stage, and their memory is released when the stage ends. |
+| Block offloading | System memory holds the DiT weights; the GPU retains only the blocks and buffers needed for the current computation. |
+| Disk streaming | When CPU or GPU capacity cannot hold an entire component, BF16 layers are read on demand. The text encoder can look up vocabulary entries on the CPU and transfer only the required embeddings. |
 
-文本编码器是否流式读取与 DiT 是否流式读取分别规划。VAE 会按预算选择分块解码及 tile 大小。流式方案依赖 SSD 吞吐量，速度可能明显低于完整驻留；较小的加载内存占用不等于相同的生成速度。
+Text encoder streaming and DiT streaming are planned separately. The VAE selects tiled decoding and tile size according to the budget. Streaming depends on SSD throughput and can be substantially slower than full residency; a smaller loading memory footprint does not imply the same generation speed.
 
-模型仍使用 BF16，Turbo 仍使用固定 8 步及配套采样参数。自动资源规划保留用户请求的尺寸、参考图和增强设置。512 比 1K/2K 的图像工作区更小，但不会缩小模型权重；单独把尺寸改成 512，不能解决所有模型加载内存不足的问题。
+Models still use BF16, and Turbo still uses a fixed 8 steps with the corresponding sampling parameters. Automatic resource planning preserves the dimensions, reference images, and enhancement settings requested by the user. A 512 output needs a smaller image workspace than 1K/2K, but does not shrink model weights. Changing the dimensions to 512 alone cannot resolve every model-loading memory shortage.
 
-## Prompt 增强
+## Prompt enhancement
 
-提示词增强继续使用本地 llama.cpp。程序结合 GGUF 元数据和当前资源估计 GPU 层数，其余层由 CPU 处理；上下文、输出预算和采样参数保持原有设置。多参考图继续保留顺序，通过每图 token 预算控制视觉上下文。
+Prompt enhancement continues to use local llama.cpp. The application estimates the number of GPU layers from GGUF metadata and current resources; the CPU handles the remaining layers. Context, output budget, and sampling parameters retain their existing settings. Multiple reference images retain their order, with a per-image token budget controlling the visual context.
 
-增强模型与图像模型分阶段运行。增强进程退出并释放后，才启动图像推理。监督、元数据读取与主机资源监测不需要导入 torch。
+The enhancement model and image model run in separate stages. Image inference starts only after the enhancement process exits and releases its resources. Supervision, metadata reads, and host resource monitoring do not require importing torch.
 
-## 运行中的内存压力
+## Memory pressure during execution
 
-开始推理前会检查严重的系统内存不足。运行中也会监测物理内存；只有持续的严重压力才会停止所属任务进程，短暂加载波动不会按一个固定的多 GB 余量立即终止。
+Severe system memory shortages are checked before inference starts. Physical memory is also monitored during execution. Only sustained severe pressure stops the processes belonging to the task; brief loading fluctuations do not trigger immediate termination based on a fixed multi-GB reserve.
 
-停止会保留诊断信息。内存估计不能完全消除 OOM；发生 GPU OOM、系统内存压力停止或驱动错误时，应根据该次任务日志判断实际原因。
+Diagnostic information is preserved when a task stops. Memory estimates cannot eliminate all OOM failures. For a GPU OOM, a stop caused by system memory pressure, or a driver error, use that task's logs to determine the actual cause.
 
-## 任务目录中的诊断文件
+## Diagnostic files in the task directory
 
-每次任务保存独立记录。常见文件如下：
+Each task saves an independent record. Common files include:
 
-| 文件 | 内容 |
+| File | Contents |
 | --- | --- |
-| `resource-plan.json` | 实际选择的策略、当前资源、权重统计、预算、工作区估计与选择理由。 |
-| `config.json` | 本次推理实际使用的配置。 |
-| `invocation.json` | 启动参数、工作目录与关键运行环境。 |
-| `inference.log` | LightX2V 原始推理日志。 |
-| `telemetry.jsonl` | worker 内部的模块初始化、加载、编码、DiT 和 VAE 等阶段事件。 |
-| `resource-usage.json` | worker 阶段遥测的累计峰值、最小可用量及状态摘要。 |
-| `host-telemetry.jsonl` | 监督进程对所属子进程和主机内存的周期采样，以及内存保护事件。 |
-| `host-resource-usage.json` | 主机采样摘要。 |
-| `supervisor-error.log` | 监督进程捕获的错误详情，发生相关错误时生成。 |
-| `worker-start.json` | worker 启动身份、读取策略及正常 Python 路径的运行状态。 |
-| `worker-fault.log` | 提前启用的 faulthandler 日志；正常运行时可能只有身份信息。 |
-| `worker-exit.json` | 监督进程记录的实际退出码、worker PID、原生异常及已找到的 dump 路径。 |
+| `resource-plan.json` | The selected strategy, current resources, weight statistics, budgets, workspace estimates, and reasons for the selection. |
+| `config.json` | The configuration actually used for this inference run. |
+| `invocation.json` | Launch arguments, working directory, and key runtime environment details. |
+| `inference.log` | Raw LightX2V inference logs. |
+| `telemetry.jsonl` | Events for stages within the worker, including module initialization, loading, encoding, DiT, and VAE. |
+| `resource-usage.json` | Cumulative peaks, minimum available resources, and a status summary from worker stage telemetry. |
+| `host-telemetry.jsonl` | Periodic supervisor samples of its child processes and host memory, plus memory protection events. |
+| `host-resource-usage.json` | A summary of host samples. |
+| `supervisor-error.log` | Error details captured by the supervisor, created when a relevant error occurs. |
+| `worker-start.json` | Worker startup identity, read strategy, and runtime status of the normal Python execution path. |
+| `worker-fault.log` | The faulthandler log enabled early in startup; it may contain only identity information during normal execution. |
+| `worker-exit.json` | The actual exit code, worker PID, native exceptions, and any dump paths found, as recorded by the supervisor. |
 
-Prompt 增强的计划、命令、原始输出和诊断位于 `enhancement` 子目录，例如 `resource-plan.json`、`invocation.json` 和 `llama.log`。
+Prompt enhancement plans, commands, raw output, and diagnostics are in the `enhancement` subdirectory, including `resource-plan.json`, `invocation.json`, and `llama.log`.
 
-阶段事件为 `stage_begin`、`stage_end`、`stage_error`；`stage_id` 与 `parent_stage_id` 表示嵌套关系。阶段耗时是墙钟时间，不等同于单独的 GPU kernel 时间；遥测不会为了每个 block 或采样步强制同步 GPU。
+Stage events are `stage_begin`, `stage_end`, and `stage_error`; `stage_id` and `parent_stage_id` identify nesting. Stage durations are wall-clock time, not isolated GPU kernel time. Telemetry does not force GPU synchronization for every block or sampling step.
 
-- GPU 字段包括 `allocated_bytes`、`reserved_bytes`、`max_allocated_bytes`、`max_reserved_bytes`、`device_free_bytes` 和 `device_total_bytes`。allocator 峰值是该 worker 的累计峰值，reserved 也不是独立显卡实际专用显存的完整读数。
-- 主机字段包括 `process_rss_bytes`、Windows 的 `process_private_bytes`、`system_available_bytes`，以及系统 commit/limit。
-- Windows commit 使用 `GetPerformanceInfo`，以 `system_commit_source` 和 `system_commit_exact` 标注来源。API 不可用时的 pagefile 代理单独命名，不应作为精确 commit 使用。
-- 摘要的 `peaks` 与 `minimums` 是已采样的统计。进程被强制停止时，已写入事件仍保留；采样间隔内的短暂 CPU 峰值可能未被观察到。
+- GPU fields include `allocated_bytes`, `reserved_bytes`, `max_allocated_bytes`, `max_reserved_bytes`, `device_free_bytes`, and `device_total_bytes`. Allocator peaks are cumulative peaks for that worker, and reserved memory is not a complete reading of actual dedicated memory use on a discrete GPU.
+- Host fields include `process_rss_bytes`, Windows `process_private_bytes`, `system_available_bytes`, and system commit/limit.
+- Windows commit uses `GetPerformanceInfo`, with the source identified by `system_commit_source` and `system_commit_exact`. When the API is unavailable, the pagefile proxy has a separate name and should not be treated as exact commit.
+- The summary's `peaks` and `minimums` are statistics from recorded samples. Events already written remain available if a process is forcibly stopped. Brief CPU peaks between samples may go unobserved.
 
-提交 Issues 前，请删除日志中的用户名、本机路径、提示词、参考图等个人信息。
+Before submitting Issues, remove personal information from logs, including usernames, local paths, prompts, and reference images.
 
-## RTX 4070 Laptop 手工验收
+## Manual RTX 4070 Laptop acceptance testing
 
-8 GB 显存与 32 GB 系统内存的配置仍属于待验收目标，不能用规划单元测试代替实际出图。验收应记录 App 版本、显卡及驱动、GPU 环境、系统内存和生成前的空闲资源。
+The 8 GB GPU memory and 32 GB system memory configuration remains an acceptance testing target. Planning unit tests cannot replace actual image generation. Acceptance records should include the App version, GPU and driver, GPU environment, system memory, and resources available before generation.
 
-1. 按现有向导配置 CUDA 环境，完成 GPU 检查并复用已下载模型。接通电源，关闭明显占用 GPU/内存的软件。
-2. 使用自己选择的提示词，在固定比例下依次测试 512、1K，再按实际能力测试 2K；先关闭增强，随后单独测试增强开启的完整流程。较小尺寸有助于隔离图像工作区开销，不代表加载问题已解决。
-3. 添加参考图，分别测试参考图编辑与 PE-I2I。核对参考图顺序、输出尺寸、PNG 可解码以及固定 8 步流程。
-4. 在增强与图像生成阶段分别测试停止任务，确认界面恢复可操作、所属进程退出，再启动下一次任务。
-5. 保存每次任务的资源计划、阶段与主机日志、耗时和结果。区分安装成功、环境检查通过、生成成功与速度可接受，分别记录。
+1. Configure the CUDA environment through the existing wizard, complete the GPU check, and reuse downloaded models. Connect AC power and close applications that use substantial GPU or system memory.
+2. Use a prompt of your choice and a fixed aspect ratio to test 512, then 1K, followed by 2K as the hardware permits. Disable enhancement first, then separately test the complete workflow with enhancement enabled. Smaller dimensions help isolate image workspace overhead; they do not establish that loading issues are resolved.
+3. Add reference images and test reference image editing and PE-I2I separately. Check reference image order, output dimensions, PNG decodability, and the fixed 8-step workflow.
+4. Test stopping a task during enhancement and during image generation. Confirm that the interface becomes usable again and the task's processes exit before starting the next task.
+5. Save the resource plan, stage and host logs, duration, and result for each task. Record successful installation, a passed environment check, successful generation, and acceptable speed separately.
 
-只有相关硬件上的完整流程与有效输出，才能作为该配置通过验收的证据。CUDA 当前仍为预览支持。
+Only a complete workflow with valid output on the relevant hardware can establish that a configuration has passed acceptance testing. CUDA support remains in preview.
 
-## 单任务组件生命周期
+## Component lifecycle within a single task
 
-每个生成任务使用独立 worker，关闭 warmup。文本编码成功后，保留条件 embedding 和布局，立即释放本次任务不再需要的文本编码器权重及缓冲；随后才执行参考图的 VAE 编码。DiT 和 VAE 继续使用所选的驻留或流式路径。这项阶段释放不需要把 GPU 权重再复制到 CPU，也不会让高资源设备启用磁盘流式。
+Each generation task uses an independent worker with warmup disabled. After text encoding succeeds, it retains the conditioning embeddings and layout, and immediately releases text encoder weights and buffers that the task no longer needs. Reference image VAE encoding follows that release. DiT and VAE continue to use the selected resident or streaming paths. This stage-based release does not require copying GPU weights back to the CPU and does not enable disk streaming on devices with ample resources.
 
-资源计划按这些阶段分别估算峰值，避免把已经释放的编码器与后续所有工作区永久叠加。只有明确标记的 App 单请求 worker 才启用该生命周期，不改变可复用上游 runner 的行为。
+The resource plan estimates peaks separately for these stages, avoiding permanently adding an already released encoder to all later workspaces. This lifecycle is enabled only for explicitly marked App single-request workers; it does not change the behavior of reusable upstream runners.
 
-Windows 上的 worker 还在开始与结束时记录本进程 DXGI LOCAL/NON_LOCAL 预算。它们用于诊断，不作为 GPU 分配器峰值或固定快池容量；同名适配器无法唯一匹配时保留全部结果。任务使用自己的可写临时目录，供原生运行时编译器和子进程使用。
+On Windows, workers also record their process's DXGI LOCAL/NON_LOCAL budgets at the start and end. These are diagnostic values, not GPU allocator peaks or a fixed fast-pool capacity. All results are retained if adapters with the same name cannot be matched uniquely. Each task has its own writable temporary directory for native runtime compilers and subprocesses.
 
-提示词增强读取 GGUF 的完整注意力与 recurrent 层布局，分别预算 KV 和固定状态；图像编辑还计入视觉投影模型及图像工作区。资源充分时保留完整 GPU 层，受限时自动减少 GPU 层，保留上下文、输出预算、参考图和采样设置。
+Prompt enhancement reads the complete GGUF attention and recurrent layer layout, budgeting KV and fixed state separately. Image editing also includes the visual projection model and image workspace. With sufficient resources, all layers stay on the GPU. When resources are constrained, the number of GPU layers is reduced automatically while preserving context, output budget, reference images, and sampling settings.
 
-## v0.3.8 Windows 读取修复
+## v0.3.8 Windows read fix
 
-Windows 普通加载改用 pread；流式词表只显式读取所需行，流式层使用自有缓冲区。该修复不改变资源路径的自动选择，详见 [Windows 权重读取](windows-checkpoint-io.md)。
+Normal loading on Windows now uses pread. The streaming vocabulary explicitly reads only the required rows, and streamed layers use owned buffers. This fix does not change automatic resource path selection. See [Windows weight loading](windows-checkpoint-io.md).
 
-原生崩溃可能使 worker 来不及写入 `stage_end` 或结束状态；此时结合 `worker-exit.json` 判断实际退出。v0.3.8 遥测的 `historical_peaks` 单独保存系统启动以来的 commit 峰值等历史指标，`peaks` 只汇总该会话成功写入日志的样本；通过 `run_id`、`session_id`、`producer_pid` 与 `observed_pid` 区分所属任务及进程。
+A native crash may prevent the worker from writing `stage_end` or a final status. In that case, use `worker-exit.json` to determine the actual exit. In v0.3.8 telemetry, `historical_peaks` separately records historical metrics such as the commit peak since system boot, while `peaks` summarizes only samples successfully written to the log during that session. The fields `run_id`, `session_id`, `producer_pid`, and `observed_pid` distinguish the task and processes involved.

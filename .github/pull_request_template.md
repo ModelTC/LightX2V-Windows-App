@@ -1,11 +1,11 @@
-## 改动
+## Changes
 
-说明遇到的问题和修改后的行为。
+Describe the problem and the resulting behavior.
 
-## 验证
+## Validation
 
-- 编译 / 单元测试：
-- 实机设备与检查范围（未做请注明）：
-- 影响环境、模型或用户数据的变更：
+- Build / unit tests:
+- Actual hardware and checks performed (state explicitly if not tested):
+- Changes affecting environments, models, or user data:
 
-模拟与离屏测试请和实际 GPU 出图分开描述。
+Describe simulated and offscreen checks separately from actual GPU image generation.

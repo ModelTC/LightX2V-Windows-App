@@ -1,14 +1,14 @@
-# 发布内测版
+# Publishing an Internal Beta
 
-源码仓库为 [ModelTC/LightX2V-Windows-App](https://github.com/ModelTC/LightX2V-Windows-App)。`main` 保存可构建源码；模型、环境、个人验收报告和历史安装包不提交。App 原创代码尚未单独选择许可证，第三方许可证已保留。
+The source repository is [ModelTC/LightX2V-Windows-App](https://github.com/ModelTC/LightX2V-Windows-App). `main` contains buildable source. Models, environments, personal acceptance reports, and historical packages are not committed. A separate license has not yet been selected for the app's original code; third-party licenses are retained.
 
-## 分支构建
+## Branch Builds
 
-推送分支或提交 PR 时，GitHub Actions 校验源码与固定安装载荷，运行 Python 测试，编译 C# 检查项目并构建完整 Windows x64 ZIP。workflow artifact 保留 30 天，不自动发布该分支的 Release。
+On a branch push or pull request, GitHub Actions validates the source and pinned setup payloads, runs Python tests, compiles the C# check projects, and builds a complete Windows x64 ZIP. Workflow artifacts are retained for 30 days; a branch build does not automatically publish a Release.
 
-## 发布版本标签
+## Publishing a Version Tag
 
-先更新项目版本和 `docs/releases/v版本.md`，完成代码审查及相关实机验证，再对已提交的代码打版本标签：
+Update the project version and `docs/releases/v<version>.md`, complete code review and relevant hardware validation, then tag the committed code:
 
 ```powershell
 git status --short
@@ -17,20 +17,20 @@ git push origin main
 git push origin v0.3.5
 ```
 
-标签必须与项目版本一致。标签构建仍使用只读权限；独立发布任务仅在版本标签运行，使用 GitHub 自动提供的临时 token，无需配置个人访问令牌。
+The tag must match the project version. Tag builds still use read-only permissions. The separate publishing job runs only for version tags and uses the temporary token automatically provided by GitHub; no personal access token is required.
 
-发布前自动验证 ZIP 的 SHA-256、全部文件哈希、`build-manifest.json` 的源码提交与干净状态；先创建 Draft Pre-release 并上传 App ZIP 与 `.sha256`，确认两个资产上传完成后再公开。若同名 Release 已存在，流程拒绝覆盖，避免替换已分发的文件。失败时检查 Actions 日志；已有草稿或正式版本需先人工核对，不能盲目重跑覆盖。
+Before publication, the workflow automatically verifies the ZIP's SHA-256, every file hash, and the source commit and clean state in `build-manifest.json`. It first creates a draft pre-release and uploads the app ZIP and `.sha256`, then makes the release public only after confirming that both assets have been uploaded. If a Release with the same name already exists, the workflow refuses to overwrite it so that distributed files are not replaced. Check the Actions logs after a failure. Existing drafts or published releases must be reviewed manually before retrying; do not blindly rerun the workflow to overwrite them.
 
-发布页永久保留该版本资产；workflow artifact 的 30 天保留期不影响 Release 下载。首版使用 Pre-release，不标为 Stable，也不滚动覆盖 Latest。后续渠道策略可以再按 Mac 版扩展。
+The release page retains that version's assets permanently. The 30-day workflow artifact retention period does not affect Release downloads. The initial release uses the pre-release channel, is not marked Stable, and does not overwrite Latest on a rolling basis. The channel strategy can later be expanded to follow the Mac version.
 
-## 实机验收
+## Hardware Acceptance
 
-CI 不安装显卡驱动，也不执行 GPU 推理。发布说明必须区分真实出图、离屏/模拟检查与未完成的硬件验证。首版 AMD 已验证范围和 CUDA 待验收状态见 [testing.md](testing.md)。
+CI does not install graphics drivers or run GPU inference. Release notes must distinguish real image generation, off-screen/simulated checks, and incomplete hardware validation. See [testing.md](testing.md) for the first release's AMD validation scope and the CUDA acceptance status at that time.
 
-开发机手动构建可用 `build.ps1`；只有来自干净、已提交源码且与目标版本标签匹配的包，才能用于正式内测分发。迁移前工作区的临时包、含个人路径的 QA 归档不上传 Release。
+Use `build.ps1` for manual builds on a development machine. Only packages built from clean, committed source matching the target version tag may be distributed as official internal betas. Do not upload temporary packages from the pre-migration workspace or QA archives containing personal paths to a Release.
 
-## 恢复已上传的草稿
+## Recovering an Uploaded Draft
 
-草稿不能通过正式 Release 的按标签查询接口读取。发布助手通过已认证的列表接口定位草稿，重新下载并核验两个资产及标签对应的源码提交，然后只修改发布状态，不替换资产、不移动标签。
+Drafts cannot be read through the published Release lookup-by-tag endpoint. The publishing helper locates a draft through the authenticated list endpoint, downloads and verifies both assets and the source commit associated with the tag again, then changes only the publication state. It does not replace assets or move tags.
 
-若上传已完成而最后一步失败，可在 Actions 中手动运行 **Publish verified draft beta**，填写版本标签。维护者也可从修复了发布脚本的提交推送 `codex/publish-v0.3.5` 这类明确命名的发布分支来触发恢复。该流程仅接受已有完整草稿；版本已公开、缺少资产或校验失败时均拒绝修改。
+If the uploads completed but the final step failed, manually run **Publish verified draft beta** in Actions and enter the version tag. Maintainers can also trigger recovery by pushing an explicitly named publishing branch such as `codex/publish-v0.3.5` from a commit containing the publishing script fix. This workflow accepts only an existing, complete draft. It refuses changes if the version is already public, an asset is missing, or validation fails.
