@@ -10,6 +10,9 @@ namespace LightX2V.Windows;
 public sealed partial class MainViewModel : Observable, IDisposable
 {
     readonly string preferencesPath; readonly Dispatcher dispatcher; readonly DispatcherTimer timer; BridgeClient? active; Generation? activeJob; string creation = Guid.NewGuid().ToString("N");
+    readonly IEnvironmentCatalog environmentCatalog;
+    CancellationTokenSource? checkCancellation,preflightCancellation; Task? checkTask; string? activeCheckKey,verifiedEnvironmentKey;
+    long environmentRevision; bool preflighting,viewModelDisposed;
     readonly List<Generation> all = []; bool loading; bool isChecking; bool ready; bool stopping; string prompt = ""; string logs = ""; string device = "GPU"; string toast = ""; bool showLog; bool showInspector = true; int tier = 1; string ratio = "Adaptive"; bool randomSeed = true; string seed = "42";
     public L10n T => L10n.Current; public AppSettings Settings { get; private set; }
     public ObservableCollection<Generation> Recent { get; } = []; public ObservableCollection<Generation> Turns { get; } = [];
@@ -20,11 +23,13 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public bool RandomSeed { get => randomSeed; set { Set(ref randomSeed, value); Changed(nameof(FixedSeed)); } }
     public bool FixedSeed => !RandomSeed; public string Seed { get => seed; set => Set(ref seed, value); }
     public string SizeText { get { var d = CurrentDimensions(); return ValidDimensions?$"{d.Width} × {d.Height} px":T["Choose an aspect ratio"]; } }
+    public bool IsPreflighting {get=>preflighting;private set{Set(ref preflighting,value);RefreshStatus();}}
+    public bool IsGenerationBusy=>IsRunning||IsPreflighting;
     public bool IsRunning => active is not null; public bool IsStopping { get => stopping; private set { Set(ref stopping, value); Changed(nameof(GenerateLabel)); } }
     public bool IsChecking { get => isChecking; private set { Set(ref isChecking, value); RefreshStatus(); } }
     public bool Ready { get => ready; private set { Set(ref ready, value); RefreshStatus(); } }
     public string Device { get => device; private set => Set(ref device, value); }
-    public string EnvironmentStatus => IsChecking ? T["Checking environment"] : Ready ? T["Ready"] : T["Not connected"];
+    public string EnvironmentStatus => IsChecking ? T["Checking environment"] : Ready ? T["Ready"] : File.Exists(Settings.Python)&&TurboCard.Ready ? T["Ready to create"] : T["Not connected"];
     public string Logs { get => logs; private set => Set(ref logs, value); }
     public string Toast { get => toast; private set {Set(ref toast,value);Changed(nameof(VisibleToast));} }
     public string VisibleToast => Toast==T["Environment connected"]?"":Toast;
@@ -34,8 +39,8 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public bool ParametersExpanded {get=>parametersExpanded;set{if(Set(ref parametersExpanded,value))SavePreferences();}}
     public bool ShowLog { get => showLog; set => Set(ref showLog, value); }
     public bool ShowInspector { get => showInspector; set => Set(ref showInspector, value); }
-    public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => Ready && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsRunning && !IsChecking && !IsImporting && !IsDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
-    public string GenerateLabel => IsRunning ? T[IsStopping ? "Stopping" : "Stop generation"] : T["Generate image"];
+    public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => !NeedsInitialSetup && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsGenerationBusy && !IsImporting && !IsDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
+    public string GenerateLabel => IsGenerationBusy ? T[IsStopping ? "Stopping" : "Stop generation"] : T["Generate image"];
     public Command NewCommand { get; }
     public Command GenerateCommand { get; }
     public Command SettingsCommand { get; }
@@ -54,14 +59,15 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public MainViewModel(string? preferencesRoot = null,IModelDownloader? modelDownloader=null,IEnvironmentCatalog? environmentCatalog=null,IDriverPlatform? driverPlatform=null)
     {
         this.modelDownloader=modelDownloader??new NativeModelDownloader();
+        this.environmentCatalog=environmentCatalog??new NativeEnvironmentCatalog();
         dispatcher = Dispatcher.CurrentDispatcher; var useDefaultPreferences=preferencesRoot==null; preferencesRoot ??= AppSettings.PreferencesRoot(); preferencesPath = Path.Combine(preferencesRoot, "preferences.json");
         Preferences? prefs = null; try { if (File.Exists(preferencesPath)) prefs = Files.Read<Preferences>(preferencesPath); else if(useDefaultPreferences&&AppSettings.LegacyPreferences() is {} old) {prefs=Files.Read<Preferences>(old);Files.Write(preferencesPath,prefs);} } catch (Exception e) { Debug.WriteLine(e); }
         T.Use(prefs?.Language ?? "zh"); Settings = prefs?.Settings ?? AppSettings.Detect();
         modelExpanded=prefs?.ModelExpanded??true;parametersExpanded=prefs?.ParametersExpanded??true;
-        InitializeImages();InitializeModels();InitializeSetup(environmentCatalog,driverPlatform);
+        InitializeImages();InitializeModels();InitializeSetup(this.environmentCatalog,driverPlatform);
         LoadWorkspace();
-        NewCommand = new(NewCreation,()=>!IsImporting); GenerateCommand = new(() => { if (IsRunning) _ = StopAsync(); else _ = GenerateAsync(); }, () => IsRunning && !IsStopping || CanGenerate);
-        SettingsCommand = new(() => RequestSettings?.Invoke(), () => !IsRunning && !IsChecking && !IsImporting && !IsDownloading && !IsPreparingSetup); CheckCommand = new(() => _ = CheckAsync(), () => !IsRunning && !IsChecking && !IsDownloading);
+        NewCommand = new(NewCreation,()=>!IsImporting); GenerateCommand = new(() => { if (IsGenerationBusy) _ = StopAsync(); else _ = GenerateAsync(); }, () => IsGenerationBusy && !IsStopping || CanGenerate);
+        SettingsCommand = new(() => RequestSettings?.Invoke(), () => !IsGenerationBusy && !IsImporting && !IsDownloading && !IsPreparingSetup); CheckCommand = new(() => _ = CheckForUiAsync(), () => !IsGenerationBusy && !IsChecking && !IsDownloading);
         ModelFolderCommand = new(async()=>{try{await WindowsShell.RevealAsync(Settings.Model);Toast="";}catch(Exception e){Toast=ShellFailure(e,"Unable to open Explorer");}});
         LogCommand = new(ToggleLog); InspectorCommand = new(() => ShowInspector = !ShowInspector); ReturnCommand = new(() => { if (activeJob != null) Selected = activeJob; });
         ExampleCommand = new(p => Prompt = ExamplePrompt(p?.ToString())); ReuseCommand = new(p => Reuse(p as Generation)); CopyCommand = new(p => Copy(p as Generation)); RevealCommand = new(p => _ = RevealAsync(p as Generation)); ExportCommand = new(p => Export(p as Generation)); OpenLogCommand = new(p => OpenLog(p as Generation)); RemoveCommand = new(p => Remove(p as Generation));
@@ -69,7 +75,14 @@ public sealed partial class MainViewModel : Observable, IDisposable
     }
     static string ExamplePrompt(string? key) => key switch { "light" => "A quiet Japanese cafe on a rainy afternoon, soft window light, cinematic photography, warm tones", "nature" => "A tiny glass house in a misty green forest, soft morning sunlight, architectural photography, peaceful atmosphere", _ => "A capybara wearing a wizard hat sits at a desk, reading a book by candlelight. Oil painting style, delicate brushwork, warm tones." };
     public void SetLanguage(string language) { T.Use(language); SavePreferences(); foreach (var g in all) g.Refresh(); RefreshLogPanel(); RefreshStatus(); ContentUpdated?.Invoke(); }
-    public void ApplySettings(AppSettings settings) { if (IsRunning||IsDownloading) throw new InvalidOperationException("Wait for the active generation or model download to finish."); settings.ValidateWorkspace(); var different = settings.Workspace != Settings.Workspace; Settings = settings.Clone(); SavePreferences(); Ready = false; if (different) { all.Clear(); LoadWorkspace(); NewCreation(); } Changed(nameof(Settings)); ReloadModelPaths(); _ = CheckAsync(); }
+    public void ApplySettings(AppSettings settings)
+    {
+        if(IsGenerationBusy||IsDownloading)throw new InvalidOperationException("Wait for the active generation or model download to finish.");
+        settings.ValidateWorkspace();var keepVerified=Ready&&verifiedEnvironmentKey==EnvironmentKey(settings);var different=settings.Workspace!=Settings.Workspace;
+        InvalidateEnvironment(keepVerified);Settings=settings.Clone();SavePreferences();
+        if(different){all.Clear();LoadWorkspace();NewCreation();}
+        Changed(nameof(Settings));Changed(nameof(NeedsInitialSetup));ReloadModelPaths();RefreshStatus();
+    }
     void SavePreferences() => Files.Write(preferencesPath, new Preferences { Language = T.Language, Settings = Settings.Clone(),ModelExpanded=ModelExpanded,ParametersExpanded=ParametersExpanded });
     void LoadWorkspace()
     {
@@ -84,22 +97,67 @@ public sealed partial class MainViewModel : Observable, IDisposable
     void Persist() { if (loading || string.IsNullOrWhiteSpace(Settings.Workspace)) return; try { Files.Write(Path.Combine(Settings.Workspace, "workspace.json"), new WorkspaceState { Generations = all }); foreach (var g in all.Where(g => g.Id == activeJob?.Id)) Files.Write(Path.Combine(g.Directory, "generation.json"), g); } catch (Exception e) { Toast = e.Message; } }
     void RefreshRecent() { var id = selected?.CreationId; loading = true; Recent.Clear(); foreach (var g in all.GroupBy(g => g.CreationId).Select(g => g.OrderByDescending(x => x.CreatedAt).First()).OrderByDescending(g => g.CreatedAt)) Recent.Add(g); selected = Recent.FirstOrDefault(g => g.CreationId == id); loading = false; Changed(nameof(Selected)); }
     void RefreshTurns() { Turns.Clear(); foreach (var g in all.Where(g => g.CreationId == creation).OrderBy(g => g.CreatedAt)) Turns.Add(g); Changed(nameof(Welcome)); ContentUpdated?.Invoke(); }
-    public void NewCreation() { if(IsImporting)return;InputImages.Clear(); creation = Guid.NewGuid().ToString("N"); selected = null; Changed(nameof(Selected)); Prompt = ""; Turns.Clear(); Changed(nameof(Welcome)); ResetLogViewer(); Toast = ""; ContentUpdated?.Invoke(); }
-    void RefreshStatus() { foreach (var n in new[] { nameof(EnvironmentStatus), nameof(CanGenerate), nameof(IsRunning), nameof(GenerateLabel),nameof(CanAddImages) }) Changed(n); ModelStateChanged();CommandManager.InvalidateRequerySuggested(); }
+    public void NewCreation() { if(IsImporting)return;if(IsPreflighting){preflightCancellation?.Cancel();CancelEnvironmentCheck();}InputImages.Clear(); creation = Guid.NewGuid().ToString("N"); selected = null; Changed(nameof(Selected)); Prompt = ""; Turns.Clear(); Changed(nameof(Welcome)); ResetLogViewer(); Toast = ""; ContentUpdated?.Invoke(); }
+    void RefreshStatus() { foreach (var n in new[] { nameof(EnvironmentStatus), nameof(CanGenerate), nameof(IsRunning),nameof(IsPreflighting),nameof(IsGenerationBusy), nameof(GenerateLabel),nameof(CanAddImages) }) Changed(n); ModelStateChanged();CommandManager.InvalidateRequerySuggested(); }
 
+    static string EnvironmentKey(AppSettings settings)
+    {
+        // A session result is tied to the executable and environment configuration.
+        // Nothing is persisted as trusted GPU readiness across app launches.
+        FileInfo? python=null;try{if(!string.IsNullOrWhiteSpace(settings.Python))python=new FileInfo(settings.Python);}catch(ArgumentException){}
+        return string.Join("\n",settings.Python.ToUpperInvariant(),settings.Workspace.ToUpperInvariant(),settings.Repository.ToUpperInvariant(),settings.Backend,
+            python?.Exists==true?python.Length:0,python?.Exists==true?python.LastWriteTimeUtc.Ticks:0);
+    }
+    void CancelEnvironmentCheck()
+    {
+        var pending=checkCancellation;checkCancellation=null;checkTask=null;activeCheckKey=null;
+        pending?.Cancel();IsChecking=false;
+    }
+    void InvalidateEnvironment(bool keepVerified=false)
+    {
+        environmentRevision++;CancelEnvironmentCheck();
+        if(!keepVerified){verifiedEnvironmentKey=null;VerifiedEnvironment=null;Ready=false;}
+    }
+    async Task CheckForUiAsync(){try{await CheckAsync();}catch(OperationCanceledException){}}
     public async Task CheckAsync(CancellationToken token=default)
     {
-        if(IsRunning||IsChecking)return;IsChecking=true;Ready=false;Toast="";
+        if(IsRunning||viewModelDisposed)return;token.ThrowIfCancellationRequested();
+        var key=EnvironmentKey(Settings);
+        if(checkTask is {IsCompleted:false} pending&&activeCheckKey==key){await pending.WaitAsync(token);return;}
+        CancelEnvironmentCheck();var settings=Settings.Clone();var revision=environmentRevision;
+        var cancellation=CancellationTokenSource.CreateLinkedTokenSource(token);checkCancellation=cancellation;activeCheckKey=key;
+        IsChecking=true;Ready=false;verifiedEnvironmentKey=null;VerifiedEnvironment=null;Toast=T["Checking environment"];
+        var task=RunEnvironmentCheckAsync(settings,key,revision,cancellation);checkTask=task;
+        await task.WaitAsync(token);
+    }
+    async Task RunEnvironmentCheckAsync(AppSettings settings,string key,long revision,CancellationTokenSource cancellation)
+    {
+        var token=cancellation.Token;
+        bool Current()=>!viewModelDisposed&&revision==environmentRevision&&ReferenceEquals(checkCancellation,cancellation)&&EnvironmentKey(Settings)==key;
         try
         {
-            Settings.ValidateEnvironment();
-            if(Settings.Repository.Equals(SetupInstaller.SourceDirectory(Settings.Workspace),StringComparison.OrdinalIgnoreCase)||!File.Exists(Path.Combine(Settings.Repository,"lightx2v","infer.py")))
-            {Settings.Repository=await SetupInstaller.PrepareSource(Settings.Workspace,token);Changed(nameof(Settings));}
-            var probe=await SetupDiscovery.Probe(Settings.Python,Settings.Workspace,token,Settings.Backend);ApplyEnvironmentProbe(probe);
+            settings.ValidateEnvironment();
+            if(settings.Repository.Equals(SetupInstaller.SourceDirectory(settings.Workspace),StringComparison.OrdinalIgnoreCase)||!File.Exists(Path.Combine(settings.Repository,"lightx2v","infer.py")))
+                settings.Repository=await SetupInstaller.PrepareSource(settings.Workspace,token);
+            var probe=await environmentCatalog.Probe(settings.Python,settings.Workspace,token,settings.Backend);
+            token.ThrowIfCancellationRequested();if(!Current())return;
+            if(probe.Ready&&(!probe.Path.Equals(settings.Python,StringComparison.OrdinalIgnoreCase)||(settings.Backend!="auto"&&probe.Backend!=settings.Backend)))throw new InvalidOperationException("The environment probe does not match the selected Python and backend.");
+            Settings.Repository=settings.Repository;Changed(nameof(Settings));ApplyEnvironmentProbe(probe);
         }
         catch(OperationCanceledException) when(token.IsCancellationRequested){throw;}
-        catch(Exception e){Toast=T["Environment check failed"]+": "+e.Message;}
-        finally{IsChecking=false;}
+        catch(Exception e){if(Current())Toast=T["Environment check failed"]+": "+e.Message;}
+        finally
+        {
+            if(ReferenceEquals(checkCancellation,cancellation)){checkCancellation=null;activeCheckKey=null;IsChecking=false;}
+            cancellation.Dispose();
+        }
+    }
+    internal async Task<bool> EnsureGenerationEnvironmentAsync(CancellationToken token=default)
+    {
+        token.ThrowIfCancellationRequested();
+        if(Ready&&verifiedEnvironmentKey==EnvironmentKey(Settings))return true;
+        await CheckAsync(token);token.ThrowIfCancellationRequested();
+        return Ready&&verifiedEnvironmentKey==EnvironmentKey(Settings);
     }
     internal void CommitVerifiedEnvironment(AppSettings settings,EnvironmentCandidate probe)
     {
@@ -113,16 +171,54 @@ public sealed partial class MainViewModel : Observable, IDisposable
         VerifiedEnvironment=probe.Ready?probe:null;
         Ready=probe.Ready;
         if(Ready){Settings.Backend=probe.Backend;ResourceWarning=ResourceWarnings(probe);Changed(nameof(ResourceWarning));Device=probe.Detail.Split(" · ")[0].Replace("(TM)","").Replace(" Graphics","");}
+        verifiedEnvironmentKey=Ready?EnvironmentKey(Settings):null;
         foreach(var card in ModelCards)RefreshModel(card);ModelStateChanged();
         Toast=Ready?T["Environment connected"]:T["Environment check failed"]+": "+probe.Detail;SavePreferences();
     }
     public async Task GenerateAsync()
     {
         if (!CanGenerate) return; long seedValue; if (RandomSeed) seedValue = Random.Shared.NextInt64(4294967296L); else if (!long.TryParse(Seed, out seedValue) || seedValue < 0 || seedValue > uint.MaxValue) { Toast = T["Enter a valid seed"]; return; }
-        var settings = Settings.Clone(); var d = CurrentDimensions(); var g = new Generation { CreationId = creation, Python = settings.Python }; g.Directory = Path.Combine(settings.Workspace, "outputs", DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + g.Id[..8]); try { settings.Validate(); Directory.CreateDirectory(g.Directory); } catch (Exception e) { Toast = e.Message; return; }
-        g.Request = new() { Backend=settings.Backend, Repository = settings.Repository, Model = settings.Model, Config = Path.Combine(AppContext.BaseDirectory, "Resources", "qwen_image_21_turbo.json"), Prompt = Prompt.Trim(), Width = d.Width, Height = d.Height, Seed = seedValue, Output = Path.Combine(g.Directory, "image.png") };
-        try{g.Request.PromptEnhancement=EnhancementEnabled?SnapshotEnhancement():null;g.Request.Resolution=EnhancementEnabled&&Ratio=="Adaptive"?512*(1<<Tier):null;if(EnhancementEnabled)g.EnhancementStatus="thinking";g.Request.InputImages=SnapshotImages(g.Directory);g.Request.Task=g.Request.InputImages.Count>0?"i2i":"t2i";}catch(Exception e){Toast=e.Message;return;}
-        InputImages.Clear();activeJob = g; active = new(); all.Add(g); Prompt = ""; Toast = ""; BeginGenerationLogs(g); RefreshRecent(); Selected = g; RefreshTurns(); RefreshStatus(); bool terminal = false;
+        // Capture the submitted draft before awaiting the first-session GPU check.
+        // Editing another draft or selecting history while it runs cannot change this request.
+        var settings=Settings.Clone();var submittedRevision=environmentRevision;var d=CurrentDimensions();var submittedPrompt=Prompt;var submittedCreation=creation;
+        var submittedTier=Tier;var submittedRatio=Ratio;var submittedRandomSeed=RandomSeed;var submittedSeed=Seed;var submittedEnhancement=EnhancementEnabled;
+        var images=InputImages.Select(x=>new InputImage{Id=x.Id,Path=x.Path,Name=x.Name,Width=x.Width,Height=x.Height}).ToList();
+        PromptEnhancementSettings? enhancement;
+        try{enhancement=submittedEnhancement?SnapshotEnhancement():null;}catch(Exception e){Toast=e.Message;return;}
+        int? resolution=submittedEnhancement&&submittedRatio=="Adaptive"?512*(1<<submittedTier):null;
+        using(var cancellation=new CancellationTokenSource())
+        {
+            preflightCancellation=cancellation;IsPreflighting=true;
+            try
+            {
+                if(!await EnsureGenerationEnvironmentAsync(cancellation.Token))return;
+                if(viewModelDisposed||environmentRevision!=submittedRevision)cancellation.Cancel();
+                cancellation.Token.ThrowIfCancellationRequested();
+                settings.Backend=Settings.Backend;settings.Repository=Settings.Repository;
+            }
+            catch(OperationCanceledException) when(cancellation.IsCancellationRequested){Toast="";return;}
+            catch(Exception e){Toast=T["Environment check failed"]+": "+e.Message;return;}
+            finally{if(ReferenceEquals(preflightCancellation,cancellation))preflightCancellation=null;IsPreflighting=false;IsStopping=false;}
+        }
+        var g=new Generation{CreationId=submittedCreation,Python=settings.Python};
+        g.Directory=Path.Combine(settings.Workspace,"outputs",DateTime.Now.ToString("yyyyMMdd-HHmmss")+"-"+g.Id[..8]);
+        try{settings.Validate();Directory.CreateDirectory(g.Directory);}catch(Exception e){Toast=e.Message;return;}
+        g.Request=new(){Backend=settings.Backend,Repository=settings.Repository,Model=settings.Model,Config=Path.Combine(AppContext.BaseDirectory,"Resources","qwen_image_21_turbo.json"),
+            Prompt=submittedPrompt.Trim(),Width=d.Width,Height=d.Height,Seed=seedValue,Output=Path.Combine(g.Directory,"image.png"),PromptEnhancement=enhancement,Resolution=resolution};
+        try
+        {
+            foreach(var image in images)
+            {
+                var folder=Path.Combine(g.Directory,"inputs");Directory.CreateDirectory(folder);var path=Path.Combine(folder,$"{g.Request.InputImages.Count+1:D2}.png");File.Copy(image.Path,path,false);
+                g.Request.InputImages.Add(new(){Id=image.Id,Name=image.Name,Path=path,Width=image.Width,Height=image.Height});
+            }
+            g.Request.Task=images.Count>0?"i2i":"t2i";if(submittedEnhancement)g.EnhancementStatus="thinking";
+        }
+        catch(Exception e){Toast=e.Message;return;}
+        var unchanged=creation==submittedCreation&&Prompt==submittedPrompt&&Tier==submittedTier&&Ratio==submittedRatio&&RandomSeed==submittedRandomSeed&&Seed==submittedSeed&&EnhancementEnabled==submittedEnhancement&&
+            InputImages.Select(x=>(x.Id,x.Path)).SequenceEqual(images.Select(x=>(x.Id,x.Path)));
+        if(unchanged){InputImages.Clear();Prompt="";}
+        activeJob=g;active=new();all.Add(g);Toast="";BeginGenerationLogs(g);RefreshRecent();if(creation==submittedCreation)Selected=g;RefreshTurns();RefreshStatus();bool terminal=false;
         try
         {
             Files.Write(Path.Combine(g.Directory, "request.json"), g.Request); Persist(); var code = await active.RunAsync(settings.Python, "run", Path.Combine(g.Directory, "request.json"), Path.Combine(settings.Workspace, "tmp"), e => dispatcher.Invoke(() =>
@@ -148,10 +244,10 @@ public sealed partial class MainViewModel : Observable, IDisposable
         catch (Exception e) { g.Status = IsStopping ? "cancelled" : "failed"; g.Error = e.Message; Log(e.Message); }
         finally { g.Seconds = Math.Max(g.Seconds, (DateTimeOffset.Now - g.CreatedAt).TotalSeconds); if (g.Running) { g.Status = "interrupted";if(g.HasEnhancement&&!g.EnhancementCompleted)g.EnhancementStatus="interrupted"; g.Error = T["Interrupted message"]; } if(g.HasEnhancement&&!g.EnhancementCompleted&&!g.Running)g.EnhancementStatus=g.Status;g.Refresh(); try { Files.Write(Path.Combine(g.Directory, "generation.json"), g); } catch (Exception e) { Toast = e.Message; } RefreshLogPanel(); active.Dispose(); active = null; activeJob = null; IsStopping = false; RefreshRecent(); if (creation == g.CreationId) { selected = Recent.FirstOrDefault(x => x.CreationId == creation); Changed(nameof(Selected)); RefreshTurns(); } Persist(); RefreshStatus(); }
     }
-    public async Task StopAsync() { if (active == null || activeJob == null || IsStopping) return; IsStopping = true; await active.StopAsync(Path.Combine(activeJob.Directory, "cancel.signal")); }
+    public async Task StopAsync() { if(IsPreflighting){IsStopping=true;preflightCancellation?.Cancel();CancelEnvironmentCheck();return;} if (active == null || activeJob == null || IsStopping) return; IsStopping = true; await active.StopAsync(Path.Combine(activeJob.Directory, "cancel.signal")); }
     void Reuse(Generation? g) { if (g == null||IsImporting) return;InputImages.Clear();foreach(var image in g.Request.InputImages)InputImages.Add(image); Prompt = g.Request.Prompt;EnhancementEnabled=g.Request.PromptEnhancement?.Enabled==true; RandomSeed = false; Seed = g.Request.Seed.ToString();if(g.Request.Resolution is int resolution){Tier=resolution==2048?2:resolution==512?0:1;Ratio="Adaptive";return;} for (int t = 0; t < 3; t++) foreach (var r in Presets.Ratios.Where(r=>r!="Adaptive")) { if (Presets.Dimensions(t, r) == (g.Request.Width, g.Request.Height)) { Tier = t; Ratio = r; return; } } if(g.Request.InputImages.Count>0){var image=g.Request.InputImages[^1];for(int t=0;t<3;t++)if(Presets.AdaptiveDimensions(t,image.Width,image.Height)==(g.Request.Width,g.Request.Height)){Tier=t;Ratio="Adaptive";return;}} }
     void Copy(Generation? g) { if (g?.Completed != true) return; try { Clipboard.SetImage(ImageLoader.Load(g.Request.Output, 0)); Toast = T["Copied"]; } catch (Exception e) { Toast = e.Message; } }
     void Export(Generation? g) { if (g?.Completed != true) return; var dlg = new SaveFileDialog { Filter = "PNG image|*.png", FileName = "LightX2V-" + g.Id[..8] + ".png" }; if (dlg.ShowDialog() == true) { try { File.Copy(g.Request.Output, dlg.FileName, true); Toast = T["Exported"]; } catch (Exception e) { Toast = e.Message; } } }
     void Remove(Generation? g) { if (g == null || all.Any(x => x.CreationId == g.CreationId && x.Running)) return; all.RemoveAll(x => x.CreationId == g.CreationId); RefreshRecent(); if (creation == g.CreationId) NewCreation(); Persist(); }
-    public void Dispose() { DisposeImages();DisposeModels();DisposeSetup();timer.Stop(); active?.Dispose(); }
+    public void Dispose() { viewModelDisposed=true;preflightCancellation?.Cancel();InvalidateEnvironment();DisposeImages();DisposeModels();DisposeSetup();timer.Stop(); active?.Dispose(); }
 }

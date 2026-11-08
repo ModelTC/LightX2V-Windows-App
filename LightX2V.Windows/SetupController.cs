@@ -39,7 +39,7 @@ public sealed class SetupController : Observable,IDisposable
     void Progress(SetupProgress value){if(value.Stage.Length>0)Stage=value.Stage;Detail=value.Detail;Percent=value.Percent;if(value.Log!=null){Logs+=value.Log+System.Environment.NewLine;if(Logs.Length>40000)Logs=Logs[^30000..];}}
     async Task Execute(Func<CancellationToken,IProgress<SetupProgress>,Task> action)
     {
-        if(Busy||Driver.Busy||owner.IsChecking)return;Error="";Busy=true;cancel=new();var progress=new Progress<SetupProgress>(Progress);
+        if(Busy||Driver.Busy||owner.IsChecking||owner.IsPreflighting)return;Error="";Busy=true;cancel=new();var progress=new Progress<SetupProgress>(Progress);
         try{operation=action(cancel.Token,progress);await operation;}
         catch(OperationCanceledException) when(cancel.IsCancellationRequested){Error=T["Setup cancelled; progress is saved"] ;Stage="Setup cancelled";}
         catch(Exception e){Logs+=e+System.Environment.NewLine;Error=FriendlySetupError(e.Message);Stage="Setup failed";}
@@ -154,7 +154,7 @@ public sealed class SetupController : Observable,IDisposable
         try{var done=await owner.DownloadRequiredModelsAsync();Stage=done?"All required files are ready":"Download stopped; downloaded files are kept";Changed(nameof(CanContinue));if(!done)Error=owner.Toast;}
         catch(Exception e){Error=e.Message;}
     }
-    public async Task CancelAsync(){cancel?.Cancel();await Driver.CancelAsync();if(operation!=null)try{await operation;}catch{}if(owner.IsDownloading)await owner.StopModelDownloadAsync();if(owner.IsRunning)await owner.StopAsync();}
+    public async Task CancelAsync(){cancel?.Cancel();await Driver.CancelAsync();if(operation!=null)try{await operation;}catch{}if(owner.IsDownloading)await owner.StopModelDownloadAsync();if(owner.IsGenerationBusy)await owner.StopAsync();}
     public void Dispose(){cancel?.Cancel();Driver.PropertyChanged-=DriverChanged;Driver.Dispose();owner.T.PropertyChanged-=LanguageChanged;}
 }
 
@@ -167,7 +167,7 @@ public sealed partial class MainViewModel
     internal void SetupStateChanged(){RefreshStatus();Changed(nameof(IsPreparingSetup));}
     internal void CommitSetup(AppSettings value)
     {
-        var changed=Settings.Workspace!=value.Workspace;if(changed)Persist();Settings=value.Clone();SavePreferences();
+        var changed=Settings.Workspace!=value.Workspace;if(changed)Persist();InvalidateEnvironment();Settings=value.Clone();SavePreferences();
         if(changed){all.Clear();LoadWorkspace();NewCreation();}
         ReloadModelPaths();Changed(nameof(Settings));Changed(nameof(NeedsInitialSetup));
     }

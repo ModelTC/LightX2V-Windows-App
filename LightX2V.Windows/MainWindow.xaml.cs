@@ -32,21 +32,22 @@ public partial class MainWindow : Window
             lastContent = key;
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => Conversation.ScrollToEnd());
         };
-        Loaded += async (_, _) =>
+        Loaded += (_, _) =>
         {
-            if(vm.Ready&&!vm.NeedsInitialSetup&&vm.RequiredModelsReady)return;
+            // Opening a configured workspace never imports torch. The first send
+            // validates its environment, with cancellation and visible progress.
             Action setup=requestStartupSetup??(()=>vm.RequestSetup?.Invoke());
             if(vm.NeedsInitialSetup)_ = Dispatcher.BeginInvoke(setup);
-            else{await vm.CheckAsync();if(closing||!IsVisible)return;if(!vm.Ready)_ = Dispatcher.BeginInvoke(setup);else if(!vm.RequiredModelsReady){vm.Setup.ResumeModels();_ = Dispatcher.BeginInvoke(setup);}}
+            else if(!vm.RequiredModelsReady){vm.Setup.ResumeModels();_ = Dispatcher.BeginInvoke(setup);}
         };
         Closing += async (_, e) =>
         {
             if(closing)return;
             if(vm.IsPreparingSetup){e.Cancel=true;closing=true;await vm.Setup.CancelAsync();Close();return;}
-            if (!vm.IsRunning) return;
+            if (!vm.IsGenerationBusy) return;
             e.Cancel = true;
             closing = true;
-            try { await vm.StopAsync(); while (vm.IsRunning) await Task.Delay(25); }
+            try { await vm.StopAsync(); while (vm.IsGenerationBusy) await Task.Delay(25); }
             finally { Close(); }
         };
         Closed += (_, _) => { closing=true;bounds?.Dispose(); vm.Dispose(); };

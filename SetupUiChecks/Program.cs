@@ -40,7 +40,7 @@ internal static partial class Program
     }
     static async Task Run()
     {
-        await StartupChecks();
+        await StartupChecks();await ReadinessChecks();
         if(startupOnly)return;
         if(hardwareOnly){await HardwareDetectionChecks();await DriverChecks();await WizardPreparationChecks();await CompletionChecks();return;}
         await HardwareDetectionChecks();if(completionOnly){await CompletionChecks();return;}

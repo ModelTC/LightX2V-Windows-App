@@ -1,16 +1,16 @@
-# LightX2V Windows App v0.3.8
+# LightX2V Windows App v0.3.9
 
 在 Windows 上用文字或参考图片创作图像。界面与 [LightX2V Mac App](https://github.com/ModelTC/LightX2V-Mac-App) 保持一致，使用 [LightX2V](https://github.com/ModelTC/LightX2V) 进行本地推理，支持 Qwen-Image-2.1-Turbo 和可选的 llama.cpp 提示词增强。
 
-**当前内测版本：v0.3.8。** 原生 Windows x64，无需 WSL。本版修复 Windows 大权重文件映射的风险路径，流式词表改为按需读取，并完善原生崩溃诊断；自动资源规划与现有界面保持原有行为。AMD Radeon 8060S 为已有实测平台，本版验收结果见发布说明；NVIDIA CUDA 仍为预览支持，完整 RTX 出图待实机验收。
+**当前内测版本：v0.3.9。** 原生 Windows x64，无需 WSL。本版让已配置工作区启动后即可操作，发送时再做必要检查；支持复制已发送的提示词，并可将生成结果一键添加为图生图参考，移除复用参数按钮。保留自动资源规划与 v0.3.8 的读取稳定性修复。AMD Radeon 8060S 为已有实测平台，本版验收结果见发布说明；NVIDIA CUDA 仍为预览支持；已收到 RTX 4070 Laptop 的 512 / 1K / 2K 文生图成功记录，完整验收范围见文档。
 
 ## 下载与开始使用
 
 | 版本 | Windows x64 下载 | 状态 |
 | --- | --- | --- |
-| v0.3.8 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.8/LightX2V-Windows-0.3.8-win-x64.zip) | 内测版 / Pre-release |
+| v0.3.9 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.9/LightX2V-Windows-0.3.9-win-x64.zip) | 内测版 / Pre-release |
 
-[发布说明与已知限制](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/v0.3.8)。请下载上面的 App ZIP；GitHub 的源码下载按钮不包含可运行的 App。
+[发布说明与已知限制](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/v0.3.9)。请下载上面的 App ZIP；GitHub 的源码下载按钮不包含可运行的 App。
 
 1. 完整解压 ZIP，运行文件夹内的 `LightX2V.Windows.exe`。
 2. 按向导选择保存位置、检查电脑并准备组件、下载模型。
@@ -29,14 +29,14 @@
 
 Windows 11 x64 是当前验证平台。CPU-only、Intel GPU、Windows ARM64、RTX 20 系列的 FP16/量化回退尚未支持。
 
-当前使用 BF16 大模型。App 按实际模型与空闲资源自动选择驻留、卸载或流式读取，容量充足时保留普通推理路径，不增加手选模式。**RTX 4070 Laptop 8 GB + 32 GB 内存仍需实测，不能保证流畅或完成出图。** 512 会减少图像工作区开销，但不会缩小模型权重，不能作为加载内存不足的通用解决方法。策略与日志说明见 [自动资源规划](docs/automatic-resources.md)。请预留约 100 GB 磁盘空间，避免安装和下载中途空间不足；这不是所有机器的固定最低占用。
+当前使用 BF16 大模型。App 按实际模型与空闲资源自动选择驻留、卸载或流式读取，容量充足时保留普通推理路径，不增加手选模式。**RTX 4070 Laptop 8 GB + 32 GB 内存已有 4 次文生图成功样本**，覆盖 512 / 1K / 2K 与提示词增强；逐次重启和参考图编辑仍待补测。详见 [RTX 实机记录](docs/rtx-4070-laptop-results.md)。 512 会减少图像工作区开销，但不会缩小模型权重，不能作为加载内存不足的通用解决方法。策略与日志说明见 [自动资源规划](docs/automatic-resources.md)。请预留约 100 GB 磁盘空间，避免安装和下载中途空间不足；这不是所有机器的固定最低占用。
 
 ## 创作功能
 
 - Qwen-Image-2.1-Turbo，固定 8 步，文生图及最多 3 张参考图编辑。
 - 512 / 1K / 2K、八种比例预设、自适应尺寸。
 - 可选 PE-T2I / PE-I2I 提示词增强，使用本地 Vulkan 运行时。
-- 生成进度、停止任务、查看日志、创作历史、参数复用、图片复制与导出。
+- 生成进度、停止任务、查看日志、创作历史、提示词选择复制、结果图用作参考、图片复制与导出。
 - 中文 / English；`Ctrl+N` 新建，`Ctrl+Enter` 生成或停止。
 
 模型权重不包含在安装包中。支持 Hugging Face / ModelScope 下载、续传与校验。H3 视频和多模型选择留待后续版本。
@@ -49,9 +49,9 @@ Windows 11 x64 是当前验证平台。CPU-only、Intel GPU、Windows ARM64、RT
 .\build.ps1
 ```
 
-输出为 `dist/LightX2V-Windows-0.3.8-win-x64.zip` 及 `.sha256`。构建校验提交的依赖清单，并从官方 GitHub Release 获取固定版本 llama.cpp；不会自动更换已锁定依赖。无需 GPU 即可编译，实际推理需要支持的 GPU 与对应环境。
+输出为 `dist/LightX2V-Windows-0.3.9-win-x64.zip` 及 `.sha256`。构建校验提交的依赖清单，并从官方 GitHub Release 获取固定版本 llama.cpp；不会自动更换已锁定依赖。无需 GPU 即可编译，实际推理需要支持的 GPU 与对应环境。
 
-参阅 [构建与测试](docs/development.md)、[验收范围](docs/testing.md)、[版本发布说明](docs/releases/v0.3.8.md) 和 [第三方组件](THIRD_PARTY_NOTICES.md)。
+参阅 [构建与测试](docs/development.md)、[验收范围](docs/testing.md)、[版本发布说明](docs/releases/v0.3.9.md) 和 [第三方组件](THIRD_PARTY_NOTICES.md)。
 
 ## 反馈问题
 
