@@ -65,7 +65,7 @@ def package(app):
             'preferences.json', 'workspace.json', 'hardware-detection.json') or path.suffix.lower() in (
                 '.log', '.pdb', '.gguf', '.safetensors', '.whl', '.partial'):
             raise ValueError('Unexpected private/generated file in publish directory: ' + str(relative))
-    for name in ['README.md', 'THIRD_PARTY_NOTICES.md']:
+    for name in ['README.md', 'README.zh-CN.md', 'THIRD_PARTY_NOTICES.md']:
         shutil.copy2(ROOT / name, app / name)
     shutil.copytree(ROOT / 'docs', app / 'docs', dirs_exist_ok=True)
     shutil.copytree(ROOT / 'third_party', app / 'third_party', dirs_exist_ok=True)
