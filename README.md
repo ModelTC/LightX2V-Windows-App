@@ -1,6 +1,6 @@
 # LightX2V Windows App v0.3.9
 
-English | [Simplified Chinese](README.zh-CN.md)
+English | [简体中文](README.zh-CN.md)
 
 A native Windows app for local text-to-image generation and reference-image editing with [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo). It uses [LightX2V](https://github.com/ModelTC/LightX2V) for image inference and [llama.cpp](https://github.com/ggml-org/llama.cpp) for optional prompt enhancement. The interface follows the [LightX2V Mac App](https://github.com/ModelTC/LightX2V-Mac-App).
 
