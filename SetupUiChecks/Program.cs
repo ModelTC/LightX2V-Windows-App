@@ -31,6 +31,17 @@ internal static partial class Program
         var bitmap=new RenderTargetBitmap(width*2,height*2,192,192,PixelFormats.Pbgra32);bitmap.Render(drawing);var png=new PngBitmapEncoder();png.Frames.Add(BitmapFrame.Create(bitmap));using var file=File.Create(Path.Combine(root,name+".png"));png.Save(file);
     }
     static EnvironmentCandidate Valid(string path)=>new(path,true,"AMD Radeon 8060S · 2.11.0+rocm7.13.0"){PythonVersion="3.12.10",TorchVersion="2.11.0+rocm7.13.0",HipVersion="7.13.0",Device="AMD Radeon 8060S",Packages=new Dictionary<string,string>{{"transformers","5.20.2"},{"diffusers","0.42.0"},{"safetensors","0.8.0"},{"accelerate","1.15.0"}}};
+    static AppSettings NativeSettings()
+    {
+        var settings=AppSettings.Detect();
+        var python=Environment.GetEnvironmentVariable("LIGHTX2V_QA_PYTHON");
+        if(!string.IsNullOrWhiteSpace(python))
+        {
+            if(!Path.IsPathFullyQualified(python)||!File.Exists(python))throw new InvalidOperationException("LIGHTX2V_QA_PYTHON must name an existing absolute Python executable.");
+            settings.Python=python;
+        }
+        return settings;
+    }
     [STAThread]static int Main(string[] args)
     {
         startupOnly=args.Contains("startup");hardwareOnly=args.Contains("hardware");completionOnly=args.Contains("completion");smoke=args.Contains("smoke");signatures=args.Contains("signatures");root=Path.GetFullPath(args[0]);Directory.CreateDirectory(root);RenderOptions.ProcessRenderMode=System.Windows.Interop.RenderMode.SoftwareOnly;
@@ -73,7 +84,7 @@ internal static partial class Program
         model.Backend="cuda";var cuda=valid with{Path=@"C:\Users\amd\Documents\LightX2V\environments\native-nvidia-cu128-v1\python.exe",Device="NVIDIA GeForce RTX 4090",Backend="cuda",HipVersion="",CudaVersion="12.8",TorchVersion="2.11.0+cu128"};fake.Found=[cuda];fake.ProbeResult=cuda;await model.SearchAsync();await model.InstallAsync();Check(fake.LastBackend=="cuda"&&model.Candidates.Single().Backend=="cuda","The CUDA choice reaches search and automatic installation without reusing ROCm");await Render(picker,800,700,"environment-cuda-preview");model.Backend="amd_rocm";
         fake.Found=[];await model.SearchAsync();await Render(picker,800,620,"environment-empty");Check(model.Summary.Contains("0"),"An empty search has a zero-result state and keeps installation choices available");picker.Close();
         var prefs=Path.Combine(root,"preferences");Files.Write(Path.Combine(prefs,"preferences.json"),new Preferences{Settings=settings});
-        using(var vm=new MainViewModel(prefs))
+        using(var vm=new MainViewModel(prefs,environmentCatalog:fake))
         {
             var wizard=new FirstRunWindow(vm);await Render(wizard,760,660,"wizard-workspace");vm.Setup.Backend="cuda";Check(vm.Setup.EnvironmentSettings().Backend=="cuda"&&vm.Settings.Backend!="cuda","Wizard backend changes remain unsaved drafts");vm.Setup.Backend="amd_rocm";await vm.Setup.ScanComputerAsync();Check(vm.Setup.ComputerScanned&&vm.Setup.Backend=="amd_rocm"&&vm.Setup.HardwareLabel.Contains("8060S"),"The real wizard scans AMD hardware, selects ROCm and displays its computer information");vm.Setup.Environments.Add(valid);vm.Setup.AcceptCandidate(valid);vm.Setup.Page=1;await Render(wizard,760,660,"wizard-environment");await Render(wizard,620,470,"wizard-environment-small");
             vm.Setup.UseExisting=false;Check(!vm.Setup.UseExisting,"Installation mode changes without losing the selected local environment");
@@ -85,12 +96,12 @@ internal static partial class Program
             vm.Setup.Page=2;await Render(wizard,760,660,"wizard-models");vm.Setup.Page=3;await Render(wizard,760,660,"wizard-complete");vm.SetLanguage("en");vm.Setup.Page=1;await Render(wizard,760,660,"wizard-environment-en");vm.SetLanguage("zh");wizard.Close();
             var general=new SettingsWindow(vm);await Render(general,680,500,"settings");Check(Children<Button>((DependencyObject)general.Content).Any(b=>AutomationProperties.GetAutomationId(b)=="SearchEnvironment"),"General settings retains the entry to the dedicated environment picker");general.Close();
         }
-        var native=AppSettings.Detect();var actual=await SetupDiscovery.Probe(native.Python,settings.Workspace,CancellationToken.None);
+        var native=NativeSettings();var actual=await SetupDiscovery.Probe(native.Python,settings.Workspace,CancellationToken.None);
         Check(actual.Ready&&actual.PythonVersion.Length>0&&actual.TorchVersion.Contains("rocm")&&actual.VersionRows.Count==4,"A real native AMD probe populates the card's Python, PyTorch, ROCm and package versions");Files.Write(Path.Combine(root,"native-environment.json"),actual);
         if(signatures)await CheckOfficialAssistants();
         if(smoke)
         {
-            var normal=AppSettings.Detect();normal.Workspace=Path.Combine(root,"native-smoke");normal.Backend="amd_rocm";normal.EnhancementEnabled=false;
+            var normal=NativeSettings();normal.Workspace=Path.Combine(root,"native-smoke");normal.Backend="amd_rocm";normal.EnhancementEnabled=false;
             var smokePrefs=Path.Combine(root,"smoke-preferences");Files.Write(Path.Combine(smokePrefs,"preferences.json"),new Preferences{Settings=normal});
             using var vm=new MainViewModel(smokePrefs);await vm.CheckAsync();Check(vm.Ready,"The app connects to the real AMD backend after the dual-backend migration");
             vm.Tier=0;vm.Ratio="1:1";vm.Prompt="A blue ceramic teapot on a wooden table beside a sunny window, warm natural light, realistic photography.";

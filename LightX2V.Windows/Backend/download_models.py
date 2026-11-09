@@ -1,5 +1,6 @@
 """Public model repositories: verified, resumable downloads without extra SDKs."""
 import argparse
+from collections import deque
 import hashlib
 import json
 import os
@@ -18,20 +19,42 @@ REPOSITORIES = {
     't2i': 'lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0',
     'i2i': 'lightx2v/Qwen-Image-2.1-PE-I2I-GGUF-Q8_0',
 }
+SOURCE_PROBE_TIMEOUT = 8.0
+SOURCE_PROBE_BYTES = 64*1024
 
 
 def emit(kind, **values):
     print(json.dumps(dict(type=kind, **values), ensure_ascii=False), flush=True)
 
 
-def metadata(resource, source):
+def metadata(resource, source, timeout=30, check=lambda: None, deadline=None):
+    def open_repository(url):
+        check()
+        request_timeout = timeout if deadline is None else min(timeout, deadline-time.monotonic())
+        if request_timeout <= 0:
+            raise TimeoutError('Model source check timed out.')
+        return urllib.request.urlopen(url, timeout=request_timeout)
+
+    def read_repository(response):
+        content = bytearray()
+        read = getattr(response, 'read1', response.read)
+        while True:
+            check()
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError('Model source check timed out.')
+            block = read(64*1024)
+            if not block:
+                break
+            content.extend(block)
+        return json.loads(content)
+
     repo = REPOSITORIES[resource]
     if source == 'huggingFace':
         url = f'https://huggingface.co/api/models/{repo}/tree/main?recursive=true'
         files = []
         while url:
-            with urllib.request.urlopen(url, timeout=30) as response:
-                files.extend(json.load(response))
+            with open_repository(url) as response:
+                files.extend(read_repository(response))
                 link = response.headers.get('Link', '')
                 import re
                 match = re.search(r'<([^>]+)>;\s*rel="next"', link)
@@ -43,13 +66,14 @@ def metadata(resource, source):
         base = f'https://huggingface.co/{repo}/resolve/main/'
     elif source == 'modelScope':
         url = f'https://modelscope.cn/api/v1/models/{repo}/repo/files?Revision=master&Recursive=true'
-        with urllib.request.urlopen(url, timeout=30) as response:
-            data = json.load(response)
+        with open_repository(url) as response:
+            data = read_repository(response)
         if data.get('Code') != 200: raise ValueError('ModelScope repository is unavailable.')
         result = [dict(path=f['Path'], size=f['Size'], sha256=f.get('Sha256'), git_sha1=None)
                   for f in data['Data']['Files'] if f['Type'] == 'blob']
         base = f'https://modelscope.cn/models/{repo}/resolve/master/'
     else: raise ValueError('Unknown model download source.')
+    check()
     selected = []
     for file in result:
         path = file['path']; parts = PurePosixPath(path).parts
@@ -68,6 +92,96 @@ def metadata(resource, source):
 
 
 class Cancelled(Exception): pass
+
+
+def select_sources(resource, check):
+    """Measure the actual weight route, including connection and first-byte time."""
+    deadline = time.monotonic() + SOURCE_PROBE_TIMEOUT
+    stopped = threading.Event()
+
+    def probe(source):
+        def check_probe():
+            check()
+            if stopped.is_set():
+                raise Cancelled()
+            if time.monotonic() >= deadline:
+                raise TimeoutError('Model source check timed out.')
+
+        files = metadata(resource, source, timeout=SOURCE_PROBE_TIMEOUT, check=check_probe, deadline=deadline)
+        weights = [spec for spec in files if spec['path'].endswith(('.safetensors', '.gguf'))]
+        if not weights:
+            raise ValueError('The model source has no weight files.')
+        sample = max(weights, key=lambda spec: spec['size'])
+        size = min(SOURCE_PROBE_BYTES, sample['size'])
+        check_probe()
+        started = time.monotonic()
+        request = urllib.request.Request(sample['url'], headers={
+            'Range': f'bytes=0-{size-1}', 'User-Agent': 'LightX2V-Windows',
+        })
+        with urllib.request.urlopen(request, timeout=max(.1, deadline-started)) as response:
+            if response.status == 206:
+                if response.headers.get('Content-Range') != f"bytes 0-{size-1}/{sample['size']}":
+                    raise ValueError('Invalid model source byte range.')
+            elif response.status != 200:
+                raise ValueError('Model source is unavailable.')
+            received = 0
+            read = getattr(response, 'read1', response.read)
+            while received < size:
+                check_probe()
+                block = read(min(64*1024, size-received))
+                if not block:
+                    raise ValueError('Incomplete model source sample.')
+                received += len(block)
+        check_probe()
+        return source, files, received / max(time.monotonic()-started, .001)
+
+    check()
+    def probe_worker(source, future):
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            future.set_result(probe(source))
+        except Exception as error:
+            future.set_exception(error)
+
+    pending = {}
+    for source in ('modelScope', 'huggingFace'):
+        future = concurrent.futures.Future()
+        pending[future] = source
+        # Probes are read-only. An unresponsive HTTP peer must not delay process exit.
+        threading.Thread(target=probe_worker, args=(source, future), daemon=True).start()
+    available = []
+    try:
+        while pending:
+            check()
+            remaining = max(0, deadline-time.monotonic())
+            done, _ = concurrent.futures.wait(pending, timeout=min(.1, remaining), return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                pending.pop(future)
+                try:
+                    available.append(future.result())
+                except Cancelled:
+                    raise
+                except Exception:
+                    pass
+            if remaining <= 0:
+                break
+        check()
+    finally:
+        stopped.set()
+        for future in pending:
+            future.cancel()
+    if not available:
+        raise OSError('Neither model download source is reachable. Check your connection and retry.')
+    return [(source, files) for source, files, speed in sorted(available, key=lambda item: item[2], reverse=True)]
+
+
+def download_key(spec):
+    identity = spec['path'] + str(spec.get('sha256')) + str(spec.get('git_sha1'))
+    # Legacy cache names stay valid. Unhashed entries cannot share partial data across sources.
+    if not (spec.get('sha256') or spec.get('git_sha1')):
+        identity += str(spec.get('url', ''))
+    return hashlib.sha256(identity.encode()).hexdigest()
 
 
 def parallel_download(spec, part, check, progress, transferred):
@@ -134,36 +248,74 @@ def required_download_space(root, files):
         path = (root/spec['path']).resolve()
         if not path.is_relative_to(root): raise ValueError('Model destination points outside the selected directory.')
         if path.is_file() and path.stat().st_size == spec['size']: continue
-        key = hashlib.sha256((spec['path']+str(spec.get('sha256'))+str(spec.get('git_sha1'))).encode()).hexdigest()
+        key = download_key(spec)
         partial = root/'.lightx2v-downloads'/(key+'.partial')
         allocated = min(spec['size'], partial.stat().st_size) if partial.is_file() else 0
         needed += spec['size'] - allocated
     return needed
 
 
-def run(request, parent):
-    from bridge import parent_alive
-    resource, source = request['resource'], request['source']
-    if resource not in REPOSITORIES: raise ValueError('Unknown model resource.')
-    root = Path(request['destination'])
-    if not root.is_absolute(): raise ValueError('Choose an absolute model directory.')
-    root.mkdir(parents=True, exist_ok=True); root = root.resolve()
-    cancel = Path(request['cancelFile'])
-    def check():
-        if cancel.exists() or not parent_alive(parent): raise Cancelled()
-    check(); emit('download_status', message='Reading repository files')
-    files = metadata(resource, source)
+def cached_download_bytes(root, spec):
+    path = root/spec['path']
+    if path.is_file() and path.stat().st_size == spec['size']:
+        return spec['size']
+    partial = root/'.lightx2v-downloads'/(download_key(spec)+'.partial')
+    if not partial.is_file():
+        return 0
+    size = min(spec['size'], partial.stat().st_size)
+    chunk_size = 32*1024**2
+    ranges = partial.with_suffix('.ranges.json')
+    if not ranges.exists():
+        if spec['size'] > 64*1024**2:
+            return size//chunk_size*chunk_size if size < spec['size'] else 0
+        return size
+    try:
+        state = json.loads(ranges.read_text())
+        if state.get('size') != spec['size'] or state.get('chunkSize') != chunk_size:
+            return 0
+        count = (spec['size']+chunk_size-1)//chunk_size
+        completed = {index for index in state['completed'] if type(index) is int and 0 <= index < count}
+        return sum(min(chunk_size, spec['size']-index*chunk_size) for index in completed
+                   if min(spec['size'], (index+1)*chunk_size) <= size)
+    except (OSError, ValueError, KeyError, TypeError):
+        return 0
+
+
+def download_files(root, files, check):
     import shutil
     needed = required_download_space(root, files)
     if shutil.disk_usage(root).free < needed:
         raise OSError(f'Not enough disk space for this model. Need {needed/1024**3:.1f} GiB free, including pending downloads and a 1 GiB reserve.')
-    total = sum(f['size'] for f in files); completed = 0; transferred=[0];started = time.monotonic(); last = 0.0
+    total = sum(f['size'] for f in files)
+    completed = 0
+    transferred = [0]
+    last = 0.0
+    samples = deque()
+    cached = {spec['path']: cached_download_bytes(root, spec) for spec in files}
+    pending_cached = sum(cached.values())
+
     def progress(path, current=0, phase='downloading'):
         nonlocal last
         now = time.monotonic()
         if now-last >= .2 or phase != 'downloading':
+            speed = 0.0
+            eta = None
+            if phase == 'downloading':
+                if samples and transferred[0] < samples[-1][1]:
+                    samples.clear()
+                samples.append((now, transferred[0]))
+                while len(samples) > 2 and samples[1][0] <= now-5:
+                    samples.popleft()
+                duration = now-samples[0][0]
+                if duration >= 1:
+                    speed = max(0, transferred[0]-samples[0][1])/duration
+                remaining = max(0, total-completed-current-pending_cached)
+                if speed > 0 and remaining > 0:
+                    eta = remaining/speed
+            else:
+                samples.clear()
             emit('download_progress', file=path, completed=completed+current, total=total,
-                 bytesPerSecond=transferred[0]/max(now-started,.001), phase=phase)
+                 bytesPerSecond=speed, etaSeconds=eta, phase=phase)
             last = now
     def verified(path, spec):
         if not path.is_file() or path.stat().st_size != spec['size']: return False
@@ -173,13 +325,14 @@ def run(request, parent):
         return ((not spec.get('sha256') or sha.hexdigest() == spec['sha256']) and
                 (not spec.get('git_sha1') or git.hexdigest() == spec['git_sha1']))
     for spec in files:
+        pending_cached -= cached[spec['path']]
         check(); path = (root/spec['path']).resolve()
         if not path.is_relative_to(root): raise ValueError('Model destination points outside the selected directory.')
         progress(spec['path'], phase='checking')
         if verified(path, spec): completed += spec['size']; continue
         path.parent.mkdir(parents=True, exist_ok=True)
         cache = root/'.lightx2v-downloads'; cache.mkdir(exist_ok=True)
-        key = hashlib.sha256((spec['path']+str(spec.get('sha256'))+str(spec.get('git_sha1'))).encode()).hexdigest()
+        key = download_key(spec)
         part = cache/(key+'.partial')
         import shutil
         allocated = part.stat().st_size if part.exists() else 0
@@ -223,6 +376,36 @@ def run(request, parent):
                 time.sleep(.5)
         completed += spec['size']
     check()
+    return total
+
+
+def run(request, parent):
+    from bridge import parent_alive
+    resource, source = request['resource'], request['source']
+    if resource not in REPOSITORIES: raise ValueError('Unknown model resource.')
+    root = Path(request['destination'])
+    if not root.is_absolute(): raise ValueError('Choose an absolute model directory.')
+    root.mkdir(parents=True, exist_ok=True); root = root.resolve()
+    cancel = Path(request['cancelFile'])
+    def check():
+        if cancel.exists() or not parent_alive(parent): raise Cancelled()
+    check(); emit('download_status', message='Reading repository files')
+    if source == 'auto':
+        emit('download_source', source='auto', fallback=False)
+        sources = select_sources(resource, check)
+    else:
+        sources = [(source, metadata(resource, source, check=check))]
+    for index, (source, files) in enumerate(sources):
+        check()
+        emit('download_source', source=source, fallback=index > 0)
+        try:
+            total = download_files(root, files, check)
+            break
+        except Cancelled:
+            raise
+        except Exception:
+            if index == len(sources)-1:
+                raise
     (root/'.lightx2v-model.json').write_text(json.dumps(dict(repository=REPOSITORIES[resource],source=source,files=files),indent=2),encoding='utf-8')
     emit('download_done',status='completed',destination=str(root),completed=total,total=total)
 

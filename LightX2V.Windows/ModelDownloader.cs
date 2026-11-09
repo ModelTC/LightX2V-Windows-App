@@ -4,7 +4,7 @@ using System.Text.Json;
 namespace LightX2V.Windows;
 
 public sealed record ModelDownloadRequest(string Resource,string Source,string Destination,string Python,string Workspace);
-public sealed record ModelDownloadProgress(string Phase,string File,double Percent,double BytesPerSecond);
+public sealed record ModelDownloadProgress(string Phase,string File,double Percent,double BytesPerSecond,string Source="",double? EtaSeconds=null);
 public sealed record ModelDownloadResult(bool Completed,bool Cancelled=false,string Message="");
 public interface IModelDownloader
 {
@@ -39,7 +39,14 @@ public sealed class NativeModelDownloader : IModelDownloader
                     if(kind.GetString()=="download_progress")
                     {
                         var total=value.GetProperty("total").GetDouble();var done=value.GetProperty("completed").GetDouble();
-                        progress.Report(new(value.GetProperty("phase").GetString()??"downloading",value.TryGetProperty("file",out var file)?file.GetString()??"":"",total>0?Math.Clamp(done/total*100,0,100):0,value.GetProperty("bytesPerSecond").GetDouble()));
+                        double? eta=value.TryGetProperty("etaSeconds",out var estimate)&&estimate.ValueKind==JsonValueKind.Number?estimate.GetDouble():null;
+                        progress.Report(new(value.GetProperty("phase").GetString()??"downloading",value.TryGetProperty("file",out var file)?file.GetString()??"":"",total>0?Math.Clamp(done/total*100,0,100):0,value.GetProperty("bytesPerSecond").GetDouble(),EtaSeconds:eta));
+                    }
+                    else if(kind.GetString()=="download_source")
+                    {
+                        var source=value.GetProperty("source").GetString()??"";
+                        var fallback=value.TryGetProperty("fallback",out var changed)&&changed.GetBoolean();
+                        progress.Report(new(source=="auto"?"selecting_source":fallback?"switching_source":"source_selected","",0,0,source));
                     }
                     else if(kind.GetString()=="download_done")
                     {

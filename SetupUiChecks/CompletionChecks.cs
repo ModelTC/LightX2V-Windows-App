@@ -30,7 +30,7 @@ internal static partial class Program
             Check(closed&&!vm.IsRunning&&vm.Prompt=="我自己的第一个创作想法"&&vm.Tier==2&&vm.Ratio=="4:3"&&!vm.RandomSeed&&vm.Seed=="123456"&&vm.InputImages.Count==1&&vm.Recent.Count==1,"Start creating closes the wizard and preserves the user's prompt, image attachment, parameters and history");
             Check(!Directory.Exists(Path.Combine(settings.Workspace,"outputs"))&&downloads.Requests.Count==0,"Finishing setup writes no generated image, fixed prompt job or model download");
         }
-        var native=AppSettings.Detect();native.Workspace=Path.Combine(root,"completion-native");var nativePrefs=Path.Combine(root,"completion-native-preferences");Files.Write(Path.Combine(nativePrefs,"preferences.json"),new Preferences{Settings=native});
+        var native=NativeSettings();native.Workspace=Path.Combine(root,"completion-native");var nativePrefs=Path.Combine(root,"completion-native-preferences");Files.Write(Path.Combine(nativePrefs,"preferences.json"),new Preferences{Settings=native});
         using var actual=new MainViewModel(nativePrefs);await actual.CheckAsync();Check(actual.Ready&&actual.RequiredModelsReady,"The current native AMD environment and existing model files are ready without an image-generation test");
         var window=new FirstRunWindow(actual);actual.Setup.ResumeModels();await Render(window,760,660,"setup-models-before-completion");
         var model=actual.TurboCard.Path;actual.TurboCard.Path=Path.Combine(native.Workspace,"missing-model");Check(!actual.Setup.CanContinue,"Incomplete model files still prevent advancing to setup completion");actual.TurboCard.Path=model;

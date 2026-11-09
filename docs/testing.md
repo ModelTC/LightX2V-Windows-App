@@ -28,6 +28,8 @@ dotnet publish SetupUiChecks/SetupUiChecks.csproj -c Release -r win-x64 --self-c
 
 Use a fresh output path. This mode does not display test windows, operate the real desktop, or install drivers. It asserts that a real AMD device is present, so it cannot be used directly as a generic test for GPU-free CI or NVIDIA machines. The default full mode also validates an existing AMD Python environment, which must be prepared beforehand.
 
+Native check modes accept `LIGHTX2V_QA_PYTHON` as an absolute Python executable path for validation with a dedicated runtime and existing model files.
+
 ## RTX Hardware Acceptance
 
 First complete CUDA environment setup in the app and record the GPU model, driver, VRAM, and system memory. At a minimum, verify:

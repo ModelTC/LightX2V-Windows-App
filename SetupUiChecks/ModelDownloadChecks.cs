@@ -12,12 +12,26 @@ internal static partial class Program
     sealed class FakeModelDownloader : IModelDownloader
     {
         public List<ModelDownloadRequest> Requests=[];public string? Hold,Fail;public bool OmitFiles;
+        public string Phase="downloading";
+        public double BytesPerSecond=12*1048576;
+        public double? EtaSeconds;
+        public TaskCompletionSource<bool>? ReleaseHold;
+        IProgress<ModelDownloadProgress>? currentProgress;
+        public void ReportProgress(string phase,double? etaSeconds,double bytesPerSecond=12*1048576)
+        {
+            Phase=phase;EtaSeconds=etaSeconds;BytesPerSecond=bytesPerSecond;
+            currentProgress?.Report(new(phase,"model-file",42,bytesPerSecond,EtaSeconds:etaSeconds));
+        }
         public async Task<ModelDownloadResult> DownloadAsync(ModelDownloadRequest request,IProgress<ModelDownloadProgress> progress,CancellationToken token)
         {
-            Requests.Add(request);progress.Report(new("downloading","model-file",42,12*1048576));
-            if(Hold==request.Resource)await Task.Delay(Timeout.Infinite,token);
+            Requests.Add(request);currentProgress=progress;ReportProgress(Phase,EtaSeconds,BytesPerSecond);
+            if(Hold==request.Resource)
+            {
+                if(ReleaseHold==null)await Task.Delay(Timeout.Infinite,token);
+                else await ReleaseHold.Task.WaitAsync(token);
+            }
             await Task.Yield();if(Fail==request.Resource)return new(false,Message:"Simulated network interruption");
-            if(!OmitFiles){if(request.Resource=="turbo")TinyTurbo(request.Destination);else SeedPe(request.Destination,request.Resource,true);}
+            if(!OmitFiles&&request.Resource=="turbo")TinyTurbo(request.Destination);
             return new(true);
         }
     }
@@ -55,18 +69,20 @@ internal static partial class Program
         Check(automatic.IsEnabled&&automatic.Content.ToString()==vm.T["Download required files automatically"]&&fake.Requests.Count==0,"Step three exposes an explicit one-click automatic download without downloading on page render");
         automatic.Command.Execute(null);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         Check(vm.IsDownloading&&vm.DownloadingKey=="turbo"&&!vm.CanConfigureModels&&vm.TurboCard.Percent==42,"The wizard button invokes the download pipeline and exposes numeric progress while configuration is locked");
-        Check(fake.Requests.Single().Source=="modelScope"&&fake.Requests.Single().Destination==vm.TurboCard.Path,"One-click download passes the selected source and destination directly, without a CLI prompt");await Render(wizard,760,700,"models-downloading");
+        Check(fake.Requests.Single().Source=="auto"&&fake.Requests.Single().Destination==vm.TurboCard.Path,"One-click download passes automatic source selection and the destination directly, without a CLI prompt");await Render(wizard,760,700,"models-downloading");
         vm.RequiredModelsDownloadCommand.Execute(null);await UntilDownloadIdle(vm);
         Check(!vm.TurboCard.Ready&&fake.Requests.Count==1&&vm.TurboCard.Status==vm.T["Download cancelled"],"Stopping the wizard queue prevents later resources from starting and preserves the cancelled state");
         fake.Hold=null;await vm.Setup.DownloadModelsAsync();Check(vm.RequiredModelsReady&&vm.TurboCard.Ready&&fake.Requests.Count==2&&!vm.T2ICard.Ready,"Without enhancement, automatic download only prepares Qwen and permits continuing after file validation");
         Check(!vm.TurboCard.DownloadCommand.CanExecute(null)&&!vm.RequiredModelsDownloadCommand.CanExecute(null),"Ready model files disable redundant download actions");await Render(wizard,760,700,"models-ready-basic");
-        vm.EnhancementEnabled=true;fake.Fail="t2i";await vm.Setup.DownloadModelsAsync();
-        Check(fake.Requests[^1].Resource=="t2i"&&fake.Requests.Count==3&&vm.T2ICard.Failed&&!vm.I2ICard.Ready&&!vm.Setup.CanContinue,"A failed enhancement download stops the queue, shows retry and prevents continuing with missing files");await Render(wizard,760,700,"models-download-failed");
-        fake.Fail=null;fake.Hold="i2i";var retry=vm.Setup.DownloadModelsAsync();await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);var limit=DateTime.UtcNow.AddSeconds(20);while(vm.DownloadingKey!="i2i"){if(DateTime.UtcNow>limit)throw new TimeoutException("I2I queue did not start");await Task.Delay(10);}
-        Check(vm.T2ICard.Ready&&vm.IsDownloading&&fake.Requests[^1].Resource=="i2i"&&fake.Requests.Count==5,"Retry skips ready Qwen, completes T2I, then starts I2I in a single owned queue");await vm.StopModelDownloadAsync();await retry;
-        fake.Hold=null;await vm.Setup.DownloadModelsAsync();Check(vm.RequiredModelsReady&&vm.Setup.CanContinue&&fake.Requests.Count==6&&fake.Requests[^1].Resource=="i2i","After cancellation, retry downloads only the remaining model and unlocks the next step");await Render(wizard,760,700,"models-ready-all");
-        vm.T2ICard.Path=Path.Combine(settings.Workspace,"other-t2i");vm.UseHuggingFace=true;fake.OmitFiles=true;await vm.Setup.DownloadModelsAsync();
-        Check(!vm.T2ICard.Ready&&vm.T2ICard.Failed&&!vm.Setup.CanContinue&&fake.Requests[^1].Source=="huggingFace","A success event with incomplete local files is rejected, and the changed source reaches the retry");
+        vm.EnhancementEnabled=true;await vm.Setup.DownloadModelsAsync();
+        Check(fake.Requests.Count==2&&vm.RequiredModelsReady&&vm.Setup.CanContinue&&!vm.T2ICard.Ready&&!vm.I2ICard.Ready,"An enabled enhancement preference never adds optional models to first-time setup");
+        fake.Fail="t2i";await vm.DownloadModelAsync("t2i");
+        Check(fake.Requests[^1].Resource=="t2i"&&fake.Requests.Count==3&&vm.T2ICard.Failed&&!vm.I2ICard.Ready&&vm.Setup.CanContinue,"An explicit enhancement download failure leaves basic setup complete and the other optional model untouched");await Render(wizard,760,700,"models-download-failed");
+        fake.Fail=null;fake.Hold="t2i";var retry=vm.DownloadModelAsync("t2i");await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        Check(vm.IsDownloading&&vm.DownloadingKey=="t2i"&&fake.Requests.Count==4&&vm.T2ICard.DownloadCommand.CanExecute(null),"Retrying one optional model starts only that resource and keeps its stop action enabled");await vm.StopModelDownloadAsync();await retry;
+        Check(!vm.IsDownloading&&vm.RequiredModelsReady&&vm.Setup.CanContinue&&!vm.I2ICard.Ready,"Cancelling an optional download preserves basic setup readiness");await Render(wizard,760,700,"models-ready-basic-after-cancel");
+        vm.T2ICard.Path=Path.Combine(settings.Workspace,"other-t2i");vm.UseHuggingFace=true;fake.Hold=null;fake.OmitFiles=true;await vm.DownloadModelAsync("t2i");
+        Check(!vm.T2ICard.Ready&&vm.T2ICard.Failed&&vm.Setup.CanContinue&&fake.Requests[^1].Source=="huggingFace","A success event with incomplete optional files is rejected without blocking basic setup, and the changed source reaches the retry");
         var guideWindow=vm.CreateModelGuide(vm.T2ICard);await Render(guideWindow,600,490,"model-guide-automatic");
         Check(Children<Button>((DependencyObject)guideWindow.Content).Any(b=>AutomationProperties.GetAutomationId(b)=="GuideAutomaticDownload"&&b.IsEnabled),"Download guides provide the same automatic action as their model cards");
         Check(Children<Expander>((DependencyObject)guideWindow.Content).Single(e=>AutomationProperties.GetAutomationId(e)=="ManualModelDownload").IsExpanded==false,"Manual commands are optional and collapsed in the download guide");guideWindow.Close();
@@ -75,7 +91,7 @@ internal static partial class Program
     }
     static async Task NativeAutomaticModelDownload()
     {
-        var native=AppSettings.Detect();
+        var native=NativeSettings();
         var cancelWorkspace=Path.Combine(root,"native-download-cancel");var cancelDestination=Path.Combine(cancelWorkspace,"PE-T2I");SeedPe(cancelDestination,"t2i",false);
         using(var cancellation=new CancellationTokenSource(TimeSpan.FromMilliseconds(250)))
         {
@@ -87,9 +103,9 @@ internal static partial class Program
         native.T2IDirectory=Path.Combine(native.Workspace,"models","PE-T2I");SeedPe(native.T2IDirectory,"t2i",false);
         Check(!File.Exists(Path.Combine(native.T2IDirectory,"system_prompt.txt")),"Native automatic-download acceptance starts with an actually missing required file and reuses existing GGUF bytes");
         var prefs=Path.Combine(root,"native-download-prefs");Files.Write(Path.Combine(prefs,"preferences.json"),new Preferences{Settings=native});using var vm=new MainViewModel(prefs);vm.Setup.Page=2;
-        var wizard=new FirstRunWindow(vm);await Render(wizard,760,700,"models-native-before");vm.RequiredModelsDownloadCommand.Execute(null);await UntilDownloadIdle(vm,240);
-        Check(vm.T2ICard.Ready&&vm.RequiredModelsReady&&vm.Setup.CanContinue,"The actual wizard download command fetches missing PE-T2I files from ModelScope, verifies them and enables continuing");
+        var guide=vm.CreateModelGuide(vm.T2ICard);await Render(guide,600,490,"models-native-before");await vm.DownloadModelAsync("t2i");await UntilDownloadIdle(vm,240);
+        Check(vm.T2ICard.Ready&&vm.RequiredModelsReady&&vm.Setup.CanContinue,"The sidebar model-download pipeline fetches missing PE-T2I files from ModelScope and verifies them after basic setup is complete");
         var manifest=Path.Combine(native.T2IDirectory,".lightx2v-model.json");Check(File.Exists(manifest)&&File.Exists(Path.Combine(native.T2IDirectory,"system_prompt.txt")),"The real native download writes the verified repository manifest and previously missing system prompt");
-        await Render(wizard,760,700,"models-native-ready");Files.Write(Path.Combine(root,"native-model-download.json"),new{source=native.DownloadSource,downloadedMissingFile="system_prompt.txt",nativeCancellationVerified=true,reusedExistingGguf=true,downloadedWholeModel=false,ready=vm.RequiredModelsReady,modelManifest=manifest,logs=Directory.GetDirectories(Path.Combine(native.Workspace,"downloads"))});wizard.Close();
+        await Render(guide,600,490,"models-native-ready");Files.Write(Path.Combine(root,"native-model-download.json"),new{source=native.DownloadSource,downloadedMissingFile="system_prompt.txt",nativeCancellationVerified=true,reusedExistingGguf=true,downloadedWholeModel=false,ready=vm.RequiredModelsReady,modelManifest=manifest,logs=Directory.GetDirectories(Path.Combine(native.Workspace,"downloads"))});guide.Close();
     }
 }

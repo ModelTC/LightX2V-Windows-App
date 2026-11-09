@@ -39,7 +39,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public bool ParametersExpanded {get=>parametersExpanded;set{if(Set(ref parametersExpanded,value))SavePreferences();}}
     public bool ShowLog { get => showLog; set => Set(ref showLog, value); }
     public bool ShowInspector { get => showInspector; set => Set(ref showInspector, value); }
-    public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => !NeedsInitialSetup && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsGenerationBusy && !IsImporting && !IsDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
+    public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => !NeedsInitialSetup && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsGenerationBusy && !IsImporting && !IsBaseModelDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
     public string GenerateLabel => IsGenerationBusy ? T[IsStopping ? "Stopping" : "Stop generation"] : T["Generate image"];
     public Command NewCommand { get; }
     public Command GenerateCommand { get; }

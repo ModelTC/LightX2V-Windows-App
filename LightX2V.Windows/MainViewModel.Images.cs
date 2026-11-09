@@ -13,7 +13,7 @@ public sealed partial class MainViewModel
     Process? importer;
     public bool IsImporting{get=>importing;private set{Set(ref importing,value);RefreshStatus();Changed(nameof(CanAddImages));}}
     public bool HasInputImages=>InputImages.Count>0;
-    public bool CanAddImages=>File.Exists(Settings.Python)&&!IsRunning&&!IsPreflighting&&!IsImporting&&!IsDownloading;
+    public bool CanAddImages=>File.Exists(Settings.Python)&&!IsRunning&&!IsPreflighting&&!IsImporting&&!IsBaseModelDownloading;
     public Command AddImagesCommand{get;private set;}=null!;
     public ParameterCommand RemoveImageCommand{get;private set;}=null!;
     public ParameterCommand ReferenceGenerationCommand{get;private set;}=null!;

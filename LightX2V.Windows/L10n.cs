@@ -7,6 +7,14 @@ public sealed class L10n : Observable
     public string this[string key] => Language == "zh" ? Chinese.GetValueOrDefault(key, DriverStrings.Chinese.GetValueOrDefault(key, SetupStrings.Chinese.GetValueOrDefault(key,key))) : English.GetValueOrDefault(key, key);
     static readonly Dictionary<string, string> Chinese = new()
     {
+        ["Selecting a download source…"]="正在自动选择下载线路…",
+        ["Estimating remaining time…"]="正在估算剩余时间…",
+        ["Less than a minute remaining"]="预计还需不到 1 分钟",
+        ["About {0} min remaining"]="预计还需约 {0} 分钟",
+        ["About {0} h {1} min remaining"]="预计还需约 {0} 小时 {1} 分钟",
+        ["Downloading from {0}"]="正在从 {0} 下载",
+        ["Switching download source to {0}…"]="正在切换到 {0} 继续下载…",
+        ["Download enhancement models when needed. Turn enhancement off to create with the base model."]="按需下载提示词增强模型。关闭增强即可使用基础模型生图。",
         ["Automatic setup downloads about 1.8 GB. Existing downloads are verified and reused."]="自动配置需下载约 1.8 GB；已有安装包会先校验，再复用。",
         ["Automatic setup currently supports Radeon 8060S. Choose a compatible existing environment for other devices."]="当前自动配置支持 Radeon 8060S。其他设备可选择检查通过的已有环境。",
         ["Choose Python executable"]="选择 Python 程序",

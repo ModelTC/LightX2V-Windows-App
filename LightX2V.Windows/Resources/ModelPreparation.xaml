@@ -8,7 +8,6 @@
  </Style>
  <DataTemplate x:Key="ModelCardTemplate">
   <Border CornerRadius="12" Background="White" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="10" Margin="0,0,0,12">
-   <Border.Style><Style TargetType="Border"><Setter Property="Opacity" Value="1"/><Style.Triggers><DataTrigger Binding="{Binding OptionalEnabled}" Value="False"><Setter Property="Opacity" Value="0.58"/></DataTrigger></Style.Triggers></Style></Border.Style>
    <StackPanel>
     <Grid Margin="0,2,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
@@ -26,6 +25,7 @@
      <Button Grid.Column="2" Style="{StaticResource IconButton}" Width="20" Height="22" Padding="2" Command="{Binding StatusCommand}" ToolTip="{Binding Status}"><Grid Width="13" Height="13"><Ellipse><Ellipse.Style><Style TargetType="Ellipse"><Setter Property="Fill" Value="#A45145"/><Style.Triggers><DataTrigger Binding="{Binding Ready}" Value="True"><Setter Property="Fill" Value="#47755D"/></DataTrigger></Style.Triggers></Style></Ellipse.Style></Ellipse><Path Stroke="White" StrokeThickness="1.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"><Path.Style><Style TargetType="Path"><Setter Property="Data" Value="M4,4 L9,9 M4,9 L9,4"/><Style.Triggers><DataTrigger Binding="{Binding Ready}" Value="True"><Setter Property="Data" Value="M3.3,6.5 L5.5,8.7 9.7,4"/></DataTrigger></Style.Triggers></Style></Path.Style></Path></Grid></Button>
     </Grid>
     <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent,Mode=OneWay}" Height="3" Margin="0,10,0,1" Foreground="{StaticResource Ink}" Background="{StaticResource Line}" Visibility="{Binding IsDownloading,Converter={StaticResource Bool}}"/>
+    <TextBlock Text="{Binding DownloadEta}" FontSize="10" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,7,0,0" Visibility="{Binding DownloadEta,Converter={StaticResource NonEmpty}}" AutomationProperties.AutomationId="ModelDownloadEta"/>
    </StackPanel>
   </Border>
  </DataTemplate>

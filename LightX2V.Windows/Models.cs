@@ -36,7 +36,7 @@ public sealed class AppSettings
     public bool EnhancementEnabled {get;set;}
     public string T2IDirectory {get;set;}="";
     public string I2IDirectory {get;set;}="";
-    public string DownloadSource {get;set;}="huggingFace";
+    public string DownloadSource {get;set;}="auto";
     public static string FindBackend()
     {
         var candidates = new List<string> { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ChatGPT", "windows跑通LightX2V") };
@@ -57,7 +57,7 @@ public sealed class AppSettings
         catch(IOException){}catch(UnauthorizedAccessException){}
         var legacy=FindBackend();return legacy.Length>0?Path.Combine(legacy,"output","app-preferences"):Path.Combine(AppContext.BaseDirectory,"UserData");
     }
-    public static AppSettings Fresh(string? workspace=null) {workspace??=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"LightX2V");return new(){Workspace=workspace,Model=Path.Combine(workspace,"models","Qwen","Qwen-Image-2.1-Turbo"),T2IDirectory=Path.Combine(workspace,"models","lightx2v","Qwen-Image-2.1-PE-T2I-GGUF-Q8_0"),I2IDirectory=Path.Combine(workspace,"models","lightx2v","Qwen-Image-2.1-PE-I2I-GGUF-Q8_0"),DownloadSource="modelScope"};}
+    public static AppSettings Fresh(string? workspace=null) {workspace??=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"LightX2V");return new(){Workspace=workspace,Model=Path.Combine(workspace,"models","Qwen","Qwen-Image-2.1-Turbo"),T2IDirectory=Path.Combine(workspace,"models","lightx2v","Qwen-Image-2.1-PE-T2I-GGUF-Q8_0"),I2IDirectory=Path.Combine(workspace,"models","lightx2v","Qwen-Image-2.1-PE-I2I-GGUF-Q8_0")};}
     public static string? LegacyPreferences() {var root=FindBackend();var p=root.Length>0?Path.Combine(root,"output","app-preferences","preferences.json"):Path.Combine(AppContext.BaseDirectory,"UserData","preferences.json");return File.Exists(p)?p:null;}
     public void ValidateWorkspace(){if(!Path.IsPathFullyQualified(Workspace))throw new InvalidOperationException("Choose an absolute workspace path.");Directory.CreateDirectory(Workspace);var p=Path.Combine(Workspace,".write-probe-"+Guid.NewGuid().ToString("N"));File.WriteAllText(p,"");File.Delete(p);}
     public void ValidateEnvironment(){ValidateWorkspace();if(!Path.IsPathFullyQualified(Python)||!File.Exists(Python)||!Python.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Choose a native Windows Python executable.");}

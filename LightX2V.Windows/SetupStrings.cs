@@ -12,6 +12,8 @@ internal static class SetupStrings
         ["Your next creation starts with a spark of imagination."]="下一张好作品，就从你的第一个灵感开始。",
         ["Choose Start creating to enter the workspace and describe the image you imagine."]="点击「开始创作」进入工作区，自由描述你想生成的画面。",
         ["Download automatically"]="自动下载",
+        ["Automatic (recommended)"]="自动（推荐）",
+        ["The base model is all you need to start creating. Download optional prompt enhancement models later from the right sidebar in the workspace."]="基础模型准备好即可开始生图。之后可在主界面右侧栏按需下载提示词增强模型。",
         ["Download required files automatically"]="一键下载所需模型",
         ["Retry automatic download"]="重试自动下载",
         ["Retry download"]="重试下载",

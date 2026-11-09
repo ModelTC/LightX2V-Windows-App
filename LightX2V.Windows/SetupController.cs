@@ -24,7 +24,7 @@ public sealed class SetupController : Observable,IDisposable
     public bool UseExisting {get=>useExisting;set=>Set(ref useExisting,value);}
     public bool Busy {get=>busy;private set{Set(ref busy,value);owner.SetupStateChanged();Changed(nameof(CanContinue));}}
     public bool EnvironmentReady {get=>environmentReady;private set{Set(ref environmentReady,value);Changed(nameof(CanContinue));}}
-    public bool CanContinue=>!Busy&&(Page==0||Page==1&&EnvironmentReady||Page==2&&owner.TurboCard.Ready&&(!owner.EnhancementEnabled||owner.T2ICard.Ready&&owner.I2ICard.Ready));
+    public bool CanContinue=>!Busy&&(Page==0||Page==1&&EnvironmentReady||Page==2&&owner.TurboCard.Ready);
     public string Stage {get=>T[stage];private set{stage=value;Changed();}}
     public string Detail {get=>detail;private set=>Set(ref detail,value);}
     public string Logs {get=>logs;private set=>Set(ref logs,value);}
