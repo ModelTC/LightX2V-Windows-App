@@ -9,9 +9,11 @@ internal static partial class Program
     {
         var settings=AppSettings.Fresh(Path.Combine(root,"wizard-isolated"));settings.Backend="amd_rocm";
         var prefs=Path.Combine(root,"wizard-test-preferences");Files.Write(Path.Combine(prefs,"preferences.json"),new Preferences{Settings=settings});
-        using var vm=new MainViewModel(prefs);var events=new List<string>();var platform=new FakeDriverPlatform{Events=events};
+        var events=new List<string>();var platform=new FakeDriverPlatform{Events=events};
         var amd=Valid(@"C:\envs\amd\python.exe");var cuda=amd with{Path=@"C:\envs\cuda\python.exe",Backend="cuda",Device="NVIDIA RTX 4090",HipVersion="",CudaVersion="12.8",TorchVersion="2.11.0+cu128"};
-        var catalog=new FakeCatalog{Events=events,Found=[cuda,amd]};using var driver=new DriverSetupModel("amd_rocm",()=>settings.Workspace,L10n.Current,platform);using var controller=new SetupController(vm,catalog,driver);
+        var catalog=new FakeCatalog{Events=events,Found=[cuda,amd]};
+        using var vm=new MainViewModel(prefs,environmentCatalog:catalog,driverPlatform:platform);
+        using var driver=new DriverSetupModel("amd_rocm",()=>settings.Workspace,L10n.Current,platform);using var controller=new SetupController(vm,catalog,driver);
         platform.DelayCheck=true;var pending=controller.ScanComputerAsync();
         Check(controller.Busy&&!controller.ComputerScanned&&events.SequenceEqual(new[]{"check:amd_rocm"}),"Step two starts with a computer check and never searches environments before scan completion");
         await controller.CancelAsync();await pending;Check(!controller.Busy&&!controller.ComputerScanned&&catalog.SearchBackend=="","A cancelled computer scan cannot enable component preparation or start environment discovery");platform.DelayCheck=false;events.Clear();

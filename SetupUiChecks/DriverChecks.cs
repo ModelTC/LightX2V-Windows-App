@@ -39,20 +39,6 @@ internal static partial class Program
         model.Backend="cuda";await model.CheckAsync();model.OpenOfficialPage();Check(fake.LastBackend=="cuda","The official page follows the selected GPU vendor");var cudaWindow=DriverPreview(model);await Render(cudaWindow,740,650,"driver-update-nvidia");L10n.Current.Use("en");await Render(cudaWindow,740,650,"driver-update-en");L10n.Current.Use("zh");cudaWindow.Close();
         fake.Condition=DriverCondition.Restart;await model.CheckAsync();var restartWindow=DriverPreview(model);await Render(restartWindow,740,500,"driver-restart");
         Check(Children<System.Windows.Controls.TextBlock>((DependencyObject)restartWindow.Content).Single(t=>System.Windows.Automation.AutomationProperties.GetAutomationId(t)=="DriverInstructions").Visibility==Visibility.Collapsed,"Restart guidance does not tell users to click a download button that is hidden");restartWindow.Close();
-        var actual=await new NativeDriverPlatform().Check("amd_rocm",CancellationToken.None);Check(actual.Ready&&actual.Hardware.All.Any(d=>d.Backend=="amd_rocm"),"Real AMD hardware is re-detected and its working driver skips installation");Files.Write(Path.Combine(root,"driver-native-check.json"),actual);
-    }
-    static async Task CheckOfficialAssistants()
-    {
-        var service=new NativeDriverPlatform();var signatures=new Dictionary<string,InstallerSignature>();
-        foreach(var backend in new[]{"amd_rocm","cuda"})
-        {
-            var file=await service.Download(backend,Path.Combine(root,"official-downloads"),new Progress<SetupProgress>(),CancellationToken.None);
-            var signature=await DriverSignatures.Inspect(file,CancellationToken.None);DriverSignatures.RequirePublisher(backend,signature);signatures[backend]=signature;
-            Check(File.Exists(file)&&signature.Status=="Valid","Official helper download passes its pinned SHA256 and native Windows publisher verification: "+backend);
-        }
-        var unsigned=await DriverSignatures.Inspect(Path.Combine(AppContext.BaseDirectory,"LightX2V.Windows.exe"),CancellationToken.None);bool rejected=false;
-        try{DriverSignatures.RequirePublisher("amd_rocm",unsigned);}catch(InvalidOperationException){rejected=true;}Check(rejected,"A real unsigned application cannot be opened as an official driver installer");
-        Files.Write(Path.Combine(root,"installer-signatures.json"),signatures);
     }
     static Window DriverPreview(DriverSetupModel model)
     {

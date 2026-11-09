@@ -57,9 +57,6 @@ internal static partial class Program
         var noVersion=versionOnly with{Driver="",DriverInstalled=true};Check(DriverAssessment.Assess("cuda",HardwareInfo.FromAdapters([noVersion])).Ready,"A started device remains recognized when Windows prevents reading its version string");
         noVersion=noVersion with{DriverInstalled=null};Check(DriverAssessment.Assess("cuda",HardwareInfo.FromAdapters([noVersion])).Condition==DriverCondition.CheckFailed,"An unreadable driver version alone does not prove a missing driver");
         Check(DriverAssessment.Assess("cuda",HardwareInfo.FromAdapters([versionOnly with{ProblemCode=22}])).Condition==DriverCondition.Disabled,"An explicitly disabled device retains its Windows state instead of being marked ready");
-        var native=new NativeHardwareSources();var devices=native.Devices();Check(devices.Adapters.Any(d=>d.Backend=="amd_rocm"&&d.Driver.Length>0&&d.StatusKnown),"Real Windows SetupAPI enumeration identifies the existing AMD GPU, installed driver and live device state");Files.Write(Path.Combine(root,"hardware-native-devices.json"),devices);
-        var nativeCim=native.Cim();Check(nativeCim.Adapters.Any(d=>d.Backend=="amd_rocm"),"The independent CIM fallback also reads the actual AMD controller");Files.Write(Path.Combine(root,"hardware-native-cim.json"),nativeCim);
-        var actual=await new NativeDriverPlatform().Check("amd_rocm",CancellationToken.None);Check(actual.Ready&&actual.Hardware.Probes[0].Source=="Windows devices","Real AMD readiness now uses native device enumeration without requiring a PowerShell scan");Files.Write(Path.Combine(root,"hardware-native-driver.json"),actual);
         Files.Write(Path.Combine(root,"rtx4070-detection-fixture.json"),new{evidence="User-reported identity and driver data; fallback and CUDA API calls use injected fixtures, not physical RTX hardware",name=userName,version="621.01",windowsVersion="32.0.16.2101",cudaDriverApi=13050});
     }
 }

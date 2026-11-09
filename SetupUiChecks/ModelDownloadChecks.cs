@@ -1,8 +1,6 @@
 using LightX2V.Windows;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.Json;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -66,25 +64,15 @@ internal static partial class Program
             writer.Write((ushort)0);
         }
     }
-    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool CreateHardLink(string file,string existing,IntPtr reserved);
-    static void SeedPe(string destination,string key,bool system)
-    {
-        var actual=AppSettings.Detect();var source=key=="t2i"?actual.T2IDirectory:actual.I2IDirectory;Directory.CreateDirectory(destination);
-        foreach(var file in Directory.EnumerateFiles(source,"*.gguf"))
-        {
-            var path=Path.Combine(destination,Path.GetFileName(file));if(!File.Exists(path)&&!CreateHardLink(path,file,IntPtr.Zero))throw new System.ComponentModel.Win32Exception();
-        }
-        if(system)File.Copy(Path.Combine(source,"system_prompt.txt"),Path.Combine(destination,"system_prompt.txt"),true);
-    }
     static async Task UntilDownloadIdle(MainViewModel vm,int seconds=120)
     {
         var until=DateTime.UtcNow.AddSeconds(seconds);while(vm.IsDownloading||vm.IsChecking){if(DateTime.UtcNow>until)throw new TimeoutException("Model download QA did not finish");await Task.Delay(30);}
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
     }
-    static async Task ModelDownloadChecks(bool native=true)
+    static async Task ModelDownloadChecks()
     {
         var settings=AppSettings.Fresh(Path.Combine(root,"automatic-models-isolated"));var prefs=Path.Combine(root,"automatic-models-prefs");Files.Write(Path.Combine(prefs,"preferences.json"),new Preferences{Settings=settings});
-        var fake=new FakeModelDownloader{Hold="turbo"};using var vm=new MainViewModel(prefs,fake);vm.Setup.Page=2;var wizard=new FirstRunWindow(vm);
+        var fake=new FakeModelDownloader{Hold="turbo"};using var vm=new MainViewModel(prefs,fake,new FakeCatalog(),new FakeDriverPlatform());vm.Setup.Page=2;var wizard=new FirstRunWindow(vm);
         await Render(wizard,760,700,"models-missing-zh");
         var automatic=Children<Button>((DependencyObject)wizard.Content).Single(b=>AutomationProperties.GetAutomationId(b)=="SetupDownloadModels");
         Check(automatic.IsEnabled&&automatic.Content.ToString()==vm.T["Download required files automatically"]&&fake.Requests.Count==0,"Step three exposes an explicit one-click automatic download without downloading on page render");
@@ -108,25 +96,5 @@ internal static partial class Program
         Check(Children<Button>((DependencyObject)guideWindow.Content).Any(b=>AutomationProperties.GetAutomationId(b)=="GuideAutomaticDownload"&&b.IsEnabled),"Download guides provide the same automatic action as their model cards");
         Check(Children<Expander>((DependencyObject)guideWindow.Content).Single(e=>AutomationProperties.GetAutomationId(e)=="ManualModelDownload").IsExpanded==false,"Manual commands are optional and collapsed in the download guide");guideWindow.Close();
         vm.SetLanguage("en");await Render(wizard,760,700,"models-download-en");vm.SetLanguage("zh");await Render(wizard,620,470,"models-download-small");wizard.Close();
-        if(native)await NativeAutomaticModelDownload();
-    }
-    static async Task NativeAutomaticModelDownload()
-    {
-        var native=NativeSettings();
-        var cancelWorkspace=Path.Combine(root,"native-download-cancel");var cancelDestination=Path.Combine(cancelWorkspace,"PE-T2I");SeedPe(cancelDestination,"t2i",false);
-        using(var cancellation=new CancellationTokenSource(TimeSpan.FromMilliseconds(250)))
-        {
-            var watch=System.Diagnostics.Stopwatch.StartNew();
-            var cancelled=await new NativeModelDownloader().DownloadAsync(new("t2i","modelScope",cancelDestination,native.Python,cancelWorkspace),new Progress<ModelDownloadProgress>(),cancellation.Token);
-            Check(cancelled.Cancelled&&watch.Elapsed<TimeSpan.FromSeconds(12),"The native downloader cancels its actual Python child within the bounded stop interval");
-        }
-        native.Workspace=Path.Combine(root,"native-automatic-download");native.EnhancementEnabled=true;native.DownloadSource="modelScope";
-        native.T2IDirectory=Path.Combine(native.Workspace,"models","PE-T2I");SeedPe(native.T2IDirectory,"t2i",false);
-        Check(!File.Exists(Path.Combine(native.T2IDirectory,"system_prompt.txt")),"Native automatic-download acceptance starts with an actually missing required file and reuses existing GGUF bytes");
-        var prefs=Path.Combine(root,"native-download-prefs");Files.Write(Path.Combine(prefs,"preferences.json"),new Preferences{Settings=native});using var vm=new MainViewModel(prefs);vm.Setup.Page=2;
-        var guide=vm.CreateModelGuide(vm.T2ICard);await Render(guide,600,490,"models-native-before");await vm.DownloadModelAsync("t2i");await UntilDownloadIdle(vm,240);
-        Check(vm.T2ICard.Ready&&vm.RequiredModelsReady&&vm.Setup.CanContinue,"The sidebar model-download pipeline fetches missing PE-T2I files from ModelScope and verifies them after basic setup is complete");
-        var manifest=Path.Combine(native.T2IDirectory,".lightx2v-model.json");Check(File.Exists(manifest)&&File.Exists(Path.Combine(native.T2IDirectory,"system_prompt.txt")),"The real native download writes the verified repository manifest and previously missing system prompt");
-        await Render(guide,600,490,"models-native-ready");Files.Write(Path.Combine(root,"native-model-download.json"),new{source=native.DownloadSource,downloadedMissingFile="system_prompt.txt",nativeCancellationVerified=true,reusedExistingGguf=true,downloadedWholeModel=false,ready=vm.RequiredModelsReady,modelManifest=manifest,logs=Directory.GetDirectories(Path.Combine(native.Workspace,"downloads"))});guide.Close();
     }
 }

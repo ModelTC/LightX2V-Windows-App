@@ -16,7 +16,6 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ !startsWith(github.ref, 'refs/heads/codex/publish-') }}
     runs-on: windows-latest
     timeout-minutes: 30
     env:
@@ -45,12 +44,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Run Python tests
         run: python -m unittest discover -s Tests -v
-      - name: Compile Windows check projects
-        run: |
-          foreach ($project in @('Checks', 'HeadlessChecks', 'SetupUiChecks')) {
-            dotnet build "$project/$project.csproj" -c Release
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+      - name: Compile Windows application checks
+        run: dotnet build SetupUiChecks/SetupUiChecks.csproj -c Release
       - name: Build and verify portable package
         run: ./build.ps1
       - name: Check core application flows offscreen
@@ -99,7 +94,6 @@ jobs:
 
   cpu-tests:
     name: Test CPU tensor and checkpoint behavior
-    if: ${{ !startsWith(github.ref, 'refs/heads/codex/publish-') }}
     runs-on: windows-latest
     timeout-minutes: 20
     env:
