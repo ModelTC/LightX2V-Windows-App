@@ -126,6 +126,8 @@ internal static partial class Program
         }
         await DownloadSourcePreferenceChecks();
         await OptionalModelDownloadChecks();
+        await PreparationGuidanceChecks();
+        await ModelValidationChecks();
     }
 
     static async Task DownloadSourcePreferenceChecks()

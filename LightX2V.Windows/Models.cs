@@ -43,13 +43,7 @@ public sealed class AppSettings
         for (DirectoryInfo? p = new(AppContext.BaseDirectory); p != null; p = p.Parent) candidates.Add(p.FullName);
         return candidates.FirstOrDefault(p => File.Exists(Path.Combine(p, "baseline-root.json")) && File.Exists(Path.Combine(p, "python312", "python.exe"))) ?? "";
     }
-    public static AppSettings Detect()
-    {
-        var root = FindBackend(); if (root == "") return Fresh();
-        var baseline = Files.Read<Dictionary<string, JsonElement>>(Path.Combine(root, "baseline-root.json"));
-        var models = baseline != null && baseline.TryGetValue("model_workspace", out var modelRoot) && modelRoot.ValueKind == JsonValueKind.String ? modelRoot.GetString() ?? root : root;
-        return new() { Workspace = Path.Combine(root, "output", "app-workspace"), Python = Path.Combine(root, "python312", "python.exe"), Repository = Path.Combine(root, "src"), Model = Path.Combine(models, "models", "Qwen-Image-2.1-Turbo"), T2IDirectory=Path.Combine(root,"output","app-models","lightx2v","Qwen-Image-2.1-PE-T2I-GGUF-Q8_0"), I2IDirectory=Path.Combine(root,"output","app-models","lightx2v","Qwen-Image-2.1-PE-I2I-GGUF-Q8_0") };
-    }
+    public static AppSettings Detect(Action<string>? report = null) => LegacyWorkspaceImporter.TryRead(FindBackend(), report) ?? Fresh();
     public static string PreferencesRoot()
     {
         var preferred=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"LightX2V","configuration");
@@ -57,7 +51,12 @@ public sealed class AppSettings
         catch(IOException){}catch(UnauthorizedAccessException){}
         var legacy=FindBackend();return legacy.Length>0?Path.Combine(legacy,"output","app-preferences"):Path.Combine(AppContext.BaseDirectory,"UserData");
     }
-    public static AppSettings Fresh(string? workspace=null) {workspace??=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),"LightX2V");return new(){Workspace=workspace,Model=Path.Combine(workspace,"models","Qwen","Qwen-Image-2.1-Turbo"),T2IDirectory=Path.Combine(workspace,"models","lightx2v","Qwen-Image-2.1-PE-T2I-GGUF-Q8_0"),I2IDirectory=Path.Combine(workspace,"models","lightx2v","Qwen-Image-2.1-PE-I2I-GGUF-Q8_0")};}
+    public static AppSettings Fresh(string? workspace = null)
+    {
+        workspace ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "LightX2V");
+        string ModelPath(string key) => Path.Combine(workspace, "models", ModelCatalog.Get(key).Repository.Replace('/', Path.DirectorySeparatorChar));
+        return new() { Workspace = workspace, Model = ModelPath("turbo"), T2IDirectory = ModelPath("t2i"), I2IDirectory = ModelPath("i2i") };
+    }
     public static string? LegacyPreferences() {var root=FindBackend();var p=root.Length>0?Path.Combine(root,"output","app-preferences","preferences.json"):Path.Combine(AppContext.BaseDirectory,"UserData","preferences.json");return File.Exists(p)?p:null;}
     public void ValidateWorkspace(){if(!Path.IsPathFullyQualified(Workspace))throw new InvalidOperationException("Choose an absolute workspace path.");Directory.CreateDirectory(Workspace);var p=Path.Combine(Workspace,".write-probe-"+Guid.NewGuid().ToString("N"));File.WriteAllText(p,"");File.Delete(p);}
     public void ValidateEnvironment(){ValidateWorkspace();if(!Path.IsPathFullyQualified(Python)||!File.Exists(Python)||!Python.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Choose a native Windows Python executable.");}
@@ -71,7 +70,7 @@ public sealed class AppSettings
         Directory.CreateDirectory(Workspace);
     }
 }
-public sealed class Preferences { public bool ModelExpanded {get;set;}=true;public bool ParametersExpanded {get;set;}=true; public string Language { get; set; } = "zh"; public AppSettings Settings { get; set; } = new(); }
+public sealed class Preferences { public int SchemaVersion {get;set;}=1; public bool ModelExpanded {get;set;}=true;public bool ParametersExpanded {get;set;}=true; public string Language { get; set; } = "zh"; public AppSettings Settings { get; set; } = new(); }
 public sealed class WorkspaceState { public int SchemaVersion { get; set; } = 1; public List<Generation> Generations { get; set; } = []; }
 public sealed class InputImage {public string Id {get;set;}=Guid.NewGuid().ToString("N");public string Path {get;set;}="";public string Name {get;set;}="";public int Width {get;set;}public int Height {get;set;}}
 public sealed class InferenceRequest
@@ -105,13 +104,14 @@ public sealed class Generation : Observable
     private string status = "running"; public string Status { get => status; set { Set(ref status, value); Refresh(); } }
     private string phase = "loading"; public string Phase { get => phase; set { Set(ref phase, value); Refresh(); } }
     private int step; public int Step { get => step; set { Set(ref step, value); Refresh(); } }
+    public int StepTotal { get; set; } = 8;
     public double Seconds { get; set; }
     public string? Error { get; set; }
     public int BackendPid { get; set; }
     [JsonIgnore] public string? PreviewPath => Completed ? Request.Output : null;
     [JsonIgnore] public string Title => Request.Prompt.Replace('\n', ' ').Trim();
     [JsonIgnore] public string Subtitle => CreatedAt.ToString(L10n.Current.Language=="zh"?"yyyy年M月d日":"MMM d, yyyy",System.Globalization.CultureInfo.InvariantCulture) + " · " + L10n.Current[Status];
-    [JsonIgnore] public string PhaseText => !Running ? ResultStatus : L10n.Current[Phase] + (Step > 0 ? $" · {Step}/8" : "");
+    [JsonIgnore] public string PhaseText => !Running ? ResultStatus : L10n.Current[Phase] + (Step > 0 ? $" · {Step}/{StepTotal}" : "");
     [JsonIgnore] public string Elapsed => TimeSpan.FromSeconds(Status == "running" ? (DateTimeOffset.Now - CreatedAt).TotalSeconds : Seconds).ToString(@"mm\:ss");
     [JsonIgnore] public bool Completed => Status == "completed"; [JsonIgnore] public bool Running => Status == "running"; [JsonIgnore] public bool Failed => !Completed && !Running;
     [JsonIgnore] public string ResultStatus => L10n.Current[Completed?"Generated":Status];

@@ -28,7 +28,7 @@ def package(app):
     required = [
         'LightX2V.Windows.exe', 'LightX2V.Windows.dll', 'LightX2V.Windows.runtimeconfig.json',
         'coreclr.dll', 'PresentationFramework.dll', 'LICENSE.txt', 'ThirdPartyNotices.txt',
-        'Resources/qwen_image_21_turbo.json', 'Resources/driver-assistants.json',
+        'Resources/qwen_image_21_turbo.json', 'Resources/driver-assistants.json', 'Resources/model-catalog.json',
         'Runtime/llama-b11564-vulkan/llama-completion.exe',
         'Runtime/llama-b11564-vulkan/llama-mtmd-cli.exe',
         'Runtime/llama-b11564-vulkan/LICENSE-llama.cpp.txt',
@@ -37,7 +37,7 @@ def package(app):
     for name in required:
         if not (app / name).is_file():
             raise ValueError('Incomplete publish directory: ' + name)
-    for folder, pattern in [('Backend', '*.py'), ('Resources/Setup', '*')]:
+    for folder, pattern in [('Backend', '*.py'), ('Resources', '*.json'), ('Resources/Setup', '*')]:
         for source in sorted((ROOT / 'LightX2V.Windows' / folder).glob(pattern)):
             if source.is_file():
                 target = app / folder / source.name

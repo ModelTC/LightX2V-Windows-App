@@ -12,6 +12,8 @@ public sealed record EnvironmentCandidate(string Path,bool Ready,string Detail)
     public string CudaVersion {get;init;}="";public string Backend {get;init;}="amd_rocm";
     public long GpuFree {get;init;}public long GpuTotal {get;init;}public long RamAvailable {get;init;}public long RamTotal {get;init;}
     public string Device {get;init;}="";
+    public long PythonLength {get;init;}
+    public long PythonModifiedUtcTicks {get;init;}
     public string BackendLabel=>Backends.Label(Backend);
     public string ResourceSummary=>GpuTotal>0?$"GPU {GpuTotal/1073741824.0:F1} GiB · {L10n.Current["Available"]} {GpuFree/1073741824.0:F1} GiB · RAM {RamTotal/1073741824.0:F1} GiB":"";
     public IReadOnlyDictionary<string,string> Packages {get;init;}=new Dictionary<string,string>();
@@ -23,14 +25,20 @@ public sealed record EnvironmentCandidate(string Path,bool Ready,string Detail)
 public sealed record EnvironmentPackage(string Name,string Version);
 public static class SetupDiscovery
 {
-    public static IEnumerable<string> PythonPaths(AppSettings settings)
+    public static TimeSpan EnvironmentSearchTimeout {get;}=TimeSpan.FromSeconds(45);
+    static IEnumerable<string> PreferredPythonPaths(AppSettings settings)
     {
-        var found=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        void Add(string value){try{if(!value.Contains("WindowsApps",StringComparison.OrdinalIgnoreCase)&&Path.IsPathFullyQualified(value)&&File.Exists(value)&&value.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))found.Add(Path.GetFullPath(value));}catch(IOException){}}
+        if(settings.Python.Length>0)yield return settings.Python;
+        var backends=settings.Backend=="cuda"?new[]{"cuda","amd_rocm"}:new[]{"amd_rocm","cuda"};
+        foreach(var backend in backends)yield return SetupInstaller.ManagedPython(settings.Workspace,backend);
+    }
+    public static IEnumerable<string> PythonPaths(AppSettings settings,CancellationToken token=default)
+    {
+        var found=new List<string>();var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        void Add(string value){token.ThrowIfCancellationRequested();try{if(!value.Contains("WindowsApps",StringComparison.OrdinalIgnoreCase)&&Path.IsPathFullyQualified(value)&&File.Exists(value)&&value.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)&&seen.Add(Path.GetFullPath(value)))found.Add(Path.GetFullPath(value));}catch(IOException){}catch(UnauthorizedAccessException){}}
         void Prefix(string value){Add(Path.Combine(value,"python.exe"));Add(Path.Combine(value,"Scripts","python.exe"));}
         IEnumerable<string> Children(string root){try{return Directory.GetDirectories(root);}catch{return [];}}
-        if(settings.Python.Length>0)Add(settings.Python);
-        foreach(var backend in new[]{"amd_rocm","cuda"})Add(SetupInstaller.ManagedPython(settings.Workspace,backend));
+        foreach(var path in PreferredPythonPaths(settings))Add(path);
         var legacy=AppSettings.FindBackend();if(legacy.Length>0)Prefix(Path.Combine(legacy,"python312"));
         var home=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         foreach(var root in new[]{home,Path.Combine(home,"AppData","Local"),@"C:\ProgramData"})foreach(var name in new[]{"miniconda3","anaconda3","miniforge3"})
@@ -42,7 +50,7 @@ public static class SetupDiscovery
         using(var key=Registry.CurrentUser.OpenSubKey(@"Software\Python\PythonCore"))foreach(var version in key?.GetSubKeyNames()??[]){using var install=key!.OpenSubKey(version+@"\InstallPath");var directory=install?.GetValue("")?.ToString();if(directory!=null)Prefix(directory);}
         using(var key=Registry.LocalMachine.OpenSubKey(@"Software\Python\PythonCore"))foreach(var version in key?.GetSubKeyNames()??[]){using var install=key!.OpenSubKey(version+@"\InstallPath");var directory=install?.GetValue("")?.ToString();if(directory!=null)Prefix(directory);}
         var visited=0;var ignored=new HashSet<string>(["models","outputs","cache","node_modules","site-packages",".git","Lib","downloads","dist"],StringComparer.OrdinalIgnoreCase);
-        void Scan(string root,int depth){if(depth>3||visited++>700)return;foreach(var name in new[]{".venv","venv","env","python312"})Prefix(Path.Combine(root,name));foreach(var child in Children(root)){if(ignored.Contains(Path.GetFileName(child)))continue;try{if((File.GetAttributes(child)&FileAttributes.ReparsePoint)==0)Scan(child,depth+1);}catch(IOException){}}}
+        void Scan(string root,int depth){token.ThrowIfCancellationRequested();if(depth>3||visited++>700)return;foreach(var name in new[]{".venv","venv","env","python312"})Prefix(Path.Combine(root,name));foreach(var child in Children(root)){if(ignored.Contains(Path.GetFileName(child)))continue;try{if((File.GetAttributes(child)&FileAttributes.ReparsePoint)==0)Scan(child,depth+1);}catch(IOException){}catch(UnauthorizedAccessException){}}}
         Scan(settings.Workspace,0);Scan(Path.Combine(home,".virtualenvs"),0);Scan(Path.Combine(home,".pyenv","pyenv-win","versions"),0);
         foreach(var root in new[]{"Documents","Desktop","Projects","Developer"})Scan(Path.Combine(home,root),0);
         return found.Take(40).ToArray();
@@ -54,12 +62,26 @@ public static class SetupDiscovery
         using var timeout=CancellationTokenSource.CreateLinkedTokenSource(token);timeout.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
         try
         {
+            var executable=new FileInfo(python);var length=executable.Length;var modified=executable.LastWriteTimeUtc.Ticks;
             var code=await bridge.RunAsync(python,"check",request,Path.Combine(workspace,"tmp"),e=>{lock(gate)File.AppendAllText(Path.Combine(folder,"probe.ndjson"),JsonSerializer.Serialize(e)+Environment.NewLine);var type=e.GetProperty("type").GetString();if(type=="ready"){ready=true;detail=e.GetProperty("device").GetString()+" · "+e.GetProperty("torch").GetString();metadata=ReadCandidate(python,e);}else if(type=="error")detail=e.GetProperty("message").GetString()??"";},timeout.Token);
-            return (metadata??new EnvironmentCandidate(python,false,"")) with{Ready=ready&&code==0,Detail=detail.Length>0?detail:$"Python exited without a ready event (code {code})."};
+            executable.Refresh();
+            if(!executable.Exists||length!=executable.Length||modified!=executable.LastWriteTimeUtc.Ticks)return new(python,false,"The Python executable changed during verification. Check this environment again.");
+            return (metadata??new EnvironmentCandidate(python,false,"")) with{Ready=ready&&code==0,Detail=detail.Length>0?detail:$"Python exited without a ready event (code {code}).",PythonLength=length,PythonModifiedUtcTicks=modified};
         }
         catch(OperationCanceledException) when(token.IsCancellationRequested){throw;}
         catch(OperationCanceledException){return new(python,false,$"Environment check timed out after {timeoutSeconds} seconds.");}
         catch(Exception e){return new(python,false,e.Message);}
+    }
+    public static bool CandidateIsCurrent(EnvironmentCandidate candidate,string backend)
+    {
+        if(!candidate.Ready||candidate.Backend!=backend||candidate.PythonLength<=0)return false;
+        try
+        {
+            var file=new FileInfo(candidate.Path);
+            return file.Exists&&file.Length==candidate.PythonLength&&file.LastWriteTimeUtc.Ticks==candidate.PythonModifiedUtcTicks;
+        }
+        catch(IOException){return false;}
+        catch(UnauthorizedAccessException){return false;}
     }
     internal static EnvironmentCandidate ReadCandidate(string python,JsonElement value)
     {
@@ -68,16 +90,59 @@ public static class SetupDiscovery
         var packages=value.TryGetProperty("packages",out var items)?items.EnumerateObject().ToDictionary(p=>p.Name,p=>p.Value.GetString()??""):new Dictionary<string,string>();
         return new(python,true,Text("device")+" · "+Text("torch")){PythonVersion=Text("python"),TorchVersion=Text("torch"),HipVersion=Text("hip"),CudaVersion=Text("cuda"),Backend=Text("backend") is "cuda"?"cuda":"amd_rocm",GpuFree=Number("gpuFree"),GpuTotal=Number("gpuTotal"),RamAvailable=Number("ramAvailable"),RamTotal=Number("ramTotal"),Device=Text("device"),Packages=packages};
     }
-    public static async Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)
+    public static Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)=>Task.Run(async()=>
     {
-        var paths=await Task.Run(()=>PythonPaths(settings).ToArray(),token);var results=new List<EnvironmentCandidate>();var done=0;
-        foreach(var batch in paths.Chunk(2))
+        using var budget=CancellationTokenSource.CreateLinkedTokenSource(token);
+        budget.CancelAfter(EnvironmentSearchTimeout);
+        var searchToken=budget.Token;
+        var results=new List<EnvironmentCandidate>();
+        var queued=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var paths=new Queue<string>();
+        var pending=new List<Task<EnvironmentCandidate>>();
+        void Enqueue(IEnumerable<string> candidates)
         {
-            token.ThrowIfCancellationRequested();var candidates=await Task.WhenAll(batch.Select(p=>Probe(p,settings.Workspace,token,settings.Backend)));results.AddRange(candidates);done+=batch.Length;
-            progress.Report(new("Searching local environments",$"{done} / {paths.Length}",paths.Length>0?100.0*done/paths.Length:100));
+            foreach(var path in candidates)if(File.Exists(path)&&queued.Add(path))paths.Enqueue(path);
         }
-        return results.OrderByDescending(p=>p.Ready).ThenBy(p=>p.Path).ToList();
-    }
+        async Task<EnvironmentCandidate> CheckPath(string path)
+        {
+            try{return await Probe(path,settings.Workspace,searchToken,settings.Backend,30);}
+            catch(OperationCanceledException){return new(path,false,"Environment search stopped before this check finished. Choose this Python program to check it again.");}
+        }
+        Enqueue(PreferredPythonPaths(settings));
+        Task<string[]>? discovery=Task.Run(()=>PythonPaths(settings,searchToken).ToArray(),searchToken);
+        try
+        {
+            while(paths.Count>0||pending.Count>0||discovery!=null)
+            {
+                searchToken.ThrowIfCancellationRequested();
+                while(paths.Count>0&&pending.Count<2)pending.Add(CheckPath(paths.Dequeue()));
+                var waiting=pending.Cast<Task>().ToList();
+                if(discovery!=null)waiting.Add(discovery);
+                var completed=await Task.WhenAny(waiting).WaitAsync(searchToken);
+                if(completed==discovery)
+                {
+                    try{Enqueue(await discovery!);}
+                    catch(Exception error) when(error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                    {
+                        progress.Report(new("Searching local environments",Log:"Additional environment discovery could not finish: "+error.Message));
+                    }
+                    discovery=null;
+                    continue;
+                }
+                var probe=(Task<EnvironmentCandidate>)completed;
+                pending.Remove(probe);
+                var candidate=await probe;results.Add(candidate);
+                progress.Report(new("Searching local environments",$"{results.Count} / {queued.Count}",Candidate:candidate));
+            }
+        }
+        catch(OperationCanceledException) when(!token.IsCancellationRequested)
+        {
+            progress.Report(new("Environment search time limit reached"));
+        }
+        finally{budget.Cancel();}
+        token.ThrowIfCancellationRequested();
+        return results.OrderByDescending(p=>p.Ready).ToList();
+    },token).WaitAsync(EnvironmentSearchTimeout+TimeSpan.FromSeconds(2),token);
     public static Dictionary<string,string> Models(AppSettings settings,CancellationToken token)
     {
         var roots=new List<string>{settings.Model,settings.T2IDirectory,settings.I2IDirectory,Path.Combine(settings.Workspace,"models")};
@@ -99,46 +164,115 @@ public static class SetupDiscovery
 }
 public static class ModelValidation
 {
-    public static bool Ready(string directory,string key)
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (long Length, long Modified)> validatedTokenizers = new(StringComparer.OrdinalIgnoreCase);
+
+    public static bool Ready(string directory, string key)
     {
+        if (!ModelCatalog.Models.TryGetValue(key, out var model)) return false;
         try
         {
-            if(!Path.IsPathFullyQualified(directory))return false;
-            if(key!="turbo")
+            if (!Path.IsPathFullyQualified(directory)) return false;
+            foreach (var relative in model.RequiredFiles)
             {
-                var name="Qwen-Image-2.1-PE-"+key.ToUpperInvariant();var system=Path.Combine(directory,"system_prompt.txt");
-                if(!Gguf(Path.Combine(directory,name+"-Q8_0.gguf"))||!File.Exists(system)||new FileInfo(system).Length==0)return false;
-                return key!="i2i"||Gguf(Path.Combine(directory,"mmproj-"+name+"-BF16.gguf"))||Gguf(Path.Combine(directory,"mmproj-"+name+"-F16.gguf"));
-            }
-            using var index=JsonDocument.Parse(File.ReadAllText(Path.Combine(directory,"model_index.json")));
-            if(!index.RootElement.TryGetProperty("sample_sigmas",out var sigmas)||sigmas.GetArrayLength()!=8)return false;
-            foreach(var name in new[]{"transformer","text_encoder","vae","scheduler","processor"})if(!Directory.Exists(Path.Combine(directory,name)))return false;
-            foreach(var component in new[]{"transformer","text_encoder","vae"})
-            {
-                var root=Path.Combine(directory,component);var files=Directory.GetFiles(root,"*.safetensors");if(files.Length==0)return false;
-                foreach(var file in files)if(!Safetensors(file))return false;
-                foreach(var path in Directory.GetFiles(root,"*.index.json"))
+                var path = ChildPath(directory, relative);
+                var info = new FileInfo(path);
+                if (!info.Exists || info.Length == 0) return false;
+                if (!relative.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue;
+                var stamp = (info.Length, info.LastWriteTimeUtc.Ticks);
+                if (relative == "processor/tokenizer.json" && validatedTokenizers.TryGetValue(path, out var cached) && cached == stamp)
+                    continue;
+                using var stream = File.OpenRead(path);
+                using var json = JsonDocument.Parse(stream);
+                if (json.RootElement.ValueKind != JsonValueKind.Object) return false;
+                if (model.JsonProperties.TryGetValue(relative, out var expected))
+                    foreach (var (name, value) in expected)
+                        if (!json.RootElement.TryGetProperty(name, out var actual) || actual.GetString() != value) return false;
+                if (relative == "processor/tokenizer.json")
                 {
-                    using var map=JsonDocument.Parse(File.ReadAllText(path));
-                    if(map.RootElement.TryGetProperty("weight_map",out var weights))foreach(var weight in weights.EnumerateObject())if(!File.Exists(Path.Combine(root,weight.Value.GetString()!)))return false;
+                    // This only caches a lightweight format check. Explicit repair still hashes every file.
+                    info.Refresh();
+                    if (stamp != (info.Length, info.LastWriteTimeUtc.Ticks)) return false;
+                    if (validatedTokenizers.Count >= 64) validatedTokenizers.Clear();
+                    validatedTokenizers[path] = stamp;
                 }
             }
-            return true;
+            if (model.SampleSigmas.Length > 0)
+            {
+                using var index = JsonDocument.Parse(File.ReadAllText(ChildPath(directory, "model_index.json")));
+                var sigmas = index.RootElement.GetProperty("sample_sigmas");
+                if (sigmas.GetArrayLength() != model.SampleSigmas.Length) return false;
+                for (var i = 0; i < model.SampleSigmas.Length; i++)
+                    if (Math.Abs(sigmas[i].GetDouble() - model.SampleSigmas[i]) > 0.000001) return false;
+            }
+            foreach (var (component, layout) in model.WeightComponents)
+                if (!WeightComponentReady(ChildPath(directory, component), layout)) return false;
+            if (model.ModelFile.Length > 0 && !Gguf(ChildPath(directory, model.ModelFile))) return false;
+            return model.ProjectorFiles.Length == 0 || model.ProjectorFiles.Any(file => Gguf(ChildPath(directory, file)));
         }
-        catch{return false;}
+        catch (Exception)
+        {
+            return false;
+        }
     }
+
+    static string ChildPath(string directory, string relative)
+    {
+        var root = Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var path = Path.GetFullPath(Path.Combine(root, relative));
+        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("A model file points outside its component directory.");
+        return path;
+    }
+
+    static bool WeightComponentReady(string directory, ModelWeightComponent layout)
+    {
+        var indexPath = ChildPath(directory, layout.Index);
+        if (!File.Exists(indexPath)) return Safetensors(ChildPath(directory, layout.File));
+        using var index = JsonDocument.Parse(File.ReadAllText(indexPath));
+        var weights = index.RootElement.GetProperty("weight_map");
+        var files = weights.EnumerateObject().Select(weight => weight.Value.GetString()!).Distinct().ToArray();
+        return files.Length > 0 && files.All(file => file.EndsWith(".safetensors", StringComparison.OrdinalIgnoreCase)
+            && Safetensors(ChildPath(directory, file)));
+    }
+
     public static bool Gguf(string path)
     {
-        if(!File.Exists(path))return false;var size=new FileInfo(path).Length;
-        if(path.EndsWith("-Q8_0.gguf",StringComparison.OrdinalIgnoreCase)&&size!=9527501536)return false;
-        if(size<100*1024*1024)return false;
-        using var f=File.OpenRead(path);Span<byte> magic=stackalloc byte[4];return f.Read(magic)==4&&magic.SequenceEqual("GGUF"u8);
+        if (!File.Exists(path)) return false;
+        var size = new FileInfo(path).Length;
+        if (size < ModelCatalog.MinimumGgufBytes) return false;
+        var name = Path.GetFileName(path);
+        foreach (var model in ModelCatalog.Models.Values)
+            if (model.ExpectedGgufSizes.TryGetValue(name, out var expected) && size != expected) return false;
+        using var stream = File.OpenRead(path);
+        Span<byte> magic = stackalloc byte[4];
+        return stream.Read(magic) == 4 && magic.SequenceEqual("GGUF"u8);
     }
+
     static bool Safetensors(string path)
     {
-        using var file=File.OpenRead(path);if(file.Length<10)return false;using var reader=new BinaryReader(file);var length=reader.ReadUInt64();if(length>64*1024*1024||length+8>(ulong)file.Length)return false;
-        using var json=JsonDocument.Parse(reader.ReadBytes((int)length));long end=0;
-        foreach(var item in json.RootElement.EnumerateObject())if(item.Name!="__metadata__")end=Math.Max(end,item.Value.GetProperty("data_offsets")[1].GetInt64());
-        return end+8+(long)length==file.Length;
+        using var file = File.OpenRead(path);
+        if (file.Length < 10) return false;
+        using var reader = new BinaryReader(file);
+        var headerLength = reader.ReadUInt64();
+        if (headerLength > 64 * 1024 * 1024 || headerLength + 8 > (ulong)file.Length) return false;
+        using var json = JsonDocument.Parse(reader.ReadBytes((int)headerLength));
+        var dataLength = file.Length - 8 - (long)headerLength;
+        long lastOffset = 0;
+        var hasTensor = false;
+        foreach (var item in json.RootElement.EnumerateObject())
+        {
+            if (item.Name == "__metadata__") continue;
+            var tensor = item.Value;
+            if (string.IsNullOrEmpty(tensor.GetProperty("dtype").GetString())) return false;
+            if (tensor.GetProperty("shape").EnumerateArray().Any(dimension => dimension.GetInt64() < 0)) return false;
+            var offsets = tensor.GetProperty("data_offsets");
+            if (offsets.GetArrayLength() != 2) return false;
+            var first = offsets[0].GetInt64();
+            var last = offsets[1].GetInt64();
+            if (first < 0 || last < first || last > dataLength) return false;
+            hasTensor |= last > first;
+            lastOffset = Math.Max(lastOffset, last);
+        }
+        return hasTensor && lastOffset == dataLength;
     }
 }

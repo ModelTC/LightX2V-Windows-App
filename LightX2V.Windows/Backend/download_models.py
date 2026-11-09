@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import queue
 import sys
 import time
 import urllib.request
@@ -14,11 +15,12 @@ import threading
 
 sys.path.insert(0,str(Path(__file__).resolve().parent))
 
-REPOSITORIES = {
-    'turbo': 'Qwen/Qwen-Image-2.1-Turbo',
-    't2i': 'lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0',
-    'i2i': 'lightx2v/Qwen-Image-2.1-PE-I2I-GGUF-Q8_0',
-}
+CATALOG_PATH = Path(__file__).resolve().parent.parent/'Resources'/'model-catalog.json'
+MODEL_CATALOG = json.loads(CATALOG_PATH.read_text(encoding='utf-8'))
+if MODEL_CATALOG.get('schemaVersion') != 1:
+    raise ValueError('Unsupported model catalog version.')
+MODELS = MODEL_CATALOG['models']
+REPOSITORIES = {key: model['repository'] for key, model in MODELS.items()}
 SOURCE_PROBE_TIMEOUT = 8.0
 SOURCE_PROBE_BYTES = 64*1024
 
@@ -74,20 +76,28 @@ def metadata(resource, source, timeout=30, check=lambda: None, deadline=None):
         base = f'https://modelscope.cn/models/{repo}/resolve/master/'
     else: raise ValueError('Unknown model download source.')
     check()
+    model = MODELS[resource]
     selected = []
     for file in result:
         path = file['path']; parts = PurePosixPath(path).parts
         if not parts or path.startswith('/') or '..' in parts or '\\' in path or ':' in path:
             raise ValueError('Invalid repository file path.')
-        allowed = (parts[0] in ('transformer', 'text_encoder', 'vae', 'scheduler', 'processor') or
-                   path in ('model_index.json', 'config.json', 'README.md', 'LICENSE')) if resource == 'turbo' else (
-                       len(parts) == 1 and (path.endswith('.gguf') or path in ('system_prompt.txt', 'chat_template.jinja', 'README.md', 'LICENSE')))
+        allowed = parts[0] in model.get('downloadDirectories', []) or path in model['downloadFiles']
         if allowed:
             file['url'] = base + urllib.parse.quote(path, safe='/')
             selected.append(file)
-    required = ['model_index.json'] if resource == 'turbo' else ['system_prompt.txt', f'Qwen-Image-2.1-PE-{resource.upper()}-Q8_0.gguf']
-    if resource == 'i2i': required.append('mmproj-Qwen-Image-2.1-PE-I2I-BF16.gguf')
-    if not set(required) <= {f['path'] for f in selected}: raise ValueError('Repository is missing required model files.')
+    available = {file['path']: file for file in selected}
+    if not set(model['requiredFiles']) <= available.keys():
+        raise ValueError('Repository is missing required model files.')
+    for directory, layout in model.get('weightComponents', {}).items():
+        if not any(f'{directory}/{layout[name]}' in available for name in ('file', 'index')):
+            raise ValueError(f'Repository is missing weights for {directory}.')
+    projectors = model.get('projectorFiles', [])
+    if projectors and not any(path in available for path in projectors):
+        raise ValueError('Repository is missing the required vision projector.')
+    for path, expected in model.get('expectedGgufSizes', {}).items():
+        if available[path]['size'] != expected:
+            raise ValueError('Repository GGUF files do not match the supported model catalog.')
     return selected
 
 
@@ -184,11 +194,85 @@ def download_key(spec):
     return hashlib.sha256(identity.encode()).hexdigest()
 
 
+class DownloadResponse:
+    """Keep cancellable file writers separate from potentially blocked HTTP reads."""
+    def __init__(self, request, check):
+        self.request = request
+        self.check = check
+        self.events = queue.Queue(maxsize=2)
+        self.stopped = threading.Event()
+        self.ended = False
+
+    def publish(self, event):
+        while not self.stopped.is_set():
+            try:
+                self.events.put(event, timeout=.1)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def receive(self):
+        try:
+            with urllib.request.urlopen(self.request, timeout=30) as response:
+                if not self.publish(('headers', (response.status, response.headers))):
+                    return
+                read = getattr(response, 'read1', response.read)
+                while not self.stopped.is_set():
+                    block = read(1024**2)
+                    if not block:
+                        self.publish(('end', None))
+                        return
+                    if not self.publish(('data', block)):
+                        return
+        except Exception as error:
+            self.publish(('error', error))
+
+    def next_event(self):
+        started = time.monotonic()
+        while True:
+            self.check()
+            remaining = 30-(time.monotonic()-started)
+            if remaining <= 0:
+                raise TimeoutError('The model download stopped receiving data.')
+            try:
+                kind, value = self.events.get(timeout=min(.1, remaining))
+            except queue.Empty:
+                continue
+            if kind == 'error':
+                raise value
+            return kind, value
+
+    def __enter__(self):
+        threading.Thread(target=self.receive, name='LightX2V-download-reader', daemon=True).start()
+        try:
+            kind, value = self.next_event()
+            if kind != 'headers':
+                raise ValueError('Missing model download response headers.')
+            self.status, self.headers = value
+            return self
+        except BaseException:
+            self.stopped.set()
+            raise
+
+    def read(self):
+        if self.ended:
+            return b''
+        kind, value = self.next_event()
+        if kind == 'end':
+            self.ended = True
+            return b''
+        return value
+
+    def __exit__(self, kind, error, traceback):
+        self.stopped.set()
+
+
 def parallel_download(spec, part, check, progress, transferred):
     """Persist a bitmap for non-overlapping ranges; never infer coverage from size."""
     size=spec['size'];chunk_size=32*1024**2;count=(size+chunk_size-1)//chunk_size
     state_path=part.with_suffix('.ranges.json')
-    with urllib.request.urlopen(urllib.request.Request(spec['url'],headers={'Range':'bytes=0-0'}),timeout=30) as probe:
+    with DownloadResponse(urllib.request.Request(spec['url'], headers={'Range':'bytes=0-0'}), check) as probe:
         if probe.status!=206 or probe.headers.get('Content-Range','')!=f'bytes 0-0/{size}': return False
     completed=set();prefix=part.stat().st_size if part.exists() else 0
     if state_path.exists():
@@ -202,20 +286,22 @@ def parallel_download(spec, part, check, progress, transferred):
         os.replace(temp,state_path)
     with part.open('r+b' if part.exists() else 'wb') as stream: stream.truncate(size)
     persist();lock=threading.Lock();stopped=threading.Event();inflight={}
+    def check_transfer():
+        check()
+        if stopped.is_set():
+            raise Cancelled()
     def fetch(index):
         first=index*chunk_size;last=min(size-1,first+chunk_size-1)
         for attempt in range(3):
-            check()
-            if stopped.is_set(): raise Cancelled()
+            check_transfer()
             try:
-                headers={'Range':f'bytes={first}-{last}','User-Agent':'LightX2V-Windows/0.1.5'}
-                with urllib.request.urlopen(urllib.request.Request(spec['url'],headers=headers),timeout=30) as response:
+                headers={'Range':f'bytes={first}-{last}','User-Agent':'LightX2V-Windows'}
+                with DownloadResponse(urllib.request.Request(spec['url'], headers=headers), check_transfer) as response:
                     if response.status!=206 or response.headers.get('Content-Range','')!=f'bytes {first}-{last}/{size}': raise ValueError('Invalid model byte range.')
                     with part.open('r+b',buffering=0) as output:
                         output.seek(first);received=0
-                        while block:=response.read(1024**2):
-                            check()
-                            if stopped.is_set(): raise Cancelled()
+                        while block:=response.read():
+                            check_transfer()
                             received+=len(block)
                             if received>last-first+1: raise ValueError('Model byte range is too large.')
                             output.write(block)
@@ -229,7 +315,8 @@ def parallel_download(spec, part, check, progress, transferred):
             except Exception:
                 with lock: inflight[index]=0
                 if attempt==2: raise
-                time.sleep(.5)
+                if stopped.wait(.5):
+                    raise Cancelled()
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         futures={pool.submit(fetch,i) for i in range(count) if i not in completed}
         try:
@@ -353,18 +440,20 @@ def download_files(root, files, check):
                 if offset >= spec['size']:
                     if verified(part,spec): os.replace(part,path); break
                     part.unlink(); offset = 0
-                headers = {'User-Agent':'LightX2V-Windows/0.1.5'}
+                headers = {'User-Agent':'LightX2V-Windows'}
                 if offset: headers['Range'] = f'bytes={offset}-'
-                with urllib.request.urlopen(urllib.request.Request(spec['url'],headers=headers),timeout=30) as response:
+                with DownloadResponse(urllib.request.Request(spec['url'], headers=headers), check) as response:
                     resume = offset and response.status == 206
                     if resume and not response.headers.get('Content-Range','').startswith(f'bytes {offset}-'):
                         raise ValueError('Invalid download range response.')
                     if not resume: offset = 0
                     with part.open('ab' if resume else 'wb') as stream:
-                        while chunk := response.read(1024**2):
+                        while chunk := response.read():
                             check(); stream.write(chunk); offset += len(chunk);transferred[0]+=len(chunk)
                             if offset > spec['size']: raise ValueError('Downloaded file exceeds the repository size.')
                             progress(spec['path'],offset)
+                if offset < spec['size']:
+                    raise OSError('The model download ended before the complete file arrived. Retrying from the saved position.')
                 progress(spec['path'],phase='checking')
                 if not verified(part,spec):
                     part.unlink(missing_ok=True)

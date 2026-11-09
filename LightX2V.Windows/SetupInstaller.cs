@@ -21,7 +21,7 @@ public sealed class SetupManifest
     public static string Resources=>Path.Combine(AppContext.BaseDirectory,"Resources","Setup");
     public static SetupManifest Read(string backend="amd_rocm")=>Files.Read<SetupManifest>(Path.Combine(Resources,backend=="cuda"?"manifest-cuda.json":"manifest.json"))??throw new InvalidOperationException("Missing setup manifest.");
 }
-public sealed record SetupProgress(string Stage,string Detail="",double Percent=0,string? Log=null);
+public sealed record SetupProgress(string Stage,string Detail="",double Percent=0,string? Log=null,EnvironmentCandidate? Candidate=null);
 public static class SetupInstaller
 {
     sealed class DirectProgress(Action<SetupProgress> callback):IProgress<SetupProgress>{public void Report(SetupProgress value)=>callback(value);}

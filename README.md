@@ -10,11 +10,11 @@ Windows 11 x64, no WSL required. AMD ROCm / NVIDIA CUDA (preview); see [tested h
 
 | Version | Windows x64 | Status |
 | --- | --- | --- |
-| v0.3.11 | [Download App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.11/LightX2V-Windows-0.3.11-win-x64.zip) | Pre-release |
+| v0.3.12 | [Download App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.12/LightX2V-Windows-0.3.12-win-x64.zip) | Pre-release |
 
 Extract the entire ZIP, run `LightX2V.Windows.exe`, and follow the wizard to prepare the environment and download models.
 
-Current builds are unsigned. [Setup guide](docs/getting-started.md) · [Release notes](docs/releases/v0.3.11.md)
+Current builds are unsigned. [Setup guide](docs/getting-started.md) · [Release notes](docs/releases/v0.3.12.md)
 
 ## Supported models
 

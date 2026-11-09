@@ -81,6 +81,7 @@ public sealed class ComputerPreparationPanel : StackPanel,IDisposable
             rescan.IsEnabled=!busy;backend.IsEnabled=!busy&&setup.ComputerScanned&&!setup.Driver.Pending;
             driver.Visibility=components.Visibility=setup.ComputerScanned?Visibility.Visible:Visibility.Collapsed;
             driver.IsEnabled=!setup.Busy;search.IsEnabled=choose.IsEnabled=!busy&&setup.ComputerScanned;
+            search.Content=setup.T[setup.SearchingEnvironments?"Stop searching":"Search local environments"];
             managed.IsEnabled=!busy&&setup.ManagedSupported;managed.IsChecked=!setup.UseExisting;
             foreach(var (radio,item) in choices){radio.IsEnabled=!busy&&item.Ready&&item.Backend==setup.Backend;radio.IsChecked=setup.UseExisting&&setup.Selected==item;}
             source.IsEnabled=!busy&&!setup.UseExisting&&setup.ManagedSupported;SetupUi.RefreshSource(source,setup.Mirror);

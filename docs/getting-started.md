@@ -29,7 +29,11 @@ The documented RTX 4070 Laptop with 8 GB VRAM and 32 GB RAM completed four v0.3.
 
 Creations and parameters are saved under the workspace's `outputs` folder; `workspace.json` indexes the history. Preferences are normally stored at `%LOCALAPPDATA%\LightX2V\configuration\preferences.json`. To upgrade, close the old app, fully extract the new version into a new program folder, and continue using the existing workspace. Complete models and downloaded installation packages can be reused.
 
-Stopped downloads can be retried. For generation failures, inspect the task logs. Starting with v0.3.7, tasks also save `resource-plan.json`, stage telemetry, and host-memory samples. For GPU detection problems, copy the detection information under **More help and computer information**, or inspect `setup/hardware-detection.json` in the workspace. Review usernames, local paths, prompts, and reference images before sharing diagnostic data.
+Stopped downloads can be retried. Use **Check and repair** on a model card to verify its files and fetch missing or damaged files, including models already marked ready. If prompt enhancement files are missing, the composer offers the appropriate enhancement download or **Use the base model** so you can continue without enhancement.
+
+Damaged preferences and history indexes are preserved alongside their originals with a `.corrupt-*` suffix. The app can restore valid `.bak` settings or rebuild history from saved task records. An unsupported newer workspace format is preserved and requires a compatible app version.
+
+For generation failures, inspect the task logs. Starting with v0.3.7, tasks also save `resource-plan.json`, stage telemetry, and host-memory samples. For GPU detection problems, copy the detection information under **More help and computer information**, or inspect `setup/hardware-detection.json` in the workspace. Review usernames, local paths, prompts, and reference images before sharing diagnostic data.
 
 v0.3.8 reuses v0.3.7 models, Python environments, and workspaces without clearing directories. It fixes Windows weight-reading paths and improves crash diagnostics; see [Windows checkpoint I/O](windows-checkpoint-io.md).
 

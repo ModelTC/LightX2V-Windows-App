@@ -39,7 +39,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public bool ParametersExpanded {get=>parametersExpanded;set{if(Set(ref parametersExpanded,value))SavePreferences();}}
     public bool ShowLog { get => showLog; set => Set(ref showLog, value); }
     public bool ShowInspector { get => showInspector; set => Set(ref showInspector, value); }
-    public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => !NeedsInitialSetup && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsGenerationBusy && !IsImporting && !IsBaseModelDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
+    public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => WorkspaceAvailable && !NeedsInitialSetup && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsGenerationBusy && !IsImporting && !IsBaseModelDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
     public string GenerateLabel => IsGenerationBusy ? T[IsStopping ? "Stopping" : "Stop generation"] : T["Generate image"];
     public Command NewCommand { get; }
     public Command GenerateCommand { get; }
@@ -61,11 +61,21 @@ public sealed partial class MainViewModel : Observable, IDisposable
         this.modelDownloader=modelDownloader??new NativeModelDownloader();
         this.environmentCatalog=environmentCatalog??new NativeEnvironmentCatalog();
         dispatcher = Dispatcher.CurrentDispatcher; var useDefaultPreferences=preferencesRoot==null; preferencesRoot ??= AppSettings.PreferencesRoot(); preferencesPath = Path.Combine(preferencesRoot, "preferences.json");
-        Preferences? prefs = null; try { if (File.Exists(preferencesPath)) prefs = Files.Read<Preferences>(preferencesPath); else if(useDefaultPreferences&&AppSettings.LegacyPreferences() is {} old) {prefs=Files.Read<Preferences>(old);Files.Write(preferencesPath,prefs);} } catch (Exception e) { Debug.WriteLine(e); }
-        T.Use(prefs?.Language ?? "zh"); Settings = prefs?.Settings ?? AppSettings.Detect();
+        var saved = StateStore.LoadPreferences(preferencesPath);
+        var prefs = saved.Preferences;
+        if (prefs is null && saved.Notice is null && useDefaultPreferences && AppSettings.LegacyPreferences() is { } old)
+        {
+            saved = StateStore.LoadPreferences(old);
+            prefs = saved.Preferences;
+            if (prefs is not null) StateStore.SavePreferences(preferencesPath, prefs);
+        }
+        T.Use(prefs?.Language ?? "zh");
+        string? startupNotice = saved.Notice;
+        Settings = prefs?.Settings ?? AppSettings.Detect(message => startupNotice = message);
         modelExpanded=prefs?.ModelExpanded??true;parametersExpanded=prefs?.ParametersExpanded??true;
-        InitializeImages();InitializeModels();InitializeSetup(this.environmentCatalog,driverPlatform);
+        InitializeImages();InitializeModels();InitializeSetup(this.environmentCatalog,driverPlatform);InitializeGenerationGuidance();
         LoadWorkspace();
+        if (startupNotice is not null) Toast = T[startupNotice] + (Toast.Length > 0 ? Environment.NewLine + Toast : "");
         NewCommand = new(NewCreation,()=>!IsImporting); GenerateCommand = new(() => { if (IsGenerationBusy) _ = StopAsync(); else _ = GenerateAsync(); }, () => IsGenerationBusy && !IsStopping || CanGenerate);
         SettingsCommand = new(() => RequestSettings?.Invoke(), () => !IsGenerationBusy && !IsImporting && !IsDownloading && !IsPreparingSetup); CheckCommand = new(() => _ = CheckForUiAsync(), () => !IsGenerationBusy && !IsChecking && !IsDownloading);
         ModelFolderCommand = new(async()=>{try{await WindowsShell.RevealAsync(Settings.Model);Toast="";}catch(Exception e){Toast=ShellFailure(e,"Unable to open Explorer");}});
@@ -79,22 +89,12 @@ public sealed partial class MainViewModel : Observable, IDisposable
     {
         if(IsGenerationBusy||IsDownloading)throw new InvalidOperationException("Wait for the active generation or model download to finish.");
         settings.ValidateWorkspace();var keepVerified=Ready&&verifiedEnvironmentKey==EnvironmentKey(settings);var different=settings.Workspace!=Settings.Workspace;
+        var reload = different || !WorkspaceAvailable;
+        var history = reload ? StateStore.LoadHistory(settings.Workspace) : null;
         InvalidateEnvironment(keepVerified);Settings=settings.Clone();SavePreferences();
-        if(different){all.Clear();LoadWorkspace();NewCreation();}
+        if(reload){all.Clear();LoadWorkspace(history);NewCreation();}
         Changed(nameof(Settings));Changed(nameof(NeedsInitialSetup));ReloadModelPaths();RefreshStatus();
     }
-    void SavePreferences() => Files.Write(preferencesPath, new Preferences { Language = T.Language, Settings = Settings.Clone(),ModelExpanded=ModelExpanded,ParametersExpanded=ParametersExpanded });
-    void LoadWorkspace()
-    {
-        if (string.IsNullOrWhiteSpace(Settings.Workspace)) return; try
-        {
-            var p = Path.Combine(Settings.Workspace, "workspace.json"); if (File.Exists(p)) all.AddRange(Files.Read<WorkspaceState>(p)?.Generations ?? []); else if (Directory.Exists(Path.Combine(Settings.Workspace, "outputs"))) foreach (var j in Directory.EnumerateFiles(Path.Combine(Settings.Workspace, "outputs"), "generation.json", SearchOption.AllDirectories)) { try { if (Files.Read<Generation>(j) is { } g) all.Add(g); } catch (JsonException) { } }
-            foreach (var g in all.Where(g => g.Running)) { g.Status = "interrupted";if(g.HasEnhancement&&!g.EnhancementCompleted)g.EnhancementStatus="interrupted"; g.Error = T["Interrupted message"]; g.Seconds = Math.Max(0, (DateTimeOffset.Now - g.CreatedAt).TotalSeconds); }
-            RefreshRecent(); Persist();
-        }
-        catch (Exception e) { Toast = e.Message; }
-    }
-    void Persist() { if (loading || string.IsNullOrWhiteSpace(Settings.Workspace)) return; try { Files.Write(Path.Combine(Settings.Workspace, "workspace.json"), new WorkspaceState { Generations = all }); foreach (var g in all.Where(g => g.Id == activeJob?.Id)) Files.Write(Path.Combine(g.Directory, "generation.json"), g); } catch (Exception e) { Toast = e.Message; } }
     void RefreshRecent() { var id = selected?.CreationId; loading = true; Recent.Clear(); foreach (var g in all.GroupBy(g => g.CreationId).Select(g => g.OrderByDescending(x => x.CreatedAt).First()).OrderByDescending(g => g.CreatedAt)) Recent.Add(g); selected = Recent.FirstOrDefault(g => g.CreationId == id); loading = false; Changed(nameof(Selected)); }
     void RefreshTurns() { Turns.Clear(); foreach (var g in all.Where(g => g.CreationId == creation).OrderBy(g => g.CreatedAt)) Turns.Add(g); Changed(nameof(Welcome)); ContentUpdated?.Invoke(); }
     public void NewCreation() { if(IsImporting)return;if(IsPreflighting){preflightCancellation?.Cancel();CancelEnvironmentCheck();}InputImages.Clear(); creation = Guid.NewGuid().ToString("N"); selected = null; Changed(nameof(Selected)); Prompt = ""; Turns.Clear(); Changed(nameof(Welcome)); ResetLogViewer(); Toast = ""; ContentUpdated?.Invoke(); }
@@ -172,7 +172,8 @@ public sealed partial class MainViewModel : Observable, IDisposable
         Ready=probe.Ready;
         if(Ready){Settings.Backend=probe.Backend;ResourceWarning=ResourceWarnings(probe);Changed(nameof(ResourceWarning));Device=probe.Detail.Split(" · ")[0].Replace("(TM)","").Replace(" Graphics","");}
         verifiedEnvironmentKey=Ready?EnvironmentKey(Settings):null;
-        foreach(var card in ModelCards)RefreshModel(card);ModelStateChanged();
+        foreach(var card in ModelCards.Where(card => !card.IsDownloading)) RefreshModel(card);
+        ModelStateChanged();
         Toast=Ready?T["Environment connected"]:T["Environment check failed"]+": "+probe.Detail;SavePreferences();
     }
     public async Task GenerateAsync()
@@ -218,33 +219,28 @@ public sealed partial class MainViewModel : Observable, IDisposable
         var unchanged=creation==submittedCreation&&Prompt==submittedPrompt&&Tier==submittedTier&&Ratio==submittedRatio&&RandomSeed==submittedRandomSeed&&Seed==submittedSeed&&EnhancementEnabled==submittedEnhancement&&
             InputImages.Select(x=>(x.Id,x.Path)).SequenceEqual(images.Select(x=>(x.Id,x.Path)));
         if(unchanged){InputImages.Clear();Prompt="";}
-        activeJob=g;active=new();all.Add(g);Toast="";BeginGenerationLogs(g);RefreshRecent();if(creation==submittedCreation)Selected=g;RefreshTurns();RefreshStatus();bool terminal=false;
+        var client = new BridgeClient();
+        activeJob=g;active=client;all.Add(g);Toast="";BeginGenerationLogs(g);RefreshRecent();if(creation==submittedCreation)Selected=g;RefreshTurns();RefreshStatus();bool terminal=false;
         try
         {
-            Files.Write(Path.Combine(g.Directory, "request.json"), g.Request); Persist(); var code = await active.RunAsync(settings.Python, "run", Path.Combine(g.Directory, "request.json"), Path.Combine(settings.Workspace, "tmp"), e => dispatcher.Invoke(() =>
+            Files.Write(Path.Combine(g.Directory, "request.json"), g.Request);
+            Persist();
+            var code = await client.RunAsync(settings.Python, "run", Path.Combine(g.Directory, "request.json"), Path.Combine(settings.Workspace, "tmp"),
+                message => dispatcher.Invoke(() => terminal |= HandleGenerationEvent(g, message)));
+            if (!terminal)
             {
-                var type = e.GetProperty("type").GetString(); switch (type)
-                {
-                    case "enhancement_child_started": g.EnhancementPid=e.GetProperty("pid").GetInt32();break;
-                    case "enhancement_phase": if(g.EnhancementStatus=="thinking"&&e.GetProperty("phase").GetString()!="thinking")g.ShowThinking=false;g.EnhancementStatus=e.GetProperty("phase").GetString()!;g.Phase="enhancement";break;
-                    case "enhancement_thinking": g.EnhancementThinking+=e.GetProperty("delta").GetString();break;
-                    case "enhancement_prompt": g.EnhancedPrompt+=e.GetProperty("delta").GetString();break;
-                    case "enhancement_result": g.EnhancementStatus="completed";g.EnhancedPrompt=e.GetProperty("prompt").GetString()!;g.EnhancementRatio=e.GetProperty("whRatio").GetString()!;g.EnhancementRatioFollow=e.GetProperty("ratioFollow").GetString()!;g.EnhancementSeconds=e.GetProperty("duration").GetDouble();break;
-                    case "effective_request": g.Request.Width=e.GetProperty("width").GetInt32();g.Request.Height=e.GetProperty("height").GetInt32();g.Changed(nameof(Generation.Request));break;
-                    case "child_started": g.BackendPid = e.GetProperty("pid").GetInt32(); break;
-                    case "log": Log(e.GetProperty("message").GetString() ?? ""); break;
-                    case "step": g.Step = e.GetProperty("step").GetInt32(); g.Phase = "sampling"; break;
-                    case "status": g.Phase = e.GetProperty("phase").GetString() ?? "loading"; break;
-                    case "error": g.Error = e.GetProperty("message").GetString(); Log(g.Error ?? ""); break;
-                    case "done": terminal = true; g.Seconds = e.TryGetProperty("seconds", out var sec) ? sec.GetDouble() : (DateTimeOffset.Now - g.CreatedAt).TotalSeconds; g.Status = e.GetProperty("status").GetString() ?? "failed"; if (e.TryGetProperty("message", out var msg)) g.Error = msg.GetString(); if(g.HasEnhancement&&g.EnhancementStatus!="completed"&&g.Status!="completed")g.EnhancementStatus=g.Status;if (g.Status == "cancelled") g.Error = T["Generation cancelled"]; Persist(); break;
-                }
-                g.Refresh(); ContentUpdated?.Invoke();
-            })); if (!terminal) { g.Status = IsStopping ? "cancelled" : "failed"; g.Error = $"Backend exited without a completion event (code {code})."; }
+                g.Status = IsStopping ? "cancelled" : "failed";
+                g.Error = $"Backend exited without a completion event (code {code}).";
+            }
         }
-        catch (Exception e) { g.Status = IsStopping ? "cancelled" : "failed"; g.Error = e.Message; Log(e.Message); }
-        finally { g.Seconds = Math.Max(g.Seconds, (DateTimeOffset.Now - g.CreatedAt).TotalSeconds); if (g.Running) { g.Status = "interrupted";if(g.HasEnhancement&&!g.EnhancementCompleted)g.EnhancementStatus="interrupted"; g.Error = T["Interrupted message"]; } if(g.HasEnhancement&&!g.EnhancementCompleted&&!g.Running)g.EnhancementStatus=g.Status;g.Refresh(); try { Files.Write(Path.Combine(g.Directory, "generation.json"), g); } catch (Exception e) { Toast = e.Message; } RefreshLogPanel(); active.Dispose(); active = null; activeJob = null; IsStopping = false; RefreshRecent(); if (creation == g.CreationId) { selected = Recent.FirstOrDefault(x => x.CreationId == creation); Changed(nameof(Selected)); RefreshTurns(); } Persist(); RefreshStatus(); }
+        catch (Exception error)
+        {
+            g.Status = IsStopping ? "cancelled" : "failed";
+            g.Error = error.Message;
+            Log(error.Message);
+        }
+        finally { FinishGeneration(g, client); }
     }
-    public async Task StopAsync() { if(IsPreflighting){IsStopping=true;preflightCancellation?.Cancel();CancelEnvironmentCheck();return;} if (active == null || activeJob == null || IsStopping) return; IsStopping = true; await active.StopAsync(Path.Combine(activeJob.Directory, "cancel.signal")); }
     void Reuse(Generation? g) { if (g == null||IsImporting) return;InputImages.Clear();foreach(var image in g.Request.InputImages)InputImages.Add(image); Prompt = g.Request.Prompt;EnhancementEnabled=g.Request.PromptEnhancement?.Enabled==true; RandomSeed = false; Seed = g.Request.Seed.ToString();if(g.Request.Resolution is int resolution){Tier=resolution==2048?2:resolution==512?0:1;Ratio="Adaptive";return;} for (int t = 0; t < 3; t++) foreach (var r in Presets.Ratios.Where(r=>r!="Adaptive")) { if (Presets.Dimensions(t, r) == (g.Request.Width, g.Request.Height)) { Tier = t; Ratio = r; return; } } if(g.Request.InputImages.Count>0){var image=g.Request.InputImages[^1];for(int t=0;t<3;t++)if(Presets.AdaptiveDimensions(t,image.Width,image.Height)==(g.Request.Width,g.Request.Height)){Tier=t;Ratio="Adaptive";return;}} }
     void Copy(Generation? g) { if (g?.Completed != true) return; try { Clipboard.SetImage(ImageLoader.Load(g.Request.Output, 0)); Toast = T["Copied"]; } catch (Exception e) { Toast = e.Message; } }
     void Export(Generation? g) { if (g?.Completed != true) return; var dlg = new SaveFileDialog { Filter = "PNG image|*.png", FileName = "LightX2V-" + g.Id[..8] + ".png" }; if (dlg.ShowDialog() == true) { try { File.Copy(g.Request.Output, dlg.FileName, true); Toast = T["Exported"]; } catch (Exception e) { Toast = e.Message; } } }

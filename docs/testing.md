@@ -15,7 +15,18 @@ Raw logs, paths, generated work, preferences, and complete QA bundles from perso
 
 Run `python -m unittest discover -s Tests -v` from the repository root. These tests cover download resume/verification, protocol and enhancement parsing, CUDA/ROCm profile selection, and VRAM strategy. They do not download or install the complete models.
 
-`python prepare_setup.py` validates pinned setup payloads. `python scripts/check_repository.py` checks the public commit scope and source provenance. CI also compiles the app and the three C# check projects; it does not run tests that require a GPU, the default browser, or a real desktop.
+`python prepare_setup.py` validates pinned setup payloads. `python scripts/check_repository.py` checks the public commit scope and source provenance. CI compiles the app and the three C# check projects, then publishes and executes `SetupUiChecks.exe <new-output-directory> core`. This mode runs startup, readiness, history recovery, bridge and model-download checks with injected services and small fixtures using off-screen rendering.
+
+The `cpu-tests` CI job installs PyTorch 2.11.0 from the official CPU wheel index, with NumPy 2.5.4 and safetensors 0.8.0. It explicitly runs the CPU streaming and one-shot lifecycle classes, owned checkpoint reads, checkpoint policy checks, and four real safetensors CPU methods. Selected cases must pass without skips. This exercises real BF16 tensors and storage lifetimes with generated checkpoint fixtures. The versioned prerelease job waits for both the Windows build and this CPU job. The CPU installation command follows the official PyTorch 2.11.0 instructions. [PyTorch installation reference](https://pytorch.org/get-started/previous-versions/#v2110)
+
+`HeadlessChecks` is compiled in CI and retains tests that depend on a working default browser. Run those tests explicitly on a suitable Windows test machine. GPU execution and comparisons against the complete official model checkpoints remain separate hardware acceptance work.
+
+To run the core off-screen checks locally on Windows, use a fresh report directory.
+
+```powershell
+dotnet publish SetupUiChecks/SetupUiChecks.csproj -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o artifacts/core-checks
+.\artifacts\core-checks\SetupUiChecks.exe C:\LightX2V-QA\core-run core
+```
 
 ## AMD Off-Screen Checks
 

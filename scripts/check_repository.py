@@ -17,7 +17,7 @@ def candidates():
     try:
         git_root = Path(subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', '--show-toplevel'], stderr=subprocess.DEVNULL, text=True).strip()).resolve()
         if git_root == ROOT:
-            entries = subprocess.check_output(['git', '-C', str(ROOT), 'ls-files', '-z']).decode().split('\0')
+            entries = subprocess.check_output(['git', '-C', str(ROOT), 'ls-files', '--cached', '--others', '--exclude-standard', '-z']).decode().split('\0')
             if any(entries):
                 return [ROOT / name for name in entries if name]
     except (OSError, subprocess.CalledProcessError):

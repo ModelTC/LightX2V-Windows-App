@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "compatibilityVersion": "qwen-image-2.1-bf16-pe-q8-v1",
+  "revisionPolicy": "Compatible files from Hugging Face main or ModelScope master. Repository revisions are not pinned. Explicit download or repair verifies the source-provided file hashes, and source switching requires matching file identities.",
+  "minimumGgufBytes": 104857600,
+  "models": {
+    "turbo": {
+      "title": "Qwen-Image-2.1-Turbo",
+      "repository": "Qwen/Qwen-Image-2.1-Turbo",
+      "requiredFiles": [
+        "model_index.json",
+        "transformer/config.json",
+        "text_encoder/config.json",
+        "text_encoder/generation_config.json",
+        "vae/config.json",
+        "scheduler/scheduler_config.json",
+        "processor/processor_config.json",
+        "processor/tokenizer.json",
+        "processor/tokenizer_config.json",
+        "processor/chat_template.jinja"
+      ],
+      "downloadDirectories": ["transformer", "text_encoder", "vae", "scheduler", "processor"],
+      "downloadFiles": ["model_index.json", "README.md", "LICENSE"],
+      "jsonProperties": {
+        "model_index.json": {"_class_name": "QwenImage21Pipeline"},
+        "transformer/config.json": {"_class_name": "QwenImage21Transformer2DModel"},
+        "text_encoder/config.json": {"model_type": "qwen3_vl"},
+        "vae/config.json": {"_class_name": "AutoencoderKLQwenImage21"},
+        "scheduler/scheduler_config.json": {"_class_name": "FlowMatchEulerDiscreteScheduler"},
+        "processor/processor_config.json": {"processor_class": "Qwen3VLProcessor"},
+        "processor/tokenizer.json": {"version": "1.0"},
+        "processor/tokenizer_config.json": {"tokenizer_class": "Qwen2Tokenizer"}
+      },
+      "sampleSigmas": [1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568],
+      "weightComponents": {
+        "transformer": {"file": "diffusion_pytorch_model.safetensors", "index": "diffusion_pytorch_model.safetensors.index.json"},
+        "text_encoder": {"file": "model.safetensors", "index": "model.safetensors.index.json"},
+        "vae": {"file": "diffusion_pytorch_model.safetensors", "index": "diffusion_pytorch_model.safetensors.index.json"}
+      }
+    },
+    "t2i": {
+      "title": "Text-to-image prompt enhancement",
+      "repository": "lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0",
+      "requiredFiles": ["Qwen-Image-2.1-PE-T2I-Q8_0.gguf", "system_prompt.txt"],
+      "downloadFiles": ["Qwen-Image-2.1-PE-T2I-Q8_0.gguf", "system_prompt.txt", "chat_template.jinja", "README.md", "LICENSE"],
+      "modelFile": "Qwen-Image-2.1-PE-T2I-Q8_0.gguf",
+      "systemPromptFile": "system_prompt.txt",
+      "expectedGgufSizes": {"Qwen-Image-2.1-PE-T2I-Q8_0.gguf": 9527501536}
+    },
+    "i2i": {
+      "title": "Reference-image prompt enhancement",
+      "repository": "lightx2v/Qwen-Image-2.1-PE-I2I-GGUF-Q8_0",
+      "requiredFiles": ["Qwen-Image-2.1-PE-I2I-Q8_0.gguf", "system_prompt.txt"],
+      "downloadFiles": ["Qwen-Image-2.1-PE-I2I-Q8_0.gguf", "mmproj-Qwen-Image-2.1-PE-I2I-BF16.gguf", "mmproj-Qwen-Image-2.1-PE-I2I-F16.gguf", "system_prompt.txt", "chat_template.jinja", "README.md", "LICENSE"],
+      "modelFile": "Qwen-Image-2.1-PE-I2I-Q8_0.gguf",
+      "systemPromptFile": "system_prompt.txt",
+      "projectorFiles": ["mmproj-Qwen-Image-2.1-PE-I2I-BF16.gguf", "mmproj-Qwen-Image-2.1-PE-I2I-F16.gguf"],
+      "expectedGgufSizes": {"Qwen-Image-2.1-PE-I2I-Q8_0.gguf": 9527501536}
+    }
+  }
+}

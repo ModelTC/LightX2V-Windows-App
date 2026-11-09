@@ -139,10 +139,11 @@ class SourceSelectionTests(unittest.TestCase):
 
     def test_slow_drip_metadata_and_weights_do_not_delay_process_exit(self):
         weights = b'x'*(64*1024)
-        scope_files = [dict(Type='blob', Path='model_index.json', Size=2, Sha256=hashlib.sha256(b'{}').hexdigest()),
-                       dict(Type='blob', Path='transformer/model.safetensors', Size=len(weights), Sha256=hashlib.sha256(weights).hexdigest())]
-        hf_files = [dict(type='file', path='model_index.json', size=2, oid=hashlib.sha1(b'blob 2\0{}').hexdigest()),
-                    dict(type='file', path='transformer/model.safetensors', size=len(weights), lfs=dict(oid=hashlib.sha256(weights).hexdigest()))]
+        model = downloads.MODELS['turbo']
+        paths = model['requiredFiles'] + [f"{name}/{layout['file']}" for name, layout in model['weightComponents'].items()]
+        specs = [(path, weights if path.endswith('.safetensors') else b'{}') for path in paths]
+        scope_files = [dict(Type='blob', Path=path, Size=len(data), Sha256=hashlib.sha256(data).hexdigest()) for path, data in specs]
+        hf_files = [dict(type='file', path=path, size=len(data), lfs=dict(oid=hashlib.sha256(data).hexdigest())) for path, data in specs]
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -310,6 +311,230 @@ class SourceFallbackTests(unittest.TestCase):
             self.assertEqual(download.call_count, 1)
 
 
+class TransferFailureTests(unittest.TestCase):
+    @contextlib.contextmanager
+    def serve(self, handler):
+        server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            yield f'http://127.0.0.1:{server.server_port}'
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+    def test_early_eof_resumes_saved_prefix_instead_of_deleting_it(self):
+        data = b'abcdefgh'
+        requests = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                value = self.headers.get('Range')
+                requests.append(value)
+                offset = int(value.split('=')[1].split('-')[0]) if value else 0
+                self.send_response(206 if value else 200)
+                self.send_header('Content-Length', str(len(data)-offset))
+                if value:
+                    self.send_header('Content-Range', f'bytes {offset}-{len(data)-1}/{len(data)}')
+                self.end_headers()
+                self.wfile.write(data[offset:] if value else data[:4])
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        with self.serve(Handler) as base, tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
+            root = Path(directory).resolve()
+            spec = dict(path='model.bin', size=len(data), sha256=hashlib.sha256(data).hexdigest(), url=base+'/model')
+            stack.enter_context(patch.object(downloads, 'emit'))
+            stack.enter_context(patch.object(downloads.time, 'sleep'))
+            downloads.download_files(root, [spec], lambda: None)
+            self.assertEqual((root/'model.bin').read_bytes(), data)
+            self.assertEqual(requests, [None, 'bytes=4-'])
+
+    def test_exhausted_eof_retries_keep_the_prefix_for_next_attempt(self):
+        data = b'abcdefgh'
+        requests = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                value = self.headers.get('Range')
+                requests.append(value)
+                offset = int(value.split('=')[1].split('-')[0]) if value else 0
+                self.send_response(206 if value else 200)
+                self.send_header('Content-Length', str(len(data)-offset))
+                if value:
+                    self.send_header('Content-Range', f'bytes {offset}-{len(data)-1}/{len(data)}')
+                self.end_headers()
+                self.wfile.write(data[offset:offset+1])
+                self.close_connection = True
+
+            def log_message(self, *args):
+                pass
+
+        with self.serve(Handler) as base, tempfile.TemporaryDirectory() as directory, contextlib.ExitStack() as stack:
+            root = Path(directory).resolve()
+            spec = dict(path='model.bin', size=len(data), sha256=hashlib.sha256(data).hexdigest(), url=base+'/model')
+            stack.enter_context(patch.object(downloads, 'emit'))
+            stack.enter_context(patch.object(downloads.time, 'sleep'))
+            with self.assertRaisesRegex(OSError, 'complete file'):
+                downloads.download_files(root, [spec], lambda: None)
+            partial = root/'.lightx2v-downloads'/(downloads.download_key(spec)+'.partial')
+            self.assertEqual(partial.read_bytes(), b'abc')
+            self.assertEqual(requests, [None, 'bytes=1-', 'bytes=2-'])
+
+    def test_failed_range_switches_source_without_waiting_for_dripping_peers(self):
+        size = 70*1024**2
+        block = b'x'*(1024**2)
+        digest = hashlib.sha256()
+        for _ in range(70):
+            digest.update(block)
+        expected_hash = digest.hexdigest()
+        for phase in ('body', 'headers'):
+            with self.subTest(phase=phase):
+                slow_started = threading.Event()
+                failed_ranges = []
+
+                class Handler(BaseHTTPRequestHandler):
+                    def do_GET(self):
+                        first, last = map(int, self.headers['Range'].split('=')[1].split('-'))
+                        primary = self.path == '/primary'
+                        if primary and first == 0 and last > 0:
+                            slow_started.wait(timeout=3)
+                            failed_ranges.append((first, last))
+                            self.send_error(503)
+                            return
+                        try:
+                            if primary and last > 0 and phase == 'headers':
+                                self.wfile.write(b'HTTP/1.0 206 Partial Content\r\nX-Slow: ')
+                                self.wfile.flush()
+                                slow_started.set()
+                                for _ in range(1000):
+                                    self.wfile.write(b'.')
+                                    self.wfile.flush()
+                                    time.sleep(.05)
+                                return
+                            self.send_response(206)
+                            self.send_header('Content-Range', f'bytes {first}-{last}/{size}')
+                            self.send_header('Content-Length', str(last-first+1))
+                            self.end_headers()
+                            if primary and last > 0:
+                                slow_started.set()
+                                while True:
+                                    self.wfile.write(b'x')
+                                    self.wfile.flush()
+                                    time.sleep(.05)
+                            remaining = last-first+1
+                            while remaining:
+                                data = block[:min(len(block), remaining)]
+                                self.wfile.write(data)
+                                remaining -= len(data)
+                        except (BrokenPipeError, ConnectionResetError):
+                            pass
+
+                    def log_message(self, *args):
+                        pass
+
+                with self.serve(Handler) as base, tempfile.TemporaryDirectory() as directory:
+                    script = f'''
+import sys, urllib.request
+from pathlib import Path
+sys.path.insert(0, {str(Path(downloads.__file__).parent)!r})
+import download_models as downloads
+downloads.urllib.request.urlopen = urllib.request.build_opener(urllib.request.ProxyHandler({{}})).open
+root = Path({directory!r}).resolve()
+primary = dict(path='model.bin', size={size}, sha256={expected_hash!r}, url={base!r}+'/primary')
+fallback = dict(primary, url={base!r}+'/fallback')
+downloads.select_sources = lambda resource, check: [('huggingFace', [primary]), ('modelScope', [fallback])]
+downloads.run(dict(resource='turbo', source='auto', destination=str(root), cancelFile=str(root/'cancel')), 0)
+'''
+                    started = time.monotonic()
+                    result = subprocess.run([sys.executable, '-B', '-c', script], capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertLess(time.monotonic()-started, 8)
+                    self.assertTrue(slow_started.is_set())
+                    self.assertEqual(len(failed_ranges), 3)
+                    root = Path(directory)
+                    with (root/'model.bin').open('rb') as stream:
+                        actual = hashlib.sha256()
+                        while chunk := stream.read(1024**2):
+                            actual.update(chunk)
+                    self.assertEqual(actual.hexdigest(), expected_hash)
+                    self.assertEqual(json.loads((root/'.lightx2v-model.json').read_text())['source'], 'modelScope')
+
+    def test_cancelled_parallel_writers_exit_before_partial_can_be_replaced(self):
+        size = 70*1024**2
+        for phase in ('body', 'headers', 'probe'):
+            with self.subTest(phase=phase):
+                slow_started = threading.Event()
+                release = threading.Event()
+                cancelled = threading.Event()
+
+                class Handler(BaseHTTPRequestHandler):
+                    def do_GET(self):
+                        first, last = map(int, self.headers['Range'].split('=')[1].split('-'))
+                        try:
+                            delay_headers = (phase == 'probe' and last == 0) or (phase == 'headers' and last > 0)
+                            if delay_headers:
+                                self.wfile.write(b'HTTP/1.0 206 Partial Content\r\nX-Slow: ')
+                                self.wfile.flush()
+                                slow_started.set()
+                                release.wait(timeout=5)
+                                self.wfile.write(f'complete\r\nContent-Range: bytes {first}-{last}/{size}\r\nContent-Length: {last-first+1}\r\n\r\n'.encode())
+                            else:
+                                self.send_response(206)
+                                self.send_header('Content-Range', f'bytes {first}-{last}/{size}')
+                                self.send_header('Content-Length', str(last-first+1))
+                                self.end_headers()
+                            self.wfile.write(b'x')
+                            self.wfile.flush()
+                            if last > 0:
+                                slow_started.set()
+                                release.wait(timeout=5)
+                                self.wfile.write(b'y'*(1024**2))
+                        except (BrokenPipeError, ConnectionResetError):
+                            pass
+
+                    def log_message(self, *args):
+                        pass
+
+                def check():
+                    if cancelled.is_set():
+                        raise downloads.Cancelled()
+
+                def cancel_when_reading():
+                    if slow_started.wait(timeout=3):
+                        cancelled.set()
+
+                with self.serve(Handler) as base, tempfile.TemporaryDirectory() as directory:
+                    partial = Path(directory)/'partial'
+                    spec = dict(path='model.bin', size=size, url=base+'/model')
+                    controller = threading.Thread(target=cancel_when_reading)
+                    controller.start()
+                    started = time.monotonic()
+                    try:
+                        with self.assertRaises(downloads.Cancelled):
+                            downloads.parallel_download(spec, partial, check, lambda *args: None, [0])
+                        self.assertLess(time.monotonic()-started, 2)
+                        self.assertTrue(cancelled.is_set())
+                        if partial.exists():
+                            destination = partial.with_name('accepted.bin')
+                            partial.replace(destination)
+                            before = destination.stat()
+                            release.set()
+                            time.sleep(.3)
+                            after = destination.stat()
+                            self.assertEqual((after.st_size, after.st_mtime_ns), (before.st_size, before.st_mtime_ns))
+                            with destination.open('rb') as stream:
+                                stream.seek(32*1024**2+4096)
+                                self.assertEqual(stream.read(4096), bytes(4096))
+                    finally:
+                        cancelled.set()
+                        release.set()
+                        controller.join(timeout=3)
+
+
 class DownloadProgressTests(unittest.TestCase):
     def test_eta_counts_only_remaining_bytes_across_resumed_files(self):
         mib = 1024**2
@@ -325,7 +550,7 @@ class DownloadProgressTests(unittest.TestCase):
                 self.status = 206
                 self.headers = {'Content-Range': f'bytes {offset}-{len(data)-1}/{len(data)}'}
 
-            def read(self, size=-1):
+            def read(self, size=1024**2):
                 result = super().read(size)
                 if result:
                     clock[0] += 1
@@ -342,7 +567,7 @@ class DownloadProgressTests(unittest.TestCase):
             for index, spec in enumerate(specs):
                 (cache/(downloads.download_key(spec)+'.partial')).write_bytes(data[:(index+1)*mib])
             stack.enter_context(patch.object(downloads.time, 'monotonic', side_effect=lambda: clock[0]))
-            stack.enter_context(patch.object(downloads.urllib.request, 'urlopen', side_effect=open_file))
+            stack.enter_context(patch.object(downloads, 'DownloadResponse', side_effect=lambda request, check: open_file(request)))
             stack.enter_context(patch.object(downloads, 'emit', side_effect=lambda kind, **values: events.append(dict(type=kind, **values))))
             self.assertEqual(downloads.download_files(root, specs, lambda: None), 8*mib)
             self.assertEqual((root/specs[0]['path']).read_bytes(), data)

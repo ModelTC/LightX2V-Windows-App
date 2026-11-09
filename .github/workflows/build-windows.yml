@@ -53,19 +53,19 @@ jobs:
           }
       - name: Build and verify portable package
         run: ./build.ps1
-      - name: Check first-run lifecycle offscreen
+      - name: Check core application flows offscreen
         run: |
           dotnet publish SetupUiChecks/SetupUiChecks.csproj -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o artifacts/startup-checks
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $report = Join-Path $env:GITHUB_WORKSPACE 'artifacts/startup-results'
           $executable = Join-Path $env:GITHUB_WORKSPACE 'artifacts/startup-checks/SetupUiChecks.exe'
-          $check = Start-Process -FilePath $executable -ArgumentList ('"' + $report + '" startup') -PassThru -Wait
+          $check = Start-Process -FilePath $executable -ArgumentList ('"' + $report + '" core') -PassThru -Wait
           if ($check.ExitCode -ne 0) {
             Get-Content "$report/failure.txt" -Raw -ErrorAction SilentlyContinue
-            throw 'First-run lifecycle checks failed.'
+            throw 'Offscreen core application checks failed.'
           }
           $result = Get-Content "$report/checks.json" -Raw | ConvertFrom-Json
-          Write-Output "Passed $($result.passed.Count) offscreen first-run checks; no GPU inference or real desktop input."
+          Write-Output "Passed $($result.passed.Count) offscreen startup, recovery, bridge and model-download checks."
       - name: Verify release provenance
         env:
           SOURCE_COMMIT: ${{ github.sha }}
@@ -91,15 +91,75 @@ jobs:
           ## Windows beta build
 
           This artifact is a self-contained Windows x64 package.
-          Compilation, Python tests and package integrity passed.
+          Compilation, standard-library Python tests, offscreen core application checks and package integrity passed.
           This runner did not install GPU drivers or execute GPU inference.
           AMD and CUDA hardware acceptance scope is documented in docs/testing.md.
           Version tags publish a prerelease only after a separate verification job.
           '@ >> $env:GITHUB_STEP_SUMMARY
 
+  cpu-tests:
+    name: Test CPU tensor and checkpoint behavior
+    if: ${{ !startsWith(github.ref, 'refs/heads/codex/publish-') }}
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      LIGHTX2V_TEST_CHECKPOINT_IO_REAL: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Check out source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install the pinned CPU test runtime
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --disable-pip-version-check --only-binary=:all: numpy==2.5.4 safetensors==0.8.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import torch; assert torch.__version__ == '2.11.0+cpu', torch.__version__; assert torch.version.cuda is None and torch.version.hip is None; print(torch.__version__)"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run real CPU tensor and checkpoint tests
+        run: |
+          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'Tests'
+          @'
+          import unittest
+          names = [
+              'test_adaptive_streaming.StreamingTests',
+              'test_adaptive_streaming.OneShotLifecycleTests',
+              'test_checkpoint_reader.HeaderAndReadTests',
+              'test_checkpoint_reader.OwnedTensorReadTests',
+              'test_checkpoint_io.CheckpointPolicyTests',
+              'test_checkpoint_io.RealSafetensorsPolicyTests.test_owned_cpu_tensor_survives_context_close_and_gc',
+              'test_checkpoint_io.RealSafetensorsPolicyTests.test_repeated_chinese_path_reads_with_gc_and_memory_churn',
+              'test_checkpoint_io.RealSafetensorsPolicyTests.test_cpu_pread_does_not_call_torch_whole_file_storage',
+              'test_checkpoint_io.RealSafetensorsPolicyTests.test_real_numpy_framework_is_unchanged',
+          ]
+          suite = unittest.defaultTestLoader.loadTestsFromNames(names)
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful() or result.skipped:
+              raise SystemExit(1)
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Record CPU test scope
+        run: |
+          @'
+          ## CPU tensor validation
+
+          Pinned PyTorch 2.11.0 CPU tests passed without skipped selected cases.
+          This job checks BF16 tensor results, bounded checkpoint reads, storage lifetime and Windows safetensors policy with small generated fixtures.
+          Real checkpoint parity and GPU execution remain hardware acceptance checks.
+          '@ >> $env:GITHUB_STEP_SUMMARY
+
   publish:
     name: Publish Windows beta
-    needs: build
+    needs: [build, cpu-tests]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 10

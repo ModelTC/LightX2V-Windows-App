@@ -37,12 +37,33 @@ internal static partial class Program
     }
     static void TinyTurbo(string folder)
     {
-        Directory.CreateDirectory(folder);File.WriteAllText(Path.Combine(folder,"model_index.json"),"{\"sample_sigmas\":[1,2,3,4,5,6,7,8]}");
-        foreach(var name in new[]{"transformer","text_encoder","vae","scheduler","processor"})Directory.CreateDirectory(Path.Combine(folder,name));
-        foreach(var name in new[]{"transformer","text_encoder","vae"})
+        var definition = ModelCatalog.Get("turbo");
+        foreach (var relative in definition.RequiredFiles)
         {
-            using var file=File.Create(Path.Combine(folder,name,"qa-fixture.safetensors"));using var writer=new BinaryWriter(file);
-            var header=Encoding.UTF8.GetBytes("{\"__metadata__\":{}}");writer.Write((ulong)header.Length);writer.Write(header);
+            var path = Path.Combine(folder, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            if (!relative.EndsWith(".json"))
+            {
+                File.WriteAllText(path, "Non-executable model validation fixture.");
+                continue;
+            }
+            var properties = new Dictionary<string, object>();
+            if (definition.JsonProperties.TryGetValue(relative, out var expected))
+                foreach (var (name, value) in expected) properties[name] = value;
+            if (relative == "model_index.json") properties["sample_sigmas"] = definition.SampleSigmas;
+            Files.Write(path, properties);
+        }
+        foreach (var (component, layout) in definition.WeightComponents)
+        {
+            var path = Path.Combine(folder, component, layout.File);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            using var file = File.Create(path);
+            using var writer = new BinaryWriter(file);
+            var headerText = "{\"fixture\":{\"dtype\":\"BF16\",\"shape\":[1],\"data_offsets\":[0,2]}}";
+            var header = Encoding.UTF8.GetBytes(headerText.PadRight((headerText.Length + 7) / 8 * 8));
+            writer.Write((ulong)header.Length);
+            writer.Write(header);
+            writer.Write((ushort)0);
         }
     }
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern bool CreateHardLink(string file,string existing,IntPtr reserved);
@@ -60,7 +81,7 @@ internal static partial class Program
         var until=DateTime.UtcNow.AddSeconds(seconds);while(vm.IsDownloading||vm.IsChecking){if(DateTime.UtcNow>until)throw new TimeoutException("Model download QA did not finish");await Task.Delay(30);}
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
     }
-    static async Task ModelDownloadChecks()
+    static async Task ModelDownloadChecks(bool native=true)
     {
         var settings=AppSettings.Fresh(Path.Combine(root,"automatic-models-isolated"));var prefs=Path.Combine(root,"automatic-models-prefs");Files.Write(Path.Combine(prefs,"preferences.json"),new Preferences{Settings=settings});
         var fake=new FakeModelDownloader{Hold="turbo"};using var vm=new MainViewModel(prefs,fake);vm.Setup.Page=2;var wizard=new FirstRunWindow(vm);
@@ -87,7 +108,7 @@ internal static partial class Program
         Check(Children<Button>((DependencyObject)guideWindow.Content).Any(b=>AutomationProperties.GetAutomationId(b)=="GuideAutomaticDownload"&&b.IsEnabled),"Download guides provide the same automatic action as their model cards");
         Check(Children<Expander>((DependencyObject)guideWindow.Content).Single(e=>AutomationProperties.GetAutomationId(e)=="ManualModelDownload").IsExpanded==false,"Manual commands are optional and collapsed in the download guide");guideWindow.Close();
         vm.SetLanguage("en");await Render(wizard,760,700,"models-download-en");vm.SetLanguage("zh");await Render(wizard,620,470,"models-download-small");wizard.Close();
-        await NativeAutomaticModelDownload();
+        if(native)await NativeAutomaticModelDownload();
     }
     static async Task NativeAutomaticModelDownload()
     {

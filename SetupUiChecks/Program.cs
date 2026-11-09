@@ -11,7 +11,7 @@ using LightX2V.Windows;
 
 internal static partial class Program
 {
-    static bool smoke,signatures,completionOnly,hardwareOnly,startupOnly;static string root="";static readonly List<string> passed=[];
+    static bool smoke,signatures,completionOnly,hardwareOnly,startupOnly,coreOnly;static string root="";static readonly List<string> passed=[];
     static void Check(bool condition,string message){if(!condition)throw new Exception(message);passed.Add(message);}
     static IEnumerable<T> Children<T>(DependencyObject parent) where T:DependencyObject
     {
@@ -44,7 +44,7 @@ internal static partial class Program
     }
     [STAThread]static int Main(string[] args)
     {
-        startupOnly=args.Contains("startup");hardwareOnly=args.Contains("hardware");completionOnly=args.Contains("completion");smoke=args.Contains("smoke");signatures=args.Contains("signatures");root=Path.GetFullPath(args[0]);Directory.CreateDirectory(root);RenderOptions.ProcessRenderMode=System.Windows.Interop.RenderMode.SoftwareOnly;
+        coreOnly=args.Contains("core");startupOnly=args.Contains("startup");hardwareOnly=args.Contains("hardware");completionOnly=args.Contains("completion");smoke=args.Contains("smoke");signatures=args.Contains("signatures");root=Path.GetFullPath(args[0]);Directory.CreateDirectory(root);RenderOptions.ProcessRenderMode=System.Windows.Interop.RenderMode.SoftwareOnly;
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};app.Resources.MergedDictionaries.Add(new ResourceDictionary{Source=new Uri("pack://application:,,,/LightX2V.Windows;component/Resources/Theme.xaml")});int result=1;
         PresentationTraceSources.DataBindingSource.Switch.Level=SourceLevels.Error;PresentationTraceSources.DataBindingSource.Listeners.Add(new TextWriterTraceListener(Path.Combine(root,"bindings.log")));
         app.Dispatcher.BeginInvoke(async()=>{try{await Run();File.WriteAllText(Path.Combine(root,"checks.json"),JsonSerializer.Serialize(new{passed,completedAt=DateTimeOffset.Now,offscreenRendering=true,realUiAutomation=false},new JsonSerializerOptions{WriteIndented=true}));result=0;}catch(Exception e){File.WriteAllText(Path.Combine(root,"failure.txt"),e.ToString());}finally{Trace.Flush();app.Shutdown();}});app.Run();return result;
@@ -52,6 +52,7 @@ internal static partial class Program
     static async Task Run()
     {
         await StartupChecks();await ReadinessChecks();
+        if(coreOnly){RecoveryChecks();await BridgeChecks();await ModelDownloadChecks(native:false);return;}
         if(startupOnly)return;
         if(hardwareOnly){await HardwareDetectionChecks();await DriverChecks();await WizardPreparationChecks();await CompletionChecks();return;}
         await HardwareDetectionChecks();if(completionOnly){await CompletionChecks();return;}

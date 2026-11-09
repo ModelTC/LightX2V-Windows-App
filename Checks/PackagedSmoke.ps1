@@ -31,7 +31,7 @@ try {
   }
   Start-Sleep -Milliseconds 250
  }
- if(-not $ready){throw 'Published app did not connect to the native backend.'}
+ if(-not $ready){throw 'Published app did not open a usable configured workspace.'}
  if(@($names | Where-Object {$_ -like '*Access to the path*' -or $_ -like '*环境检查失败*'}).Count -gt 0){throw 'Published app reported a settings or environment error.'}
  [AppCapture]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
  Start-Sleep -Milliseconds 500
@@ -39,7 +39,7 @@ try {
  $bitmap=[System.Drawing.Bitmap]::new($rect.Right-$rect.Left,$rect.Bottom-$rect.Top)
  $graphics=[System.Drawing.Graphics]::FromImage($bitmap)
  try{$dc=$graphics.GetHdc();try{[AppCapture]::PrintWindow($p.MainWindowHandle,$dc,2) | Out-Null}finally{$graphics.ReleaseHdc($dc)};$bitmap.Save((Join-Path $Report 'published-app.png'),[System.Drawing.Imaging.ImageFormat]::Png)}finally{$graphics.Dispose();$bitmap.Dispose()}
- @{ready=$ready;pid=$p.Id;executable=$Executable;noDotnetRoot=($null -eq $env:DOTNET_ROOT);uiText=$names;time=(Get-Date -Format o)} | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Report 'packaged-smoke.json') -Encoding UTF8
+ @{ready=$ready;scope='Configured workspace UI only';backendValidated=$false;pid=$p.Id;executable=$Executable;noDotnetRoot=($null -eq $env:DOTNET_ROOT);uiText=$names;time=(Get-Date -Format o)} | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Report 'packaged-smoke.json') -Encoding UTF8
 }finally{
  if(-not $KeepOpen -and -not $p.HasExited){$p.CloseMainWindow() | Out-Null;if(-not $p.WaitForExit(15000)){$p.Kill()}}
 }

@@ -10,11 +10,11 @@ Windows 11 x64，无需 WSL。支持 AMD ROCm / NVIDIA CUDA（预览）；[实�
 
 | 版本 | Windows x64 | 状态 |
 | --- | --- | --- |
-| v0.3.11 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.11/LightX2V-Windows-0.3.11-win-x64.zip) | 内测版 / Pre-release |
+| v0.3.12 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.12/LightX2V-Windows-0.3.12-win-x64.zip) | 内测版 / Pre-release |
 
 完整解压 ZIP，运行 `LightX2V.Windows.exe`，按向导准备运行环境并下载模型。
 
-当前构建未进行代码签名。[使用指南](docs/getting-started.md) · [发布说明](docs/releases/v0.3.11.md)
+当前构建未进行代码签名。[使用指南](docs/getting-started.md) · [发布说明](docs/releases/v0.3.12.md)
 
 ## 支持的模型
 
