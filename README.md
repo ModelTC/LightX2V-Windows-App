@@ -1,6 +1,8 @@
 # LightX2V Windows App
 
-English | [简体中文](README.zh-CN.md)
+[![Windows CI](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml/badge.svg?branch=main)](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml)
+
+English | [Chinese (Simplified)](README.zh-CN.md)
 
 A native Windows app for local text-to-image generation and editing with up to three reference images. Powered by [LightX2V](https://github.com/ModelTC/LightX2V) and [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo), with optional [llama.cpp](https://github.com/ggml-org/llama.cpp) prompt enhancement.
 
@@ -21,6 +23,12 @@ Current builds are unsigned. [Setup guide](docs/getting-started.md) · [Release 
 - [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo)
 - [Qwen-Image-2.1-PE-T2I-GGUF-Q8_0](https://huggingface.co/lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0)
 - [Qwen-Image-2.1-PE-I2I-GGUF-Q8_0](https://huggingface.co/lightx2v/Qwen-Image-2.1-PE-I2I-GGUF-Q8_0)
+
+## Automated builds
+
+Every push and pull request runs the Windows build, Python tests, CPU tensor checks, offscreen application checks, and package verification. Successful builds upload a Windows x64 ZIP under the workflow's **Artifacts** section, retained for 30 days. Version tags automatically publish a verified beta package to Releases and record the `windows-x64` deployment environment.
+
+[Build history and artifacts](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml) · [Published releases](https://github.com/ModelTC/LightX2V-Windows-App/releases)
 
 ## Build from source
 
