@@ -138,7 +138,7 @@ class SourceSelectionTests(unittest.TestCase):
             release.set()
 
     def test_slow_drip_metadata_and_weights_do_not_delay_process_exit(self):
-        weights = b'x'*128
+        weights = b'x'*(64*1024)
         scope_files = [dict(Type='blob', Path='model_index.json', Size=2, Sha256=hashlib.sha256(b'{}').hexdigest()),
                        dict(Type='blob', Path='transformer/model.safetensors', Size=len(weights), Sha256=hashlib.sha256(weights).hexdigest())]
         hf_files = [dict(type='file', path='model_index.json', size=2, oid=hashlib.sha1(b'blob 2\0{}').hexdigest()),
@@ -149,19 +149,29 @@ class SourceSelectionTests(unittest.TestCase):
                 metadata = 'metadata' in self.path
                 if metadata:
                     data = json.dumps(hf_files if 'slow' in self.path else dict(Code=200, Data=dict(Files=scope_files))).encode()
-                    self.send_response(200)
                 else:
                     data = weights
-                    self.send_response(206)
-                    self.send_header('Content-Range', f'bytes 0-{len(data)-1}/{len(data)}')
-                self.send_header('Content-Length', str(len(data)))
-                self.end_headers()
                 try:
+                    if self.path.startswith('/drip-headers'):
+                        self.wfile.write(b'HTTP/1.0 200 OK\r\nX-Slow: ')
+                        self.wfile.flush()
+                        for _ in range(256):
+                            self.wfile.write(b'.')
+                            self.wfile.flush()
+                            time.sleep(.05)
+                        self.wfile.write(f'\r\nContent-Length: {len(data)}\r\n\r\n'.encode())
+                        self.wfile.write(data)
+                        return
+                    self.send_response(200 if metadata else 206)
+                    if not metadata:
+                        self.send_header('Content-Range', f'bytes 0-{len(data)-1}/{len(data)}')
+                    self.send_header('Content-Length', str(len(data)))
+                    self.end_headers()
                     if self.path.startswith('/drip'):
                         for byte in data:
                             self.wfile.write(bytes([byte]))
                             self.wfile.flush()
-                            time.sleep(.02)
+                            time.sleep(.05)
                     else:
                         self.wfile.write(data)
                 except (BrokenPipeError, ConnectionResetError):
@@ -174,29 +184,41 @@ class SourceSelectionTests(unittest.TestCase):
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
-            for phase in ('metadata', 'weights'):
+            for phase in ('metadata', 'weights', 'headers'):
                 with self.subTest(phase=phase):
                     script = f'''
-import sys, urllib.request
+import sys, time, urllib.request
 sys.path.insert(0, {str(Path(downloads.__file__).parent)!r})
 import download_models as downloads
-downloads.SOURCE_PROBE_TIMEOUT = .15
-real_open = urllib.request.urlopen
+downloads.SOURCE_PROBE_TIMEOUT = 1.0
+def unexpected_proxy_lookup():
+    raise AssertionError('Loopback regression must not query system proxy settings.')
+urllib.request.getproxies = unexpected_proxy_lookup
+opener = urllib.request.build_opener(urllib.request.ProxyHandler({{}}))
+base = 'http://127.0.0.1:{server.server_port}/'
+for path in ('fast-metadata', 'fast-weights'):
+    with opener.open(base + path, timeout=3) as response:
+        response.read()
 def open_local(request, **options):
     original = request if isinstance(request, str) else request.full_url
     metadata = isinstance(request, str)
     kind = 'metadata' if metadata else 'weights'
     slow = 'huggingface.co' in original
-    prefix = 'drip-slow' if slow and kind == {phase!r} else 'slow' if slow else 'fast'
-    return real_open('http://127.0.0.1:{server.server_port}/' + prefix + '-' + kind, **options)
+    if slow and {phase!r} == 'headers' and metadata:
+        prefix = 'drip-headers-slow'
+    else:
+        prefix = 'drip-slow' if slow and kind == {phase!r} else 'slow' if slow else 'fast'
+    return opener.open(base + prefix + '-' + kind, **options)
 downloads.urllib.request.urlopen = open_local
+started = time.monotonic()
 sources = downloads.select_sources('turbo', lambda: None)
 assert sources[0][0] == 'modelScope', sources
+print('selection_seconds=' + str(time.monotonic()-started), flush=True)
 '''
                     started = time.monotonic()
-                    result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=1.5)
+                    result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=6)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    self.assertLess(time.monotonic()-started, 1.2)
+                    self.assertLess(time.monotonic()-started, 5, result.stdout)
         finally:
             server.shutdown()
             server.server_close()
