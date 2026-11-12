@@ -59,7 +59,7 @@ Recovery, first-use guidance, and model compatibility now have separate boundari
 - `MainViewModel.Workspace`, `.Generation`, and `.Guidance` contain persistence coordination, generation events/cleanup, and actionable availability explanations. The main view model keeps the orchestration entry points.
 - `Resources/model-catalog.json` is shared by C# and Python. It defines supported repositories, required files, component layouts, and compatibility constraints. It deliberately documents the current compatible `main`/`master` policy rather than claiming immutable model revisions. Dependency/runtime pins remain reproducible; a future model revision change still needs explicit compatibility review.
 
-Model startup checks read small configuration files and weight headers. Successful tokenizer format checks are cached by path, size, and modification time. Explicit **Check and repair** invokes the downloader's full source hash verification and can repair an already-ready model. Do not hash every multi-gigabyte weight at each launch.
+Model startup checks read small configuration files and weight headers. Successful tokenizer format checks are cached by path, size, and modification time. The repair service invokes the downloader's full source hash verification and can repair an already-ready model; the compact download guide only exposes command copy and the source link. Do not hash every multi-gigabyte weight at each launch.
 
 First-use environment discovery prefers the selected and managed executables, publishes candidates incrementally, and runs independently of the blocking preparation state. The wizard can select or prepare a verified candidate before the remaining search finishes. Search has a 45-second overall budget; filesystem discovery also runs off the UI thread with a bounded outer wait. Reusing a candidate checks its backend and executable fingerprint, and never persists GPU readiness across app launches.
 
@@ -72,3 +72,14 @@ Reference limits live in `Resources/image-input.json`, consumed by both C# and P
 The native launcher is built with Visual Studio C++ x64 Build Tools (MSVC and Windows SDK), using a static CRT. The public ZIP contains only `LightX2V.exe`, `app`, and `docs` at its top level. The layout-v2 manifest is `app/build-manifest.json`, with paths relative to the package root. Runtime asset paths remain relative to the WPF executable inside `app`. Layout-v1 manifests remain readable for verification and uninstall.
 
 To reproduce the pinned source ZIP, download the exact `upstreamArchiveUrl` in `third_party/source-provenance.json`, then run `python scripts/rebuild_source.py <official-zip> <output-zip>`. The script verifies the upstream and patch hashes, applies the reviewed patch and requires the deterministic output hash to match the committed payload. Builds only verify these committed pins; they never resolve a moving tag or branch.
+
+
+## v0.4.2 discovery and progress ownership
+
+`ModelDiscovery` owns read-only traversal and `ModelValidation` remains the single completeness policy. `SetupController` owns page lifetime, cancellation, manual-selection revisions and committing results. Its background model and environment searches do not occupy installation busy state. Simulation suites inject isolated discovery roots; native acceptance uses real searches.
+
+`AppSettings.AtWorkspace` owns managed-path relocation. Settings verifies a separate draft and checks cancellation before committing; closing does not alter the active backend, model paths or workspace. The historical baseline adapter has no automatic startup or wizard entry point.
+
+`SetupInstaller` aggregates actual received bytes separately from completed/cache/resume bytes. `DownloadRate` owns the short rate window, and `DownloadDisplay` formats stage-specific speed/ETA for setup and model cards. Source sampling uses only manifest URLs; final artifact hashes remain mandatory.
+
+The supervisor serializes protocol emission and complete UTF-8 task-log writes under one lock. Enhancement stderr is drained concurrently into its stage log and the unified log stream. The viewer limits the combined legacy fallback as well as new logs to 90,000 bytes. File reveal uses a background STA shell selection request, respecting the existing integrity boundary.

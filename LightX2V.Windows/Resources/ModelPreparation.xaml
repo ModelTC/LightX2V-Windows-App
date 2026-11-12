@@ -11,11 +11,11 @@
    <StackPanel>
     <Grid Margin="0,2,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <TextBlock Text="{Binding DisplayTitle}" ToolTip="{Binding Title}" FontSize="12" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
-     <Button Grid.Column="1" AutomationProperties.AutomationId="ModelDownloadGuide" Content="{Binding DataContext.T[Download guide],RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding GuideCommand}" FontSize="10" Padding="4,3" Margin="6,-2,-4,-2"/>
+     <Button Grid.Column="1" AutomationProperties.AutomationId="ModelDownloadGuide" Content="{Binding DataContext.T[Download guide],RelativeSource={RelativeSource AncestorType=Window}}" Command="{Binding GuideCommand}" CommandParameter="{Binding RelativeSource={RelativeSource Self}}" FontSize="10" Padding="4,3" Margin="6,-2,-4,-2"/>
     </Grid>
     <Border BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="8" IsEnabled="{Binding CanChoose}">
      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="32"/></Grid.ColumnDefinitions>
-      <TextBox Text="{Binding Path,UpdateSourceTrigger=LostFocus}" Background="Transparent" BorderThickness="0" Padding="9,9" FontSize="11" VerticalContentAlignment="Center" ToolTip="{Binding Path}" AutomationProperties.Name="{Binding Title}"/>
+      <TextBox Text="{Binding Path,UpdateSourceTrigger=PropertyChanged}" Background="Transparent" BorderThickness="0" Padding="9,9" FontSize="11" VerticalContentAlignment="Center" ToolTip="{Binding Path}" AutomationProperties.Name="{Binding Title}"/>
       <Button Grid.Column="1" Width="28" Height="30" Padding="6" Command="{Binding ChooseCommand}" Style="{StaticResource IconButton}" ToolTip="{Binding DataContext.T[Choose],RelativeSource={RelativeSource AncestorType=Window}}"><Viewbox Width="15" Height="14"><Path Data="M2,5 H9 L11,8 H22 V21 H2 Z M2,9 H22" Stroke="{StaticResource Muted}" StrokeThickness="1.5"/></Viewbox></Button>
      </Grid>
     </Border>

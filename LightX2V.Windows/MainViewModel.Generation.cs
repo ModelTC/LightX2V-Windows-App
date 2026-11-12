@@ -77,6 +77,7 @@ public sealed partial class MainViewModel
             }
             SynchronizeEnhancementStatus(generation);
             generation.Refresh();
+            File.AppendAllText(Path.Combine(generation.Directory,"run.log"),$"Status: {generation.Status}\nDuration: {generation.Seconds:F2} s\n",new System.Text.UTF8Encoding(false));
             Files.Write(Path.Combine(generation.Directory, "generation.json"), generation);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)

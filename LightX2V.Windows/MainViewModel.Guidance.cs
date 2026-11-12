@@ -43,6 +43,7 @@ public sealed partial class MainViewModel
     {
         if(args.PropertyName is not (nameof(CanGenerate) or nameof(WorkspaceAvailable)))return;
         Changed(nameof(CanGenerateReason));
+        Changed(nameof(GenerateTooltip));
         Changed(nameof(ShowGenerationGuidance));
         Changed(nameof(NeedsEnhancementDownload));
         Changed(nameof(ShowEnhancementActions));

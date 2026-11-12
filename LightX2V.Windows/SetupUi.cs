@@ -23,6 +23,7 @@ internal static class SetupUi
         var button=new Button{Style=(Style)window.FindResource(primary?"Primary":"SetupSecondary"),MinHeight=34};button.SetBinding(ContentControl.ContentProperty,$"T[{key.Replace("^","^^").Replace(",","^,").Replace("]","^]")}]");if(id!=null)System.Windows.Automation.AutomationProperties.SetAutomationId(button,id);return button;
     }
     public static Shape Icon(string data,double size=16)=>new(){Data=Geometry.Parse(data),Width=size,Height=size,Stretch=Stretch.Uniform,Stroke=Muted,StrokeThickness=1.4,VerticalAlignment=VerticalAlignment.Center};
+    public const string Globe="M22,12 A10,10 0 1 1 2,12 A10,10 0 1 1 22,12 M12,2 C5,8 5,16 12,22 C19,16 19,8 12,2 M2,12 H22 M4,6 H20 M4,18 H20 M12,2 V22";
     public const string Folder="M2,5 H9 L11,8 H22 V21 H2 Z M2,9 H22";
     public const string Search="M16,9 A7,7 0 1 1 2,9 A7,7 0 1 1 16,9 M14,14 L21,21";
     public static Border Logo()=>new(){Width=36,Height=36,Background=Brushes.Black,CornerRadius=new CornerRadius(10),Child=new Image{Source=(ImageSource)Application.Current.FindResource("BrandBolt"),Width=17,Height=24}};

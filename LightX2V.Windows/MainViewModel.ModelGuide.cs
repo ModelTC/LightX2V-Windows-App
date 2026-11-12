@@ -1,112 +1,68 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Effects;
 
 namespace LightX2V.Windows;
 
 public sealed partial class MainViewModel
 {
-    internal void ShowModelGuide(ModelCard card) => CreateModelGuide(card).ShowDialog();
-
-    public Window CreateModelGuide(ModelCard card)
+    internal Popup? ActiveModelGuide {get;private set;}
+    internal void ShowModelGuide(ModelCard card,FrameworkElement anchor)
     {
-        var window = new Window
-        {
-            Title = T["Download guide"], DataContext = this,
-            Owner = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault(window=>window.IsVisible),
-            Width = 620, Height = 510, MinWidth = 480, MinHeight = 360,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = System.Windows.Media.Brushes.White
-        };
-        SetupUi.Resources(window);
-        var body = new StackPanel { Margin = new Thickness(20) };
-        var notice = new TextBlock { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0), Visibility = Visibility.Collapsed };
-        void Notice(string message) { notice.Text = message; notice.Visibility = Visibility.Visible; }
-        var title = new TextBlock { FontSize = 16, FontWeight = FontWeights.SemiBold, TextWrapping = TextWrapping.Wrap };
-        title.SetBinding(TextBlock.TextProperty, new Binding(nameof(ModelCard.Title)) { Source = card });
-        body.Children.Add(title);
-        body.Children.Add(new TextBlock { Text = card.Repository, FontSize = 11, Foreground = SetupUi.Muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0) });
-        var help = SetupUi.Text("Click automatic download. LightX2V will save and check the files for you; no commands are needed.", 12, false, true);
-        help.Margin = new Thickness(0, 12, 0, 12);
-        body.Children.Add(help);
+        if(ActiveModelGuide is {} previous)previous.IsOpen=false;
+        var popup=CreateModelGuide(card,anchor);ActiveModelGuide=popup;
+        void Unloaded(object sender,RoutedEventArgs e)=>popup.IsOpen=false;
+        anchor.Unloaded+=Unloaded;
+        popup.Closed+=(_,_)=>{anchor.Unloaded-=Unloaded;if(ReferenceEquals(ActiveModelGuide,popup))ActiveModelGuide=null;};
+        popup.IsOpen=true;
+    }
 
-        var actions = new WrapPanel();
-        var automatic = SetupUi.Button(window, "Download automatically", true, "GuideAutomaticDownload");
-        automatic.Command = card.DownloadCommand;
-        automatic.SetBinding(ContentControl.ContentProperty, new Binding(nameof(ModelCard.DownloadLabel)) { Source = card });
-        actions.Children.Add(automatic);
-        var repair = SetupUi.Button(window, "Check and repair", false, "GuideCheckRepair");
-        repair.Command = card.RepairCommand;
-        repair.SetBinding(FrameworkElement.ToolTipProperty, "T[Verify model files and download missing or damaged files.]");
-        repair.Margin = new Thickness(8, 0, 0, 0);
-        actions.Children.Add(repair);
-        body.Children.Add(actions);
-
-        var state = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = SetupUi.Muted, Margin = new Thickness(0, 10, 0, 0) };
-        state.SetBinding(TextBlock.TextProperty, new Binding(nameof(ModelCard.Status)) { Source = card });
-        body.Children.Add(state);
-        var estimate = new TextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap, Foreground = SetupUi.Muted, Margin = new Thickness(0, 6, 0, 0) };
-        estimate.SetBinding(TextBlock.TextProperty, new Binding(nameof(ModelCard.DownloadEta)) { Source = card });
-        estimate.SetBinding(UIElement.VisibilityProperty, new Binding(nameof(ModelCard.DownloadEta))
+    public Popup CreateModelGuide(ModelCard card,FrameworkElement anchor)
+    {
+        var modelScope=UseModelScope||UseAutomaticDownloadSource&&card.ActiveDownloadSource=="modelScope";
+        var address=ModelPage.Address(card.Repository,modelScope);
+        var relative="./models/"+card.Repository;
+        var command=modelScope?$"modelscope download --model '{card.Repository}' --local_dir '{relative}'":$"hf download {card.Repository} --local-dir '{relative}'";
+        var popup=new Popup{PlacementTarget=anchor,Placement=PlacementMode.Custom,AllowsTransparency=true,StaysOpen=false,PopupAnimation=PopupAnimation.None};
+        popup.CustomPopupPlacementCallback=(size,target,offset)=>[
+            new(new Point(-size.Width+1,target.Height/2-size.Height/2),PopupPrimaryAxis.Vertical),
+            new(new Point(target.Width-1,target.Height/2-size.Height/2),PopupPrimaryAxis.Vertical)];
+        var body=new StackPanel{Margin=new Thickness(20),DataContext=this};
+        body.Children.Add(new TextBlock{Text=card.Repository,FontSize=13,FontWeight=FontWeights.SemiBold,TextWrapping=TextWrapping.Wrap});
+        var help=SetupUi.Text("Model download command. Save anywhere; automatic downloads are saved in the workspace models folder.",11,false,true);
+        help.Margin=new Thickness(0,14,0,14);body.Children.Add(help);
+        var commandText=new TextBox{Text=command,IsReadOnly=true,TextWrapping=TextWrapping.NoWrap,FontSize=11,FontFamily=new("Cascadia Mono, Consolas"),BorderThickness=new Thickness(0),Background=Brushes.Transparent,Padding=new Thickness(12,4,12,4),VerticalContentAlignment=VerticalAlignment.Center,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto,VerticalScrollBarVisibility=ScrollBarVisibility.Disabled};
+        System.Windows.Automation.AutomationProperties.SetAutomationId(commandText,"ModelDownloadCommand");
+        body.Children.Add(new Border{Height=52,CornerRadius=new CornerRadius(8),Background=new SolidColorBrush(Color.FromRgb(246,246,246)),Child=commandText});
+        var row=new Grid{Margin=new Thickness(0,14,0,0)};row.ColumnDefinitions.Add(new());row.ColumnDefinitions.Add(new(){Width=GridLength.Auto});body.Children.Add(row);
+        var link=new Button{Style=(Style)Application.Current.FindResource("IconButton"),Width=double.NaN,Height=28,HorizontalAlignment=HorizontalAlignment.Left,Padding=new Thickness(6,5,6,5),Content=new TextBlock{Text=T[modelScope?"Open ModelScope":"Open Hugging Face"],TextDecorations=TextDecorations.Underline,FontSize=11}};
+        System.Windows.Automation.AutomationProperties.SetAutomationId(link,"OpenModelPage");
+        link.Click+=(_,_)=>{try{WindowsShell.OpenWebPage(address);}catch(Exception error){Toast=ShellFailure(error,"Unable to open model page");}};row.Children.Add(link);
+        var copy=new Button{Content=T["Copy command"],FontSize=11,FontWeight=FontWeights.SemiBold,Padding=new Thickness(10,5,10,5),Background=new SolidColorBrush(Color.FromRgb(246,246,246)),BorderBrush=SetupUi.Line,BorderThickness=new Thickness(1)};
+        System.Windows.Automation.AutomationProperties.SetAutomationId(copy,"CopyModelDownloadCommand");
+        copy.Click+=(_,_)=>{try{Clipboard.SetText(command);copy.Content=T["Copied"];}catch(System.Runtime.InteropServices.ExternalException error){Toast=error.Message;}};Grid.SetColumn(copy,1);row.Children.Add(copy);
+        var face=new Border{Width=430,Background=new SolidColorBrush(Color.FromRgb(237,237,237)),BorderBrush=new SolidColorBrush(Color.FromRgb(180,180,180)),BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(12),Child=body,Effect=new DropShadowEffect{BlurRadius=16,ShadowDepth=3,Opacity=.22}};
+        face.Margin=new Thickness(12);
+        var root=new Grid{Focusable=true,SnapsToDevicePixels=true};root.Children.Add(face);
+        var arrow=new System.Windows.Shapes.Path{Data=Geometry.Parse("M0,0 L8,8 0,16 Z"),Fill=face.Background,Stroke=face.BorderBrush,StrokeThickness=1,Width=8,Height=16,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(0,0,5,0)};root.Children.Add(arrow);
+        KeyEventHandler escape=(_,e)=>{if(e.Key==Key.Escape){popup.IsOpen=false;e.Handled=true;}};
+        root.PreviewKeyDown+=escape;
+        var host=Window.GetWindow(anchor);
+        popup.Child=root;
+        popup.Opened+=(_,_)=>
         {
-            Source = card, Converter = (IValueConverter)Application.Current.FindResource("NonEmpty")
-        });
-        System.Windows.Automation.AutomationProperties.SetAutomationId(estimate, "ModelGuideDownloadEta");
-        body.Children.Add(estimate);
-
-        var modelScope = UseModelScope || UseAutomaticDownloadSource && card.ActiveDownloadSource != "huggingFace";
-        var address = ModelPage.Address(card.Repository, modelScope);
-        var path = (card.Path.Length == 0 ? DefaultModelPath(card.Repository) : card.Path).Replace("'", "''");
-        var command = modelScope
-            ? $"modelscope download --model {card.Repository} --local_dir '{path}'"
-            : $"hf download {card.Repository} --local-dir '{path}'";
-        var manual = new StackPanel();
-        var commandBox = new TextBox
-        {
-            Text = command, IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
-            MinHeight = 70, Padding = new Thickness(10), FontFamily = new("Consolas"), Margin = new Thickness(0, 10, 0, 0)
+            if(host!=null)host.PreviewKeyDown+=escape;
+            var origin=root.PointToScreen(new Point());var target=anchor.PointToScreen(new Point(0,anchor.ActualHeight/2));
+            var left=origin.X<target.X;var scale=VisualTreeHelper.GetDpi(root).DpiScaleY;
+            var y=Math.Clamp((target.Y-origin.Y)/scale-8,24,Math.Max(24,root.ActualHeight-40));
+            arrow.HorizontalAlignment=left?HorizontalAlignment.Right:HorizontalAlignment.Left;arrow.VerticalAlignment=VerticalAlignment.Top;
+            arrow.Margin=left?new Thickness(0,y,5,0):new Thickness(5,y,0,0);arrow.RenderTransformOrigin=new Point(.5,.5);arrow.RenderTransform=new RotateTransform(left?0:180);
+            root.Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input,()=>{if(popup.IsOpen)copy.Focus();});
         };
-        System.Windows.Automation.AutomationProperties.SetAutomationId(commandBox, "ModelDownloadCommand");
-        manual.Children.Add(commandBox);
-        var copy = SetupUi.Button(window, "Copy command", false, "CopyModelDownloadCommand");
-        copy.Margin = new Thickness(0, 10, 0, 0);
-        copy.HorizontalAlignment = HorizontalAlignment.Left;
-        copy.Click += (_, _) =>
-        {
-            try { Clipboard.SetText(command); Notice(T["Copied"]); }
-            catch (Exception error) { Notice(error.Message); }
-        };
-        manual.Children.Add(copy);
-        var advanced = new Expander { Style = (Style)window.FindResource("SetupLog"), Content = manual, Margin = new Thickness(0, 16, 0, 12) };
-        advanced.SetBinding(HeaderedContentControl.HeaderProperty, "T[Manual download commands (optional)]");
-        System.Windows.Automation.AutomationProperties.SetAutomationId(advanced, "ManualModelDownload");
-        body.Children.Add(advanced);
-
-        var link = new TextBox { Text = address.AbsoluteUri, IsReadOnly = true, Padding = new Thickness(8), TextWrapping = TextWrapping.Wrap };
-        System.Windows.Automation.AutomationProperties.SetAutomationId(link, "ModelPageAddress");
-        body.Children.Add(link);
-        System.Windows.Automation.AutomationProperties.SetAutomationId(notice, "ModelPageStatus");
-        body.Children.Add(notice);
-        var links = new WrapPanel { Margin = new Thickness(0, 12, 0, 0) };
-        var copyLink = SetupUi.Button(window, "Copy link", false);
-        copyLink.Margin = new Thickness(0, 0, 8, 0);
-        copyLink.Click += (_, _) =>
-        {
-            try { Clipboard.SetText(address.AbsoluteUri); Notice(T["Link copied"]); }
-            catch (Exception error) { Notice(error.Message); }
-        };
-        links.Children.Add(copyLink);
-        var open = SetupUi.Button(window, "Open model page", false, "OpenModelPage");
-        open.Click += (_, _) =>
-        {
-            try { WindowsShell.OpenWebPage(address); Notice(T["Requested browser to open model page"]); }
-            catch (Exception error) { Notice(ShellFailure(error, "Unable to open model page")); }
-        };
-        links.Children.Add(open);
-        body.Children.Add(links);
-        var root = new Grid();
-        root.Children.Add(new ScrollViewer { HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = body });
-        window.Content = root;
-        return window;
+        popup.Closed+=(_,_)=>{if(host!=null)host.PreviewKeyDown-=escape;anchor.Focus();};
+        return popup;
     }
 }

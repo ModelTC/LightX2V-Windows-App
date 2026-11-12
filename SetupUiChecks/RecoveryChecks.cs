@@ -87,7 +87,7 @@ internal static partial class Program
         var fixture = ReadinessFixture("history-viewmodel");
         var task = SavedTask(fixture.Settings.Workspace, "restored-viewmodel-task");
         File.WriteAllText(Path.Combine(fixture.Settings.Workspace, "workspace.json"), "[]");
-        using var model = new MainViewModel(fixture.Preferences, environmentCatalog: new ReadinessCatalog(), driverPlatform: fixture.Platform);
+        using var model = new MainViewModel(fixture.Preferences, environmentCatalog: new ReadinessCatalog(), driverPlatform: fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));
         Check(model.Recent.Count == 1 && model.Recent[0].Id == task.Id && model.Toast.Length > 0, "The real view model rebuilds damaged history and exposes a recovery notice without GPU probing");
         var unsupported = model.Settings.Clone();
         unsupported.Workspace = workspace;

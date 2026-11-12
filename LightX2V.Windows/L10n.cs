@@ -12,6 +12,19 @@ public sealed class L10n : Observable
     public string this[string key] => Language == "zh" ? Chinese.GetValueOrDefault(key, DriverStrings.Chinese.GetValueOrDefault(key, SetupStrings.Chinese.GetValueOrDefault(key,key))) : English.GetValueOrDefault(key, key);
     static readonly Dictionary<string, string> Chinese = new()
     {
+        ["Graphics software is installed"]="显卡软件已安装",
+        ["Searching known model locations"]="正在查找常用模型位置",
+        ["Searching local disks for models"]="正在搜索本地磁盘中的模型",
+        ["Usable models found"]="找到可用模型",
+        ["Incomplete model candidate"]="发现不完整的模型",
+        ["Some locations could not be searched"]="部分位置无法访问",
+        ["Search finished with inaccessible locations"]="搜索已结束，部分位置无法访问",
+        ["Only incomplete models found"]="搜索完成，仅找到不完整的模型",
+        ["Search complete; no usable models found"]="搜索完成，未找到可用模型",
+        ["Model download command. Save anywhere; automatic downloads are saved in the workspace models folder."]="模型下载命令。可保存到任意位置，若点击自动下载，则会统一保存到工作目录下的 models 文件夹中。",
+        ["Open Hugging Face"]="打开 Hugging Face",["Open ModelScope"]="打开 ModelScope",
+        ["Run log"]="运行日志",
+        ["Latest 90 KB · Full logs are saved in each task folder"]="最近 90 KB · 每轮完整日志保存在各自任务目录",
         ["Import existing settings"]="导入已有配置",["Imported paths are a preview. Save and continue to apply them."]="导入的路径仅供预览，保存并继续后生效。",["Save and continue"]="保存并继续",
         ["Uninstall could not finish. Your remaining files were preserved."]="卸载未能完成，尚未删除的文件已保留。",
         ["Show included application files"]="查看包含的应用文件",
@@ -33,7 +46,7 @@ public sealed class L10n : Observable
         ["Uninstall"]="卸载",
         ["You can add up to {0} images."]="最多可添加 {0} 张图片。",
         ["Automatic"]="自动",
-        ["Standard"]="标准版",
+        ["Standard"]="标准",
         ["Welcome to LightX2V"]="欢迎使用 LightX2V",
         ["Settings, history, images, logs and caches are stored here."]="设置、历史、图片、日志和缓存保存在这里。",
         ["3 settings · Change the language anytime"]="3 项设置 · 可随时切换语言",

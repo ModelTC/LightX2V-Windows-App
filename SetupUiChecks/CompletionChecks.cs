@@ -12,7 +12,7 @@ internal static partial class Program
     static async Task CompletionChecks()
     {
         var fixture=ReadinessFixture("settings-completion");
-        using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:new ReadinessCatalog{Hold=false},driverPlatform:fixture.Platform);
+        using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:new ReadinessCatalog{Hold=false},driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));
         vm.Prompt="Keep my next image";vm.Tier=2;vm.Ratio="4:3";
         var window=new SettingsWindow(vm);await Render(window,688,600,"settings-completion");
         var button=Children<Button>((DependencyObject)window.Content).Single(b=>AutomationProperties.GetAutomationId(b)=="SettingsSave");

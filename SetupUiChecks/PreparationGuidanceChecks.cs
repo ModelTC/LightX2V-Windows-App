@@ -39,14 +39,14 @@ internal static partial class Program
         {
             var fixture=StartupFixture(changeExecutable?"incremental-environment-changed":"incremental-environment-selected");
             var first=StampedCandidate(fixture.Catalog.InstallResult,"cuda");var catalog=new IncrementalCatalog(first);
-            using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:catalog,driverPlatform:fixture.Platform);
-            await vm.Setup.BeginWorkspaceAsync();var scanning=vm.Setup.SearchEnvironmentsAsync();
+            using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));
+            await vm.Setup.BeginWorkspaceAsync();
             await catalog.Searching.Task.WaitAsync(TimeSpan.FromSeconds(5));await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Check(vm.Setup.SearchingEnvironments&&!vm.Setup.Busy&&vm.Setup.Environments.Contains(first),"A compatible environment is published while other discovery checks are still running");
             vm.Setup.AcceptCandidate(first);
             Check(vm.Setup.Selected==first&&vm.Setup.UseExisting,"An incremental compatible result is immediately selectable during discovery");
             if(changeExecutable)File.AppendAllText(first.Path,"changed executable fixture");
-            await vm.Setup.PrepareEnvironmentAsync(false);await scanning;
+            await vm.Setup.PrepareEnvironmentAsync(false);
             Check(vm.Ready&&vm.Setup.Page==2&&!vm.Setup.SearchingEnvironments,"Preparing the selected result cancels outstanding discovery and advances without waiting for other environments");
             Check(catalog.ProbeCalls==(changeExecutable?1:0),changeExecutable?
                 "A changed Python executable is rechecked before its environment can be reused":
@@ -56,7 +56,7 @@ internal static partial class Program
         }
         var bounded=StartupFixture("incremental-environment-budget");
         var timedCatalog=new IncrementalCatalog(StampedCandidate(bounded.Catalog.InstallResult,"cuda"));
-        using(var vm=new MainViewModel(bounded.Preferences,driverPlatform:bounded.Platform))
+        using(var vm=new MainViewModel(bounded.Preferences,driverPlatform:bounded.Platform,modelDiscovery:new ModelDiscovery([],[])))
         using(var setup=new SetupController(vm,timedCatalog,driverPlatform:bounded.Platform,searchTimeout:TimeSpan.FromMilliseconds(150)))
         {
             var watch=Stopwatch.StartNew();await setup.SearchEnvironmentsAsync();
@@ -66,7 +66,7 @@ internal static partial class Program
             Check(setup.Environments.Count==1,"Results arriving after the total search budget cannot modify the completed candidate list");
         }
         var guidance=ReadinessFixture("generation-guidance");var downloads=new FakeModelDownloader{Hold="i2i"};
-        using(var vm=new MainViewModel(guidance.Preferences,downloads,environmentCatalog:new ReadinessCatalog{Hold=false},driverPlatform:guidance.Platform))
+        using(var vm=new MainViewModel(guidance.Preferences,downloads,environmentCatalog:new ReadinessCatalog{Hold=false},driverPlatform:guidance.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             Check(vm.CanGenerateReason==vm.T["Describe the image you want to create."],"An empty draft explains why image generation is unavailable");
             vm.Prompt="A blue teapot";vm.EnhancementEnabled=true;
@@ -76,8 +76,8 @@ internal static partial class Program
             Check(vm.CanGenerateReason==vm.T["Download reference-image prompt enhancement, or use the base model to continue."],
                 "Adding a reference image changes the missing enhancement guidance to the correct model");
             var window=new MainWindow(vm);await Render(window,1280,820,"generation-guidance-zh");
-            var hint=Children<TextBlock>((DependencyObject)window.Content).Single(text=>AutomationProperties.GetAutomationId(text)=="CanGenerateReason");
-            Check(hint.Text==vm.CanGenerateReason&&vm.DownloadEnhancementCommand.CanExecute(null),"The composer displays its generation blocker and offers the relevant model download");
+            var hint=(Button)window.FindName("GenerateButton");
+            Check(hint.ToolTip?.ToString()==vm.CanGenerateReason&&!Children<TextBlock>((DependencyObject)window.Content).Any(t=>AutomationProperties.GetAutomationId(t)=="CanGenerateReason"),"The composer exposes missing-model guidance through its send tooltip without extra hint rows");
             vm.DownloadEnhancementCommand.Execute(null);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Check(downloads.Requests.Single().Resource=="i2i"&&vm.DisableEnhancementCommand.CanExecute(null),"The guidance downloads only the enhancement model for the current reference-image workflow");
             var downloadStatus=vm.I2ICard.Status;
@@ -89,7 +89,7 @@ internal static partial class Program
             vm.Prompt=new string('x',20001);
             Check(vm.CanGenerateReason==vm.T["Shorten the prompt to 20,000 characters or fewer."],"An overlong prompt has an actionable character-limit explanation");
             vm.Prompt="A blue teapot";vm.EnhancementEnabled=true;vm.SetLanguage("en");await Render(window,1280,820,"generation-guidance-en");
-            Check(hint.Text==vm.CanGenerateReason&&hint.Text.Contains("reference-image"),"Generation blocker text follows language changes in the actual composer");
+            Check(hint.ToolTip?.ToString()==vm.CanGenerateReason&&hint.ToolTip.ToString()!.Contains("reference-image"),"Generation blocker text follows language changes in the actual composer");
             vm.SetLanguage("zh");window.Close();
         }
     }

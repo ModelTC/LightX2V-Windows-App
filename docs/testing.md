@@ -71,3 +71,12 @@ Run behavioral suites locally; CI retains compilation/package/publishing gates w
 The `native` SetupUiChecks mode uses `LIGHTX2V_QA_NATIVE_SETTINGS` for existing read-only model/environment paths and requires an isolated workspace inside its fresh report directory. It runs actual app text-to-image and eight-reference editing. The `maintenance` mode must run alongside a complete verified portable payload; its caller checks exact removal, retained files and helper cleanup after the test process exits. Never point these fixtures at user data. `LIGHTX2V_QA_PYTHON` enables the real Python importer checks in core mode.
 
 For the public native launcher, run `scripts/check_launcher.ps1 -Executable <package>\LightX2V.exe -Report <fresh-report>`. It compiles an independent native child probe and checks Unicode/spaces, an empty argument, embedded quotes, a trailing slash and launcher exit. Keep this behavior check local, outside CI.
+
+
+## v0.4.2 desktop and discovery checks
+
+The `desktop` SetupUiChecks mode requires an interactive Windows session and a fresh report directory. It opens isolated fixture windows, checks actual anchored guide commands, clipboard-copy feedback (restoring the prior clipboard), Escape dismissal, log scrolling and Explorer integration, and captures the desktop. It also renders Chinese/English settings at viewport sizes representative of 100/150/200% scaling. Record the real host scale separately; simulated viewport checks do not certify all physical DPI configurations.
+
+The `native` mode also exercises a disposable first-use workspace beside the supplied model collection, automatically searches the installed environments and all three models, then removes only that disposable workspace. Generation outputs stay in the report workspace. It verifies real enhancement, stop, full log retention and history reopening. Do not use the report directory for personal files.
+
+[The v0.4.2 release scope](releases/v0.4.2.md) retains RTX and additional physical-scale acceptance as separate manual work. Keep original preferences and shared resources intact during upgrades.

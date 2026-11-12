@@ -59,11 +59,13 @@ internal static partial class Program
             var target = Path.Combine(cache, artifact.File);
             const int prefixLength = 54321;
             await File.WriteAllBytesAsync(target + ".partial", bytes[..prefixLength], token);
-            var progress = new Progress<SetupProgress>();
+            var reports=new List<SetupProgress>();
+            var progress = new InlineProgress<SetupProgress>(p=>reports.Add(p));
             var result = await SetupInstaller.Download(artifact, cache, [], false, progress, token);
             Check(Volatile.Read(ref lastRange) == prefixLength && File.ReadAllBytes(result).SequenceEqual(bytes),
                 "Environment downloads resume the existing byte range and verify the completed bytes");
 
+            Check(reports.Any(p=>p.Stage=="Downloading environment"&&p.BytesPerSecond>0&&p.EtaSeconds>=0&&p.CompletedBytes>=prefixLength&&p.TotalBytes==bytes.Length),"A resumed environment download reports measured network speed and remaining download bytes");
             var previousRequests = Volatile.Read(ref requests);
             Check(await SetupInstaller.Download(artifact, cache, [], false, progress, token) == result &&
                 Volatile.Read(ref requests) == previousRequests,
@@ -76,6 +78,12 @@ internal static partial class Program
             catch (IOException) { refused = true; }
             Check(refused && !File.Exists(Path.Combine(cache, artifact.File)),
                 "An environment package with an invalid SHA256 cannot become a completed download");
+            var unavailable=new TcpListener(IPAddress.Loopback,0);unavailable.Start();var closedPort=((IPEndPoint)unavailable.LocalEndpoint).Port;unavailable.Stop();
+            artifact.Mirror=artifact.Url;artifact.Url="http://127.0.0.1:"+closedPort+"/unavailable";
+            var sources=await SetupDownloadSources.Order(artifact,token);
+            Check(sources[0]==artifact.Mirror,"Automatic environment source sampling prefers an available pinned mirror when the official source cannot connect");
+            var beforeProbe=Volatile.Read(ref requests);sources=await SetupDownloadSources.Order(artifact,token);
+            Check(sources[0]==artifact.Mirror&&Volatile.Read(ref requests)==beforeProbe,"Source ordering caches the selected authority without confusing different ports or repeating a probe");
         }
         finally
         {
@@ -84,6 +92,7 @@ internal static partial class Program
             try { await serving; }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { }
             catch (SocketException) when (token.IsCancellationRequested) { }
+            catch (IOException) when (token.IsCancellationRequested) { }
         }
 
         async Task ServePackagesAsync()
@@ -101,7 +110,7 @@ internal static partial class Program
                 {
                     const string rangeHeader = "Range: bytes=";
                     if (line.StartsWith(rangeHeader, StringComparison.OrdinalIgnoreCase))
-                        offset = int.Parse(line[rangeHeader.Length..].TrimEnd('-'));
+                        offset = int.Parse(line[rangeHeader.Length..].Split('-')[0]);
                 }
                 Interlocked.Exchange(ref lastRange, offset);
                 Interlocked.Increment(ref requests);
@@ -110,7 +119,7 @@ internal static partial class Program
                 if (offset > 0) header += $"Content-Range: bytes {offset}-{bytes.Length - 1}/{bytes.Length}\r\n";
                 header += "Connection: close\r\n\r\n";
                 await stream.WriteAsync(Encoding.ASCII.GetBytes(header), token);
-                await stream.WriteAsync(bytes.AsMemory(offset), token);
+                for(var sent=offset;sent<bytes.Length;sent+=8192){await stream.WriteAsync(bytes.AsMemory(sent,Math.Min(8192,bytes.Length-sent)),token);await Task.Delay(30,token);}
             }
         }
     }

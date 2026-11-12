@@ -12,5 +12,5 @@
 - Retain the existing Windows four-step first-run wizard. The three compact settings cards and provided Mac desktop screenshots guide general settings and workspace visuals; do not replace the mature Windows preparation flow with the daily settings dialog.
 
 - Inference source is fixed to official LightX2V 0.6.1 (`43c6a11bb65b7357f06e9603fa92249bc16b484e`) plus the reviewable common/Qwen Windows patch. Both backend profiles must share this source; never resolve a moving branch at build or runtime.
-- No current preferences means first-time setup. Do not infer configuration from a developer directory or load workspace history before explicit workspace confirmation. Legacy import must be a cancellable preview.
+- No current preferences means first-time setup. Do not infer configuration from a developer directory or load workspace history before explicit workspace confirmation. Do not silently import legacy preferences or expose legacy import in the first-run wizard.
 - The public ZIP has only LightX2V.exe, app and docs at its top level. Keep layout ownership centralized and maintain both legacy package verification and manifest-only uninstall.

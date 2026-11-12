@@ -12,14 +12,14 @@ internal static partial class Program
         var events=new List<string>();var platform=new FakeDriverPlatform{Events=events};
         var amd=Valid(@"C:\envs\amd\python.exe");var cuda=amd with{Path=@"C:\envs\cuda\python.exe",Backend="cuda",Device="NVIDIA RTX 4090",HipVersion="",CudaVersion="12.8",TorchVersion="2.11.0+cu128"};
         var catalog=new FakeCatalog{Events=events,Found=[cuda,amd]};
-        using var vm=new MainViewModel(prefs,environmentCatalog:catalog,driverPlatform:platform);
+        using var vm=new MainViewModel(prefs,environmentCatalog:catalog,driverPlatform:platform,modelDiscovery:new ModelDiscovery([],[]));
         using var driver=new DriverSetupModel("amd_rocm",()=>settings.Workspace,L10n.Current,platform);using var controller=new SetupController(vm,catalog,driver);
         platform.DelayCheck=true;var pending=controller.ScanComputerAsync();
         Check(controller.Busy&&!controller.ComputerScanned&&events.SequenceEqual(new[]{"check:amd_rocm"}),"Step two starts with a computer check and never searches environments before scan completion");
         await controller.CancelAsync();await pending;Check(!controller.Busy&&!controller.ComputerScanned&&catalog.SearchBackend=="","A cancelled computer scan cannot enable component preparation or start environment discovery");platform.DelayCheck=false;events.Clear();
         await controller.ScanComputerAsync();
-        Check(catalog.SearchCalls==0&&controller.Selected==null,"A completed hardware scan does not silently adopt a developer environment");
-        await controller.SearchEnvironmentsAsync();
+        await WaitForSearch(controller);
+        Check(catalog.SearchCalls==1,"A completed hardware scan automatically searches compatible environments");
         Check(events.SequenceEqual(new[]{"check:amd_rocm","check:cuda","search:cuda"})&&controller.Backend=="cuda"&&controller.Selected==cuda,"Hybrid hardware selects NVIDIA automatically and searches against that backend only after checking it");
         Check(platform.Downloads==0&&platform.Launches==0,"Computer scans and automatic backend selection never install or launch software");
         controller.AcceptCandidate(amd);Check(controller.Selected==cuda,"Inline selection rejects a ready environment for a different backend");
@@ -32,8 +32,7 @@ internal static partial class Program
         await Render(preview,740,700,"wizard-integrated-empty");Check(platform.Checks==checksBeforeRender,"Constructing or rendering the inline backend choice never starts an extra background preparation job");await Render(preview,620,470,"wizard-integrated-empty-small");
         platform.Condition=DriverCondition.Missing;await controller.ScanComputerAsync();await Render(preview,740,800,"wizard-integrated-driver-missing");
         await driver.DownloadAndOpenAsync();await controller.ScanComputerAsync();Check(driver.Pending&&controller.Backend=="amd_rocm","Rescanning preserves a pending official installation and never switches its vendor");
-        var overrideBackend=Children<Expander>((DependencyObject)preview.Content).Single(e=>e.Header?.ToString()==L10n.Current["Change backend (optional)"]);overrideBackend.IsExpanded=true;await Render(preview,740,800,"wizard-integrated-backend-locked");
-        var backend=Children<ComboBox>((DependencyObject)preview.Content).Single();Check(!backend.IsEnabled,"The inline backend override remains locked while the official installer awaits completion");await Render(preview,740,800,"wizard-integrated-driver-pending");
+        Check(!Children<ComboBox>((DependencyObject)preview.Content).Any(),"The first-run preparation panel does not expose a backend override");await Render(preview,740,800,"wizard-integrated-driver-pending");
         platform.Condition=DriverCondition.Ready;await driver.CheckAsync(true);Check(driver.CanContinue&&!driver.Pending,"An explicit driver recheck resumes the integrated preparation flow");
         platform.Computer=HardwareInfo.FromAdapters([]);await controller.ScanComputerAsync();Check(!controller.HasDetectedBackend&&!controller.ManagedSupported&&controller.BackendRecommendation.Contains(L10n.Current["No supported graphics card was identified. Check the graphics software below, then scan again."]),"Unknown hardware displays a clear result instead of claiming an automatically selected backend");
         platform.Computer=HardwareInfo.FromAdapters([new GpuAdapter("Microsoft Basic Display Adapter",""){PnpId=@"PCI\VEN_10DE&DEV_1234",ProblemCode=28}]);platform.Condition=DriverCondition.Missing;await controller.ScanComputerAsync();

@@ -45,6 +45,19 @@ public sealed class AppSettings
         string ModelPath(string key) => Path.Combine(workspace, "models", ModelCatalog.Get(key).Repository.Replace('/', Path.DirectorySeparatorChar));
         return new() { ModelSelected=false, Workspace = workspace, Model = ModelPath("turbo"), T2IDirectory = ModelPath("t2i"), I2IDirectory = ModelPath("i2i") };
     }
+    public AppSettings AtWorkspace(string workspace)
+    {
+        var result=Clone();result.Workspace=workspace.Trim();
+        if(!Path.IsPathFullyQualified(result.Workspace)||!Path.IsPathFullyQualified(Workspace)||result.Workspace.Equals(Workspace,StringComparison.OrdinalIgnoreCase))return result;
+        var fresh=Fresh(result.Workspace);
+        bool Managed(string path,string folder)=>Path.IsPathFullyQualified(path)&&AppMaintenance.Contains(Path.Combine(Workspace,folder),path);
+        if(Managed(result.Python,"environments"))result.Python="";
+        if(Managed(result.Repository,"runtimes"))result.Repository="";
+        if(result.Model.Length==0||Managed(result.Model,"models"))result.Model=fresh.Model;
+        if(result.T2IDirectory.Length==0||Managed(result.T2IDirectory,"models"))result.T2IDirectory=fresh.T2IDirectory;
+        if(result.I2IDirectory.Length==0||Managed(result.I2IDirectory,"models"))result.I2IDirectory=fresh.I2IDirectory;
+        return result;
+    }
     public void ValidateWorkspace(){if(!Path.IsPathFullyQualified(Workspace))throw new InvalidOperationException("Choose an absolute workspace path.");Directory.CreateDirectory(Workspace);var p=Path.Combine(Workspace,".write-probe-"+Guid.NewGuid().ToString("N"));File.WriteAllText(p,"");File.Delete(p);}
     public void ValidateEnvironment(){ValidateWorkspace();if(!Path.IsPathFullyQualified(Python)||!File.Exists(Python)||!Python.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Choose a native Windows Python executable.");}
     public AppSettings Clone() => new() { ModelSelected=ModelSelected, Backend=Backend, Workspace = Workspace, Python = Python, Repository = Repository, Model = Model,EnhancementEnabled=EnhancementEnabled,T2IDirectory=T2IDirectory,I2IDirectory=I2IDirectory,DownloadSource=DownloadSource };
@@ -105,7 +118,8 @@ public sealed class Generation : Observable
     [JsonIgnore] public string ResultStatus => L10n.Current[Completed?"Generated":Status];
     [JsonIgnore] public string Duration => L10n.Current.Language=="zh"?$"{(int)Seconds/60} 分 {(int)Seconds%60} 秒":$"{(int)Seconds/60}m {(int)Seconds%60}s";
     [JsonIgnore] public string CreatedTime => CreatedAt.ToString("HH:mm");
-    [JsonIgnore] public string LogRunLabel=>CreatedAt.ToString("HH:mm:ss")+" · "+ResultStatus;
+    [JsonIgnore] public int RunOrdinal {get;set;}
+    [JsonIgnore] public string LogRunLabel=>(L10n.Current.Language=="zh"?$"第 {RunOrdinal} 次":"Run "+RunOrdinal)+" · "+CreatedAt.ToString("HH:mm:ss")+" · "+ResultStatus;
     [JsonIgnore] public string Meta => L10n.Current[Status] + " · " + Elapsed + $" · {Request.Width} × {Request.Height} · seed {Request.Seed}";
     public void Refresh() { foreach (var n in new[] { nameof(Title), nameof(Subtitle), nameof(PhaseText), nameof(Elapsed), nameof(Completed), nameof(Running), nameof(Failed), nameof(Meta), nameof(Error), nameof(PreviewPath),nameof(LogRunLabel),nameof(ResultStatus),nameof(Duration),nameof(EnhancementStatus),nameof(EnhancementThinking),nameof(EnhancedPrompt),nameof(EnhancementRatio),nameof(EnhancementCompleted),nameof(EnhancementLabel),nameof(EnhancementDuration),nameof(HasEnhancement),nameof(ShowImageStage),nameof(EnhancementFailed) }) Changed(n); }
 }

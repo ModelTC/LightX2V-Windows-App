@@ -8,7 +8,7 @@ namespace LightX2V.Windows;
 
 public sealed class DriverSetupCard : Border,IDisposable
 {
-    readonly DriverSetupModel model;readonly bool showReadyDetails;readonly TextBlock title,status,message,error,progressLabel,steps;readonly Button install,recheck,page,local,stop,reset;readonly StackPanel help;readonly ProgressBar progress;readonly Expander details;readonly TextBlock technical=new();
+    readonly DriverSetupModel model;readonly bool showReadyDetails;readonly TextBlock title,status,message,error,progressLabel,steps;readonly Button install,recheck,page,local,stop,reset;readonly StackPanel help;readonly ProgressBar progress;readonly Expander details;readonly TextBlock technical=new();readonly TextBlock device;
     public DriverSetupCard(Window window,DriverSetupModel model,bool autoCheck=true,string headingKey="1 · Prepare your graphics card",bool showReadyDetails=true)
     {
         this.model=model;this.showReadyDetails=showReadyDetails;DataContext=model;VerticalAlignment=VerticalAlignment.Top;Background=Brushes.White;BorderBrush=SetupUi.Line;BorderThickness=new Thickness(1);CornerRadius=new CornerRadius(13);Padding=new Thickness(18);Margin=new Thickness(0,0,0,14);
@@ -16,7 +16,7 @@ public sealed class DriverSetupCard : Border,IDisposable
         var body=new StackPanel();Child=body;var heading=new Grid();heading.ColumnDefinitions.Add(new());heading.ColumnDefinitions.Add(new(){Width=GridLength.Auto});body.Children.Add(heading);
         title=SetupUi.Text(headingKey,15,true);heading.Children.Add(title);status=new TextBlock{FontSize=11,VerticalAlignment=VerticalAlignment.Center,Margin=new Thickness(10,0,0,0)};Grid.SetColumn(status,1);heading.Children.Add(status);
         message=new TextBlock{TextWrapping=TextWrapping.Wrap,FontSize=12,Foreground=SetupUi.Muted,Margin=new Thickness(0,10,0,0)};body.Children.Add(message);
-        var device=new TextBlock{FontSize=11,Foreground=SetupUi.Muted,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,7,0,0)};device.SetBinding(TextBlock.TextProperty,"DeviceName");body.Children.Add(device);
+        device=new TextBlock{FontSize=11,Foreground=SetupUi.Muted,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,7,0,0)};device.SetBinding(TextBlock.TextProperty,"DeviceName");body.Children.Add(device);
         help=new StackPanel{Margin=new Thickness(0,12,0,0)};body.Children.Add(help);
         var explanation=SetupUi.Text("Graphics software (also called a driver) lets Windows use your graphics card. The official assistant can install or update it for you.",11,false,true);help.Children.Add(explanation);
         steps=new TextBlock{FontSize=12,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,12,0,10),LineHeight=22};System.Windows.Automation.AutomationProperties.SetAutomationId(steps,"DriverInstructions");help.Children.Add(steps);
@@ -39,7 +39,7 @@ public sealed class DriverSetupCard : Border,IDisposable
     void Changed(object? sender,PropertyChangedEventArgs args)=>Refresh();
     void Refresh()
     {
-        status.Text=model.Status;status.Foreground=model.CanContinue?SetupUi.Green:SetupUi.Muted;message.Text=model.Message;error.Text=model.Error;error.Visibility=string.IsNullOrEmpty(model.Error)?Visibility.Collapsed:Visibility.Visible;
+        status.Visibility=model.CanContinue&&!showReadyDetails?Visibility.Collapsed:Visibility.Visible;device.Visibility=model.CanContinue&&!showReadyDetails?Visibility.Collapsed:Visibility.Visible;status.Text=model.Status;status.Foreground=model.CanContinue?SetupUi.Green:SetupUi.Muted;message.Text=model.CanContinue&&!showReadyDetails?model.T["Graphics software is installed"]:model.Message;error.Text=model.Error;error.Visibility=string.IsNullOrEmpty(model.Error)?Visibility.Collapsed:Visibility.Visible;
         help.Visibility=model.CanContinue?Visibility.Collapsed:Visibility.Visible;details.Visibility=model.CanContinue&&!showReadyDetails?Visibility.Collapsed:Visibility.Visible;
         steps.Text=model.T[model.Backend=="cuda"?"1. Click the download button below.\n2. If Windows asks for permission, check that the publisher is NVIDIA Corporation, then choose Yes.\n3. In NVIDIA App, open Drivers, then Download and Install. Keep the default options.\n4. When installation is finished, return here and check again.":"1. Click the download button below.\n2. If Windows asks for permission, check that the publisher is Advanced Micro Devices (AMD), then choose Yes.\n3. Follow the AMD window to install the recommended graphics software. Keep the default options.\n4. When installation is finished, return here and check again."];
         steps.Visibility=model.Pending||model.Assessment?.CanInstall==true?Visibility.Visible:Visibility.Collapsed;if(model.Pending)steps.Text=string.Format(model.T["Finish installing in the {0} window first. If it asks for a restart, save your files and restart. Reopen LightX2V, then check again."],model.Vendor);

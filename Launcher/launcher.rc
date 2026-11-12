@@ -1,8 +1,8 @@
 #include <windows.h>
 1 ICON "../LightX2V.Windows/Resources/LightX2V.ico"
 1 VERSIONINFO
- FILEVERSION 0,4,1,0
- PRODUCTVERSION 0,4,1,0
+ FILEVERSION 0,4,2,0
+ PRODUCTVERSION 0,4,2,0
  FILEFLAGSMASK 0x3fL
  FILEOS VOS_NT_WINDOWS32
  FILETYPE VFT_APP
@@ -13,8 +13,8 @@ BEGIN
   BEGIN
    VALUE "FileDescription", "LightX2V"
    VALUE "ProductName", "LightX2V"
-   VALUE "FileVersion", "0.4.1"
-   VALUE "ProductVersion", "0.4.1"
+   VALUE "FileVersion", "0.4.2"
+   VALUE "ProductVersion", "0.4.2"
   END
  END
  BLOCK "VarFileInfo"

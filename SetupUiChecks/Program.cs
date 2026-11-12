@@ -11,8 +11,8 @@ using LightX2V.Windows;
 
 internal static partial class Program
 {
-    static bool startupOnly,nativeOnly,maintenanceOnly;
-    static string root = "";
+    static bool startupOnly,nativeOnly,maintenanceOnly,desktopOnly;
+    static string root = "";static double actualDesktopScale;
     static readonly List<string> passed = [];
     static void Check(bool condition, string message)
     {
@@ -30,7 +30,7 @@ internal static partial class Program
         }
     }
 
-    static async Task Render(Window window, int width, int height, string name)
+    static async Task Render(Window window, int width, int height, string name,double scale=2)
     {
         var content = (FrameworkElement)window.Content;
         content.DataContext = window.DataContext;
@@ -63,7 +63,7 @@ internal static partial class Program
                 Viewport = new Rect(0, 0, width, height)
             }, null, new Rect(0, 0, width, height));
         }
-        var bitmap = new RenderTargetBitmap(width * 2, height * 2, 192, 192, PixelFormats.Pbgra32);
+        var bitmap = new RenderTargetBitmap((int)(width*scale),(int)(height*scale),96*scale,96*scale,PixelFormats.Pbgra32);
         bitmap.Render(drawing);
         var png = new PngBitmapEncoder();
         png.Frames.Add(BitmapFrame.Create(bitmap));
@@ -76,16 +76,16 @@ internal static partial class Program
     {
         if (args.Length is < 1 or > 2)
         {
-            Console.Error.WriteLine("Usage: SetupUiChecks.exe <output-directory> [core|startup|native|maintenance]");
+            Console.Error.WriteLine("Usage: SetupUiChecks.exe <output-directory> [core|startup|native|maintenance|desktop]");
             return 2;
         }
         var mode = args.Length == 2 ? args[1] : "core";
-        if (mode is not ("core" or "startup" or "native" or "maintenance"))
+        if (mode is not ("core" or "startup" or "native" or "maintenance" or "desktop"))
         {
             Console.Error.WriteLine($"Unknown check mode '{mode}'. Supported modes are core, startup, native and maintenance.");
             return 2;
         }
-        startupOnly = mode == "startup";nativeOnly=mode=="native";maintenanceOnly=mode=="maintenance";
+        startupOnly = mode == "startup";nativeOnly=mode=="native";maintenanceOnly=mode=="maintenance";desktopOnly=mode=="desktop";
         root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
         RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
@@ -106,8 +106,9 @@ internal static partial class Program
                 {
                     passed,
                     completedAt = DateTimeOffset.Now,
-                    offscreenRendering = true,
-                    realUiAutomation = false
+                    offscreenRendering = !desktopOnly,
+                    realUiAutomation = desktopOnly,
+                    actualDesktopScale = desktopOnly?(double?)actualDesktopScale:null
                 }, new JsonSerializerOptions { WriteIndented = true }));
                 result = 0;
             }
@@ -125,8 +126,11 @@ internal static partial class Program
         return result;
     }
 
+    static async Task WaitForSearch(SetupController setup){for(var i=0;i<1000&&setup.SearchingEnvironments;i++)await Task.Delay(10);Check(!setup.SearchingEnvironments,"Automatic environment discovery finishes independently of setup installation");}
+
     static async Task Run()
     {
+        if(desktopOnly){await DesktopChecks();return;}
         if(maintenanceOnly){await MaintenanceProcessChecks();return;}
         if(nativeOnly){await NativeAppChecks();return;}
         await StartupChecks();
@@ -134,8 +138,10 @@ internal static partial class Program
         if (startupOnly) return;
 
         await FirstUseChecks();
+        await DiscoveryChecks();
         await ParityChecks();
         await VisualParityChecks();
+        await SettingsDraftChecks();
         RecoveryChecks();
         await BridgeChecks();
         await ModelDownloadChecks();

@@ -31,6 +31,26 @@ internal static class WindowsShell
     public static void OpenWebPage(Uri address)=>Launch(WebRequest(address),CurrentIntegrity(),Start);
     public static Task RevealAsync(string path)
     {
+        path=Path.GetFullPath(path);
+        if(File.Exists(path))
+        {
+            if(CurrentIntegrity()<0x2000)throw new DesktopIntegrationRestrictedException();
+            var done=new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var thread=new Thread(()=>
+            {
+                var initialized=CoInitializeEx(IntPtr.Zero,2);IntPtr item=IntPtr.Zero;
+                try
+                {
+                    Marshal.ThrowExceptionForHR(initialized);
+                    Marshal.ThrowExceptionForHR(SHParseDisplayName(path,IntPtr.Zero,out item,0,out _));
+                    // A full item PIDL with cidl=0 opens its parent and selects the file.
+                    Marshal.ThrowExceptionForHR(SHOpenFolderAndSelectItems(item,0,IntPtr.Zero,0));done.TrySetResult();
+                }
+                catch(Exception error){done.TrySetException(error);}
+                finally{if(item!=IntPtr.Zero)Marshal.FreeCoTaskMem(item);if(initialized>=0)CoUninitialize();}
+            }){IsBackground=true,Name="Reveal task file"};
+            thread.SetApartmentState(ApartmentState.STA);thread.Start();return done.Task;
+        }
         Launch(FolderRequest(path),CurrentIntegrity(),Start);
         return Task.CompletedTask;
     }
@@ -50,6 +70,10 @@ internal static class WindowsShell
         }
         finally{Marshal.FreeHGlobal(buffer);}
     }
+    [DllImport("ole32.dll")]static extern int CoInitializeEx(IntPtr reserved,uint mode);
+    [DllImport("ole32.dll")]static extern void CoUninitialize();
+    [DllImport("shell32.dll",CharSet=CharSet.Unicode)]static extern int SHParseDisplayName(string path,IntPtr context,out IntPtr item,uint attributes,out uint actualAttributes);
+    [DllImport("shell32.dll")]static extern int SHOpenFolderAndSelectItems(IntPtr item,uint count,IntPtr children,uint flags);
     [DllImport("advapi32.dll",SetLastError=true)]
     [return:MarshalAs(UnmanagedType.Bool)]
     static extern bool GetTokenInformation(SafeAccessTokenHandle token,int informationClass,IntPtr buffer,int length,out int returned);

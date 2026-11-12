@@ -7,7 +7,7 @@ namespace LightX2V.Windows;
 
 public partial class MainWindow : Window
 {
-    bool closing;bool followConversation=true;
+    bool closing;bool followConversation=true;bool followLog=true;bool updatingLog;string? lastLogTarget;double logScrollOffset;
     string lastContent = "";
     WindowBounds? bounds;
     public MainViewModel ViewModel { get; }
@@ -32,6 +32,12 @@ public partial class MainWindow : Window
             else if(followConversation&&(e.ExtentHeightChange!=0||e.ViewportHeightChange!=0))
                 Dispatcher.BeginInvoke(DispatcherPriority.Loaded,()=>Conversation.ScrollToEnd());
         };
+        LogViewer.AddHandler(ScrollViewer.ScrollChangedEvent,new ScrollChangedEventHandler((_,e)=>
+        {
+            if(updatingLog||e.OriginalSource is not ScrollViewer scroll)return;
+            if(e.ExtentHeightChange==0&&e.VerticalChange!=0){logScrollOffset=scroll.VerticalOffset;followLog=scroll.ScrollableHeight-scroll.VerticalOffset<16;}
+        }));
+        vm.PropertyChanged+=(_,e)=>{if(e.PropertyName==nameof(MainViewModel.ShowLog)&&vm.ShowLog||e.PropertyName==nameof(MainViewModel.LogTarget)){followLog=true;Dispatcher.BeginInvoke(DispatcherPriority.Loaded,()=>LogViewer.ScrollToEnd());}};
         vm.ContentUpdated+=()=>
         {
             var key=string.Join(",",vm.Turns.Select(g=>g.Id));
@@ -81,6 +87,13 @@ public partial class MainWindow : Window
     void Minimize(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
     void Maximize(object sender, RoutedEventArgs e) => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
     void CloseWindow(object sender, RoutedEventArgs e) => Close();
-    void LogChanged(object sender, TextChangedEventArgs e) { if (sender is TextBox box && box.IsVisible) box.ScrollToEnd(); }
+    void LogChanged(object sender, TextChangedEventArgs e)
+    {
+        if(sender is not TextBox box)return;
+        var id=ViewModel.LogTarget?.Id;if(lastLogTarget!=id){lastLogTarget=id;followLog=true;}
+        if(!box.IsVisible)return;
+        var offset=logScrollOffset;updatingLog=true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded,()=>{if(followLog)box.ScrollToEnd();else box.ScrollToVerticalOffset(offset);updatingLog=false;});
+    }
     void EnhancementChanged(object sender, TextChangedEventArgs e) { if (sender is TextBox box && box.IsVisible) box.ScrollToEnd(); }
 }

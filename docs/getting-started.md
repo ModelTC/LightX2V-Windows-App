@@ -10,7 +10,7 @@ This is an unsigned preview build. A SHA-256 file is provided for checking downl
 
 The Windows four-step assistant is retained: choose a workspace, prepare the computer, download required image files, then start creating. Hardware scanning, official driver guidance, checked environment selection and automatic installation keep their existing flow. Only the base image model is required; no sample generation is required. Finishing preparation selects Standard.
 
-For later changes, **General settings** uses three compact cards: language, workspace and PyTorch environment. Environment search and preview preparation do not switch your active workspace until you save. You can reopen **Setup assistant** from settings. WSL and a system CUDA Toolkit are not required; the portable package includes .NET.
+For later changes, **General settings** uses three compact cards: language, workspace and PyTorch environment. Environment search and preview preparation do not switch your active workspace until you save. Environment search and installation open in a separate dialog. WSL and a system CUDA Toolkit are not required; the portable package includes .NET.
 
 ## Create your first image
 
@@ -26,7 +26,7 @@ The documented RTX 4070 Laptop with 8 GB VRAM and 32 GB RAM completed four v0.3.
 
 Creations and parameters are saved under the workspace's `outputs` folder; `workspace.json` indexes the history. Preferences are normally stored at `%LOCALAPPDATA%\LightX2V\configuration\preferences.json`. To upgrade, close the old app, fully extract the new version into a new program folder, and continue using the existing workspace. Complete models and downloaded installation packages can be reused.
 
-Stopped downloads can be retried. Use **Check and repair** on a model card to verify its files and fetch missing or damaged files, including models already marked ready. If prompt enhancement files are missing, the composer offers the appropriate enhancement download or **Use the base model** so you can continue without enhancement.
+Stopped downloads can be retried. Model status buttons recheck local completeness; downloads verify file hashes. If enhancement files are missing, use the appropriate model card to download them or turn off prompt enhancement. The send button tooltip explains missing requirements.
 
 Damaged preferences and history indexes are preserved alongside their originals with a `.corrupt-*` suffix. The app can restore valid `.bak` settings or rebuild history from saved task records. An unsupported newer workspace format is preserved and requires a compatible app version.
 
@@ -44,6 +44,6 @@ Each creation remembers its size, aspect ratio and enhancement preference. Reusi
 
 General settings includes **Uninstall** with model weights, workspace data, and app/settings groups. Review the exact paths before confirming. External resources are unchecked by default; overlapping retained resources and directory links are rejected. Application removal follows the packaged file manifest and keeps other files placed in the application folder. A packaged application is needed to launch its maintenance helper. A failed maintenance job leaves a diagnostic under `%LOCALAPPDATA%\LightX2V-maintenance`. In-app updates and INT8 remain deferred.
 
-With no saved current-user configuration, the four-step first-run assistant opens. Old development folders are never imported automatically. To reuse an old profile, choose **Import existing settings** on the save-location step, review the paths, then **Save and continue**. Hardware scans do not search or select Python environments; choose **Search local environments**, select Python, or install components explicitly. Existing saved user preferences continue to restore across upgrades.
+With no saved current-user configuration, the four-step first-run assistant opens. Old development folders are never imported automatically. Entering the computer step automatically searches and selects a compatible checked environment; confirmation is required before reuse or installation. Entering the model step automatically searches existing locations and then local fixed disks. Folder buttons can select locations excluded from automatic search. Existing saved user preferences continue to restore across upgrades.
 
 The package keeps runtime files in `app` and documentation/licenses in `docs`. Keep both beside the public launcher. Models and workspaces are separate. Inference uses the verified bundled LightX2V 0.6.1 source; an external checkout is never silently used for generation or overwritten.

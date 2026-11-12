@@ -8,7 +8,7 @@ internal static partial class Program
     static async Task WorkspaceRegressionChecks()
     {
         var fixture = StartupFixture("workspace-regressions");
-        using (var model = new MainViewModel(fixture.Preferences, environmentCatalog: fixture.Catalog, driverPlatform: fixture.Platform))
+        using (var model = new MainViewModel(fixture.Preferences, environmentCatalog: fixture.Catalog, driverPlatform: fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             model.Prompt = "Preserve the sidebar draft";
             model.Tier = 0;
@@ -58,7 +58,7 @@ internal static partial class Program
                 "Returning to the running task reads its current log without historical output");
         }
 
-        using var restored = new MainViewModel(fixture.Preferences, environmentCatalog: fixture.Catalog, driverPlatform: fixture.Platform);
+        using var restored = new MainViewModel(fixture.Preferences, environmentCatalog: fixture.Catalog, driverPlatform: fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));
         Check(!restored.ModelExpanded && !restored.ParametersExpanded, "Both sidebar choices persist when the workspace is reopened");
         restored.ParametersExpanded = true;
         Check(!restored.ModelExpanded, "Restoring one sidebar section leaves the other section folded");

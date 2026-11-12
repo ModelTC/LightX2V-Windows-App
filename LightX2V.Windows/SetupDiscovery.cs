@@ -37,8 +37,10 @@ public static class SetupDiscovery
         var found=new List<string>();var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         void Add(string value){token.ThrowIfCancellationRequested();try{if(!value.Contains("WindowsApps",StringComparison.OrdinalIgnoreCase)&&Path.IsPathFullyQualified(value)&&File.Exists(value)&&value.EndsWith(".exe",StringComparison.OrdinalIgnoreCase)&&seen.Add(Path.GetFullPath(value)))found.Add(Path.GetFullPath(value));}catch(IOException){}catch(UnauthorizedAccessException){}}
         void Prefix(string value){Add(Path.Combine(value,"python.exe"));Add(Path.Combine(value,"Scripts","python.exe"));}
-        IEnumerable<string> Children(string root){try{return Directory.GetDirectories(root);}catch{return [];}}
+        IEnumerable<string> Children(string root){try{return Directory.GetDirectories(root).Where(p=>(File.GetAttributes(p)&FileAttributes.ReparsePoint)==0).OrderBy(p=>p,StringComparer.OrdinalIgnoreCase).ToArray();}catch{return [];}}
         foreach(var path in PreferredPythonPaths(settings))Add(path);
+        var parent=Path.GetDirectoryName(settings.Workspace.TrimEnd(Path.DirectorySeparatorChar));
+        if(parent!=null)foreach(var sibling in Children(parent))foreach(var environment in Children(Path.Combine(sibling,"environments")))Prefix(environment);
         var home=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         foreach(var root in new[]{home,Path.Combine(home,"AppData","Local"),@"C:\ProgramData"})foreach(var name in new[]{"miniconda3","anaconda3","miniforge3"})
         {
@@ -142,22 +144,9 @@ public static class SetupDiscovery
         token.ThrowIfCancellationRequested();
         return results.OrderByDescending(p=>p.Ready).ToList();
     },token).WaitAsync(EnvironmentSearchTimeout+TimeSpan.FromSeconds(2),token);
-    public static Dictionary<string,string> Models(AppSettings settings,CancellationToken token)
-    {
-        var roots=new List<string>{settings.Model,settings.T2IDirectory,settings.I2IDirectory,Path.Combine(settings.Workspace,"models")};
-        var home=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        roots.AddRange([Path.Combine(home,".cache","huggingface","hub"),Path.Combine(home,".cache","modelscope","hub"),Path.Combine(home,".cache","modelscope","hub","models")]);
-        foreach(var name in new[]{"HF_HOME","HUGGINGFACE_HUB_CACHE","MODELSCOPE_CACHE"})if(Environment.GetEnvironmentVariable(name) is {} value)roots.Add(value);
-        var found=new Dictionary<string,string>();var seen=new HashSet<string>(StringComparer.OrdinalIgnoreCase);var visited=0;
-        void Scan(string root,int depth)
-        {
-            token.ThrowIfCancellationRequested();if(depth>5||visited++>1200||string.IsNullOrWhiteSpace(root)||!Directory.Exists(root)||!seen.Add(root))return;
-            foreach(var key in new[]{"turbo","t2i","i2i"})if(!found.ContainsKey(key)&&ModelValidation.Ready(root,key))found[key]=root;
-            if(found.Values.Contains(root))return;
-            try{foreach(var child in Directory.EnumerateDirectories(root)){if(Path.GetFileName(child) is "blobs" or ".git" or "outputs" or ".lightx2v-downloads")continue;Scan(child,depth+1);}}catch(UnauthorizedAccessException){}catch(IOException){}
-        }
-        foreach(var root in roots)Scan(root,0);return found;
-    }
+    public static Dictionary<string,string> Models(AppSettings settings,CancellationToken token) =>
+        new ModelDiscovery().Search(settings, null, token, includeFixedDisks:false).Candidates
+            .Where(c=>c.Ready).GroupBy(c=>c.Key).ToDictionary(g=>g.Key,g=>g.First().Path);
 }
 public static class ModelValidation
 {

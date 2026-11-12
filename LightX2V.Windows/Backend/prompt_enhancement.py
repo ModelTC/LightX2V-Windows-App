@@ -487,7 +487,13 @@ def run_enhancement(request, destination, emit, supervisor, runtime=None):
     decoder = codecs.getincrementaldecoder("utf-8")("strict")
     try:
         with (folder / "llama.log").open("wb") as diagnostics, (folder / "raw.txt").open("w", encoding="utf-8") as raw:
-            child = supervisor.spawn(args, cwd=str(destination), env=os.environ.copy(), stdout=subprocess.PIPE, stderr=diagnostics)
+            child = supervisor.spawn(args, cwd=str(destination), env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            def copy_diagnostics():
+                for line in iter(child.stderr.readline, b""):
+                    diagnostics.write(line);diagnostics.flush()
+                    emit("log", message=line.decode("utf-8", errors="replace").rstrip("\r\n"))
+            diagnostic_reader=threading.Thread(target=copy_diagnostics,name="enhancement-diagnostics",daemon=True)
+            diagnostic_reader.start()
             try:
                 while True:
                     chunk = child.stdout.read1(4096)
@@ -501,6 +507,8 @@ def run_enhancement(request, destination, emit, supervisor, runtime=None):
                 code = child.wait()
             finally:
                 supervisor.release(child)
+                diagnostic_reader.join()
+                child.stdout.close();child.stderr.close()
             supervisor.check_cancelled()
             if code != 0:
                 detail=(folder / "llama.log").read_text(encoding="utf-8",errors="replace")

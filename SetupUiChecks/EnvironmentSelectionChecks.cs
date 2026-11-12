@@ -129,7 +129,7 @@ internal static partial class Program
         var prefs = Path.Combine(root, "environment-selection-preferences");
         Files.Write(Path.Combine(prefs, "preferences.json"), new Preferences { Settings = settings });
         var platform = new FakeDriverPlatform { Computer = HardwareInfo.FromAdapters([new("AMD Radeon fixture GPU", "32")]) };
-        using var vm = new MainViewModel(prefs, environmentCatalog: fake, driverPlatform: platform);
+        using var vm = new MainViewModel(prefs, environmentCatalog: fake, driverPlatform: platform,modelDiscovery:new ModelDiscovery([],[]));
         var wizard = new FirstRunWindow(vm,standalone:true);
         await Render(wizard, 760, 660, "wizard-workspace");
         vm.Setup.Backend = "cuda";

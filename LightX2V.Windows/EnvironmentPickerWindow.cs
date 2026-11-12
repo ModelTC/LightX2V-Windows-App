@@ -11,7 +11,7 @@ public sealed class EnvironmentPickerWindow : Window
 {
     public EnvironmentSelectionModel Model {get;}
     public EnvironmentCandidate? Result {get;private set;}
-    readonly Button search,close,install,choose,manual;readonly Border source,activity,empty;readonly TextBlock emptyText;
+    readonly Button search,close,install,choose,manual;readonly Border activity,empty;readonly TextBlock emptyText;
     readonly DriverSetupCard driverCard;readonly ComboBox backendPicker;readonly ItemsControl candidates;readonly ProgressBar progress;bool closing;
     public EnvironmentPickerWindow(AppSettings settings,L10n language,EnvironmentSelectionModel? model=null)
     {
@@ -33,8 +33,6 @@ public sealed class EnvironmentPickerWindow : Window
         var manualHint=SetupUi.Text("Prepare your own native Python environment, then search again.",12,false,true);manualHint.Margin=new Thickness(0,9,0,14);Grid.SetRow(manualHint,1);actions.Children.Add(manualHint);
         var autoHint=SetupUi.Text("Prepare pinned Python and GPU PyTorch dependencies.",12,false,true);autoHint.Margin=new Thickness(0,9,0,14);Grid.SetRow(autoHint,1);Grid.SetColumn(autoHint,2);actions.Children.Add(autoHint);
         choose=SetupUi.Button(this,"Choose Python executable",false,"EnvironmentChoosePython");choose.HorizontalAlignment=HorizontalAlignment.Left;choose.VerticalAlignment=VerticalAlignment.Bottom;choose.Margin=new Thickness(0,0,0,14);choose.Click+=async(_,_)=>{var picker=new OpenFileDialog{Filter="Python executable|python.exe|Windows executable|*.exe"};if(picker.ShowDialog(this)==true)await Model.CheckPythonAsync(picker.FileName);};Grid.SetRow(choose,2);actions.Children.Add(choose);
-        var sourceGroup=new StackPanel();var sourceTitle=SetupUi.Text("Installation source",11,false,true);sourceTitle.Margin=new Thickness(0,0,0,5);sourceGroup.Children.Add(sourceTitle);
-        source=SetupUi.SourcePicker(this,value=>Model.Mirror=value,Model.Mirror);sourceGroup.Children.Add(source);sourceGroup.Margin=new Thickness(0,0,0,14);Grid.SetRow(sourceGroup,2);Grid.SetColumn(sourceGroup,2);actions.Children.Add(sourceGroup);
         manual=SetupUi.Button(this,"View installation instructions",false,"EnvironmentInstallGuide");manual.Click+=(_,_)=>ShowInstructions();Grid.SetRow(manual,3);actions.Children.Add(manual);
         install=SetupUi.Button(this,"Start automatic installation",true,"EnvironmentInstall");install.Click+=async(_,_)=>await Model.InstallAsync();Grid.SetRow(install,3);Grid.SetColumn(install,2);actions.Children.Add(install);
         body.Children.Add(SetupUi.Card(actions));
@@ -57,7 +55,7 @@ public sealed class EnvironmentPickerWindow : Window
     void Changed(object? sender,PropertyChangedEventArgs args)=>Refresh();
     void Refresh()
     {
-        if(search==null)return;backendPicker.IsEnabled=!Model.Busy&&!Model.Driver.Pending;search.IsEnabled=!Model.Busy;choose.IsEnabled=!Model.Busy;manual.IsEnabled=!Model.Busy;install.IsEnabled=Model.CanInstall;source.IsEnabled=Model.CanInstall;SetupUi.RefreshSource(source,Model.Mirror);candidates.IsEnabled=!Model.Busy;
+        if(search==null)return;backendPicker.IsEnabled=!Model.Busy&&!Model.Driver.Pending;search.IsEnabled=!Model.Busy;choose.IsEnabled=!Model.Busy;manual.IsEnabled=!Model.Busy;install.IsEnabled=Model.CanInstall;candidates.IsEnabled=!Model.Busy;
         activity.Visibility=Model.Busy?Visibility.Visible:Visibility.Collapsed;progress.IsIndeterminate=Model.Percent<=0;
         close.Content=Model.T[Model.Busy?"Stop":"Close"];empty.Visibility=!Model.Busy&&Model.Candidates.Count==0?Visibility.Visible:Visibility.Collapsed;
         emptyText.Text=Model.T[Model.Searched?"No compatible environment found. Choose Python manually or install in the workspace.":"Search your computer for a compatible environment"];

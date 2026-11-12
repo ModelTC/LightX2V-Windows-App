@@ -19,7 +19,7 @@ internal static partial class Program
         }
         var generation=new Generation{CreationId="visual",Directory=directory,Status="completed",Seconds=88,CreatedAt=new DateTimeOffset(2026,11,11,13,53,0,TimeSpan.FromHours(8)),Request=new(){Prompt="A blue rose growing in the garden",Width=512,Height=512,Output=output}};
         StateStore.SaveHistory(fixture.Settings.Workspace,[generation]);
-        using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:new ReadinessCatalog{Hold=false},driverPlatform:fixture.Platform);vm.Selected=vm.Recent.Single();vm.EnhancementEnabled=false;vm.SetLanguage("en");
+        using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:new ReadinessCatalog{Hold=false},driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));vm.Selected=vm.Recent.Single();vm.EnhancementEnabled=false;vm.SetLanguage("en");
         var window=new MainWindow(vm);
         foreach(var (models,parameters,name) in new[]{(true,true,"both-expanded"),(false,false,"both-collapsed"),(false,true,"generation-expanded"),(true,false,"models-expanded")})
         {

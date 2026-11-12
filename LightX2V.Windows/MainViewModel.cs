@@ -17,7 +17,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public L10n T => L10n.Current; public AppSettings Settings { get; private set; }
     public ObservableCollection<Generation> Recent { get; } = []; public ObservableCollection<Generation> Turns { get; } = [];
     Generation? selected; public Generation? Selected { get => selected; set { if (Set(ref selected, value) && value != null) { creation = value.CreationId; RestoreCreation(value);RefreshTurns();logTarget=value;Changed(nameof(LogTarget));RefreshLogPanel();Persist(); } } }
-    public string Prompt { get => prompt; set { Set(ref prompt, value); Changed(nameof(CanGenerate)); CommandManager.InvalidateRequerySuggested(); } }
+    public string Prompt { get => prompt; set { Set(ref prompt, value); Changed(nameof(CanGenerate));Changed(nameof(GenerateTooltip)); CommandManager.InvalidateRequerySuggested(); } }
     public int Tier { get => tier; set { if(Set(ref tier, Math.Clamp(value,0,2)))RememberCreation(); Changed(nameof(SizeText));Changed(nameof(CanGenerate));CommandManager.InvalidateRequerySuggested(); } }
     public string Ratio { get => ratio; set { if(Set(ref ratio, value))RememberCreation(); Changed(nameof(SizeText));Changed(nameof(CanGenerate));CommandManager.InvalidateRequerySuggested(); } }
     public bool RandomSeed { get => randomSeed; set { Set(ref randomSeed, value); Changed(nameof(FixedSeed)); } }
@@ -25,7 +25,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public string SizeText { get { var d = CurrentDimensions(); return Ratio=="Adaptive"?T["Automatic"]:ValidDimensions?$"{d.Width} × {d.Height} px":T["Choose an aspect ratio"]; } }
     public bool IsPreflighting {get=>preflighting;private set{Set(ref preflighting,value);RefreshStatus();}}
     public bool IsGenerationBusy=>IsRunning||IsPreflighting;
-    public bool IsRunning => active is not null; public bool IsStopping { get => stopping; private set { Set(ref stopping, value); Changed(nameof(GenerateLabel)); } }
+    public bool IsRunning => active is not null; public bool IsStopping { get => stopping; private set { Set(ref stopping, value); Changed(nameof(GenerateLabel));Changed(nameof(GenerateTooltip));CommandManager.InvalidateRequerySuggested(); } }
     public bool IsChecking { get => isChecking; private set { Set(ref isChecking, value); RefreshStatus(); } }
     public bool Ready { get => ready; private set { Set(ref ready, value); RefreshStatus(); } }
     public string Device { get => device; private set => Set(ref device, value); }
@@ -42,6 +42,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!workspaceSelected||!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => HasSelectedModel && WorkspaceAvailable && !NeedsInitialSetup && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsGenerationBusy && !IsImporting && !IsBaseModelDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
     public string GenerateLabel => IsGenerationBusy ? T[IsStopping ? "Stopping" : "Stop generation"] : T["Generate image"];
     public Command NewCommand { get; }
+    public string GenerateTooltip=>IsGenerationBusy||CanGenerateReason.Length==0?GenerateLabel:CanGenerateReason;
     public Command GenerateCommand { get; }
     public Command SubmitCommand {get;}
     public Command StopCommand {get;}
@@ -58,7 +59,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public ParameterCommand OpenLogCommand { get; }
     public ParameterCommand RemoveCommand { get; }
     public Action? RequestSettings; public event Action? ContentUpdated;
-    public MainViewModel(string? preferencesRoot = null,IModelDownloader? modelDownloader=null,IEnvironmentCatalog? environmentCatalog=null,IDriverPlatform? driverPlatform=null)
+    public MainViewModel(string? preferencesRoot = null,IModelDownloader? modelDownloader=null,IEnvironmentCatalog? environmentCatalog=null,IDriverPlatform? driverPlatform=null,IModelDiscovery? modelDiscovery=null)
     {
         this.modelDownloader=modelDownloader??new NativeModelDownloader();
         this.environmentCatalog=environmentCatalog??new NativeEnvironmentCatalog();
@@ -70,7 +71,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
         Settings = prefs?.Settings ?? AppSettings.Fresh();
         modelExpanded=prefs?.ModelExpanded??false;parametersExpanded=prefs?.ParametersExpanded??false;
         workspaceSelected=prefs?.WorkspaceConfirmed==true;
-        InitializeImages();InitializeModels();InitializeSetup(this.environmentCatalog,driverPlatform);InitializeGenerationGuidance();
+        InitializeImages();InitializeModels();InitializeSetup(this.environmentCatalog,driverPlatform,modelDiscovery);InitializeGenerationGuidance();
         if(workspaceSelected)LoadWorkspace();
         if (startupNotice is not null) Toast = T[startupNotice] + (Toast.Length > 0 ? Environment.NewLine + Toast : "");
         SubmitCommand=new(()=>_=GenerateAsync(),()=>CanGenerate);StopCommand=new(()=>_=StopAsync(),()=>IsGenerationBusy&&!IsStopping);
@@ -102,9 +103,9 @@ public sealed partial class MainViewModel : Observable, IDisposable
         Changed(nameof(Settings));Changed(nameof(NeedsInitialSetup));ReloadModelPaths();RefreshStatus();
     }
     void RefreshRecent() { var id = selected?.CreationId; loading = true; Recent.Clear(); foreach (var g in all.GroupBy(g => g.CreationId).Select(g => g.OrderByDescending(x => x.CreatedAt).First()).OrderByDescending(g => g.CreatedAt)) Recent.Add(g); selected = Recent.FirstOrDefault(g => g.CreationId == id); loading = false; Changed(nameof(Selected)); }
-    void RefreshTurns() { Turns.Clear(); foreach (var g in all.Where(g => g.CreationId == creation).OrderBy(g => g.CreatedAt)) Turns.Add(g); Changed(nameof(Welcome)); ContentUpdated?.Invoke(); }
+    void RefreshTurns() { Turns.Clear(); foreach (var g in all.Where(g => g.CreationId == creation).OrderBy(g => g.CreatedAt)) {g.RunOrdinal=Turns.Count+1;Turns.Add(g);} Changed(nameof(Welcome)); ContentUpdated?.Invoke(); }
     public void NewCreation() { if(IsImporting)return;if(IsPreflighting){preflightCancellation?.Cancel();CancelEnvironmentCheck();}InputImages.Clear(); creation = Guid.NewGuid().ToString("N"); selected = null; Changed(nameof(Selected)); Prompt = "";tier=1;ratio="Adaptive";Settings.EnhancementEnabled=true;RandomSeed=true;Changed(nameof(Tier));Changed(nameof(Ratio));Changed(nameof(EnhancementEnabled));Changed(nameof(SizeText));RememberCreation(); Turns.Clear(); Changed(nameof(Welcome)); ResetLogViewer(); Toast = ""; ContentUpdated?.Invoke(); }
-    void RefreshStatus() { foreach (var n in new[] { nameof(EnvironmentStatus), nameof(CanGenerate), nameof(IsRunning),nameof(IsPreflighting),nameof(IsGenerationBusy), nameof(GenerateLabel),nameof(CanAddImages),nameof(HasSelectedModel),nameof(CanSelectModel),nameof(ModelSelectorLabel) }) Changed(n); ModelStateChanged();CommandManager.InvalidateRequerySuggested(); }
+    void RefreshStatus() { foreach (var n in new[] { nameof(EnvironmentStatus), nameof(CanGenerate), nameof(IsRunning),nameof(IsPreflighting),nameof(IsGenerationBusy), nameof(GenerateLabel),nameof(GenerateTooltip),nameof(CanAddImages),nameof(HasSelectedModel),nameof(CanSelectModel),nameof(ModelSelectorLabel) }) Changed(n); ModelStateChanged();CommandManager.InvalidateRequerySuggested(); }
 
     static string EnvironmentKey(AppSettings settings)
     {
@@ -228,6 +229,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
         activeJob=g;active=client;all.Add(g);Toast="";BeginGenerationLogs(g);RefreshRecent();if(creation==submittedCreation)Selected=g;RefreshTurns();RefreshStatus();bool terminal=false;
         try
         {
+            File.WriteAllText(Path.Combine(g.Directory,"run.log"),"LightX2V task created"+Environment.NewLine,new System.Text.UTF8Encoding(false));
             Files.Write(Path.Combine(g.Directory, "request.json"), g.Request);
             Persist();
             var code = await client.RunAsync(settings.Python, "run", Path.Combine(g.Directory, "request.json"), Path.Combine(settings.Workspace, "tmp"),

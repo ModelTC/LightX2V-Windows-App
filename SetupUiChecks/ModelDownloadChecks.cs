@@ -72,7 +72,7 @@ internal static partial class Program
     static async Task ModelDownloadChecks()
     {
         var settings=AppSettings.Fresh(Path.Combine(root,"automatic-models-isolated"));var prefs=Path.Combine(root,"automatic-models-prefs");Files.Write(Path.Combine(prefs,"preferences.json"),new Preferences{Settings=settings});
-        var fake=new FakeModelDownloader{Hold="turbo"};using var vm=new MainViewModel(prefs,fake,new FakeCatalog(),new FakeDriverPlatform());vm.SelectStandardModel();vm.Setup.Page=2;var wizard=new MainWindow(vm);
+        var fake=new FakeModelDownloader{Hold="turbo"};using var vm=new MainViewModel(prefs,fake,new FakeCatalog(),new FakeDriverPlatform(),modelDiscovery:new ModelDiscovery([],[]));vm.SelectStandardModel();vm.Setup.Page=2;var wizard=new MainWindow(vm);
         await Render(wizard,760,700,"models-missing-zh");
         var automatic=Children<Button>((DependencyObject)wizard.Content).Single(b=>ReferenceEquals(b.DataContext,vm.TurboCard)&&b.Command==vm.TurboCard.DownloadCommand);
         Check(automatic.IsEnabled&&fake.Requests.Count==0,"Step three exposes an explicit one-click automatic download without downloading on page render");
@@ -92,9 +92,10 @@ internal static partial class Program
         Check(!vm.IsDownloading&&vm.RequiredModelsReady&&vm.Setup.CanContinue&&!vm.I2ICard.Ready,"Cancelling an optional download preserves basic setup readiness");await Render(wizard,760,700,"models-ready-basic-after-cancel");
         vm.T2ICard.Path=Path.Combine(settings.Workspace,"other-t2i");vm.UseHuggingFace=true;fake.Hold=null;fake.OmitFiles=true;await vm.DownloadModelAsync("t2i");
         Check(!vm.T2ICard.Ready&&vm.T2ICard.Failed&&vm.Setup.CanContinue&&fake.Requests[^1].Source=="huggingFace","A success event with incomplete optional files is rejected without blocking basic setup, and the changed source reaches the retry");
-        var guideWindow=vm.CreateModelGuide(vm.T2ICard);await Render(guideWindow,600,490,"model-guide-automatic");
-        Check(Children<Button>((DependencyObject)guideWindow.Content).Any(b=>AutomationProperties.GetAutomationId(b)=="GuideAutomaticDownload"&&b.IsEnabled),"Download guides provide the same automatic action as their model cards");
-        Check(Children<Expander>((DependencyObject)guideWindow.Content).Single(e=>AutomationProperties.GetAutomationId(e)=="ManualModelDownload").IsExpanded==false,"Manual commands are optional and collapsed in the download guide");guideWindow.Close();
+        var anchor=new Button();var guide=vm.CreateModelGuide(vm.T2ICard,anchor);
+        var guideRoot=(FrameworkElement)guide.Child;guideRoot.Measure(new Size(454,400));guideRoot.Arrange(new Rect(0,0,454,400));guideRoot.UpdateLayout();
+        Check(Children<TextBox>(guideRoot).Single().Text=="hf download lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0 --local-dir './models/lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0'","Download guides use PowerShell-compatible relative model paths");
+        Check(!Children<Expander>(guideRoot).Any()&&Children<Button>(guideRoot).Count()==2,"The shared guide contains only the source link and copy action");
         vm.SetLanguage("en");await Render(wizard,760,700,"models-download-en");vm.SetLanguage("zh");await Render(wizard,620,470,"models-download-small");wizard.Close();
     }
 }

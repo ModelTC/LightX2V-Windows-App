@@ -21,7 +21,7 @@ public sealed class SetupManifest
     public static string Resources=>Path.Combine(AppContext.BaseDirectory,"Resources","Setup");
     public static SetupManifest Read(string backend="amd_rocm")=>Files.Read<SetupManifest>(Path.Combine(Resources,backend=="cuda"?"manifest-cuda.json":"manifest.json"))??throw new InvalidOperationException("Missing setup manifest.");
 }
-public sealed record SetupProgress(string Stage,string Detail="",double Percent=0,string? Log=null,EnvironmentCandidate? Candidate=null);
+public sealed record SetupProgress(string Stage,string Detail="",double Percent=0,string? Log=null,EnvironmentCandidate? Candidate=null,long CompletedBytes=0,long TotalBytes=0,long TransferredBytes=0,double BytesPerSecond=0,double? EtaSeconds=null);
 public static class SetupInstaller
 {
     sealed class DirectProgress(Action<SetupProgress> callback):IProgress<SetupProgress>{public void Report(SetupProgress value)=>callback(value);}
@@ -34,24 +34,26 @@ public static class SetupInstaller
         if(!System.IO.File.Exists(path)||new FileInfo(path).Length!=artifact.Size)return false;
         await using var f=System.IO.File.OpenRead(path);return Convert.ToHexString(await SHA256.HashDataAsync(f,token)).Equals(artifact.Sha256,StringComparison.OrdinalIgnoreCase);
     }
-    public static async Task<string> Download(SetupArtifact artifact,string cache,IEnumerable<string> seedDirectories,bool mirror,IProgress<SetupProgress> progress,CancellationToken token)
+    public static async Task<string> Download(SetupArtifact artifact,string cache,IEnumerable<string> seedDirectories,bool mirror,IProgress<SetupProgress> progress,CancellationToken token,bool automaticSource=false)
     {
         Directory.CreateDirectory(cache);var target=Path.Combine(cache,artifact.File);
-        progress.Report(new("Downloading environment",artifact.File,0));
-        if(await Matches(target,artifact,token))return target;
+        progress.Report(new("Checking downloads",artifact.File));
+        if(await Matches(target,artifact,token)){progress.Report(new("Reusing verified downloads",artifact.File,CompletedBytes:artifact.Size,TotalBytes:artifact.Size));return target;}
         foreach(var root in seedDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var seed=Path.Combine(root,artifact.File);
             if(Path.GetFullPath(seed).Equals(Path.GetFullPath(target),StringComparison.OrdinalIgnoreCase)||!await Matches(seed,artifact,token))continue;
             progress.Report(new("Reusing verified downloads",artifact.File));
             await using(var src=System.IO.File.OpenRead(seed))await using(var dst=System.IO.File.Create(target+".copy"))await src.CopyToAsync(dst,token);
-            System.IO.File.Move(target+".copy",target,true);return target;
+            System.IO.File.Move(target+".copy",target,true);progress.Report(new("Reusing verified downloads",artifact.File,CompletedBytes:artifact.Size,TotalBytes:artifact.Size));return target;
         }
-        var partial=target+".partial";var url=mirror&&artifact.Mirror!=null?artifact.Mirror:artifact.Url;
+        var partial=target+".partial";
+        var urls=automaticSource?await SetupDownloadSources.Order(artifact,token):new[]{mirror&&artifact.Mirror!=null?artifact.Mirror:artifact.Url,artifact.Url}.Distinct().ToArray();
+        long transferred=0;var rate=new DownloadRate();rate.Observe(0);
         for(int attempt=0;attempt<3;attempt++)
         {
             token.ThrowIfCancellationRequested();
-            if(attempt==2&&mirror&&artifact.Mirror!=null){url=artifact.Url;progress.Report(new("Downloading environment",artifact.File,Log:"Mirror retry failed; using the official source for "+artifact.File));}
+            var url=urls[attempt%urls.Length];
             try
             {
                 var offset=System.IO.File.Exists(partial)?new FileInfo(partial).Length:0;
@@ -74,13 +76,13 @@ public static class SetupInstaller
                     {
                         using var readTimeout=CancellationTokenSource.CreateLinkedTokenSource(token);readTimeout.CancelAfter(TimeSpan.FromSeconds(45));
                         var n=await input.ReadAsync(buffer,readTimeout.Token);if(n==0)break;
-                        offset+=n;if(offset>artifact.Size)throw new IOException("Download exceeds its declared size.");
+                        offset+=n;transferred+=n;if(offset>artifact.Size)throw new IOException("Download exceeds its declared size.");
                         await output.WriteAsync(buffer.AsMemory(0,n),token);
-                        if(watch.ElapsedMilliseconds-last>200){progress.Report(new("Downloading environment",artifact.File,100.0*offset/artifact.Size));last=watch.ElapsedMilliseconds;}
+                        if(watch.ElapsedMilliseconds-last>200){var speed=rate.Observe(transferred);progress.Report(new("Downloading environment",artifact.File,100.0*offset/artifact.Size,CompletedBytes:offset,TotalBytes:artifact.Size,TransferredBytes:transferred,BytesPerSecond:speed,EtaSeconds:speed>0?(artifact.Size-offset)/speed:null));last=watch.ElapsedMilliseconds;}
                     }
                     await output.FlushAsync(token);
                 }
-                progress.Report(new("Checking downloads",artifact.File));
+                progress.Report(new("Checking downloads",artifact.File,CompletedBytes:offset,TotalBytes:artifact.Size,TransferredBytes:transferred));
                 if(!await Matches(partial,artifact,token)){System.IO.File.Delete(partial);throw new IOException("Downloaded file checksum does not match the setup manifest.");}
                 System.IO.File.Move(partial,target,true);return target;
             }
@@ -139,21 +141,40 @@ public static class SetupInstaller
         Directory.CreateDirectory(env);Files.Write(marker,new{profile=manifest.Profile,state="preparing"});
         var runtime=SetupPaths.Ensure(env);
         var cache=Path.Combine(workspace,"cache","packages");var seeds=seedDirectories.ToArray();
-        var pythonZip=await Download(manifest.Python,cache,seeds,mirror,progress,token);
+        var completed=new System.Collections.Concurrent.ConcurrentDictionary<string,long>();
+        var artifacts=manifest.Packages.Prepend(manifest.Python).ToArray();var total=artifacts.Sum(p=>p.Size);
+        var aggregateGate=new object();var phases=new Dictionary<string,SetupProgress>();var received=new System.Collections.Concurrent.ConcurrentDictionary<string,long>();
+        // Existing prefixes count toward completion, never toward measured throughput.
+        progress.Report(new("Checking downloads"));
+        foreach(var artifact in artifacts)
+        {
+            var file=Path.Combine(cache,artifact.File);var partial=file+".partial";
+            completed[artifact.Name]=await Matches(file,artifact,token)?artifact.Size:System.IO.File.Exists(partial)?Math.Min(artifact.Size,new FileInfo(partial).Length):0;
+        }
+        var rate=new DownloadRate();rate.Observe(0);
+        IProgress<SetupProgress> Reporting(SetupArtifact artifact)=>new DirectProgress(value=>{
+                lock(aggregateGate)
+                {
+                if(value.TotalBytes>0)completed[artifact.Name]=value.CompletedBytes;
+                received[artifact.Name]=value.TransferredBytes;
+                phases[artifact.Name]=value;
+                var active=phases.Values.Where(p=>p.Stage=="Downloading environment").OrderBy(p=>p.Detail,StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                if(active!=null&&value.Stage!="Downloading environment")value=value with{Stage="Downloading environment",Detail=active.Detail};
+                var bytes=completed.Values.Sum();var speed=rate.Observe(received.Values.Sum());
+                progress.Report(value with{Percent=100.0*bytes/total,CompletedBytes=bytes,TotalBytes=total,BytesPerSecond=speed,EtaSeconds=speed>0?Math.Max(0,total-bytes)/speed:null});
+                }
+            });
+        var pythonZip=await Download(manifest.Python,cache,seeds,mirror,Reporting(manifest.Python),token,automaticSource:true);
         progress.Report(new("Preparing Python"));await Task.Run(()=>Extract(pythonZip,env,token),token);
         var site=Path.Combine(env,"Lib","site-packages");Directory.CreateDirectory(site);
         await System.IO.File.WriteAllLinesAsync(Path.Combine(env,"python312._pth"),["python312.zip",".",@"Lib\site-packages","import site"],new UTF8Encoding(false),token);
         var downloaded=new System.Collections.Concurrent.ConcurrentDictionary<string,string>();
-        var completed=new System.Collections.Concurrent.ConcurrentDictionary<string,long>();
-        var total=manifest.Packages.Sum(p=>p.Size);
+        rate=new DownloadRate();rate.Observe(received.Values.Sum());
         await Parallel.ForEachAsync(manifest.Packages,new ParallelOptions{MaxDegreeOfParallelism=4,CancellationToken=token},async(artifact,ct)=>{
-            var reporting=new DirectProgress(value=>{
-                if(value.Percent>0)completed[artifact.Name]=(long)(artifact.Size*value.Percent/100);
-                progress.Report(value with{Percent=100.0*completed.Values.Sum()/total});
-            });
-            downloaded[artifact.Name]=await Download(artifact,cache,seeds,mirror,reporting,ct);
+            var reporting=Reporting(artifact);
+            downloaded[artifact.Name]=await Download(artifact,cache,seeds,mirror,reporting,ct,automaticSource:true);
             completed[artifact.Name]=artifact.Size;
-            progress.Report(new("Downloading environment",artifact.File,100.0*completed.Values.Sum()/total));
+            reporting.Report(new("Checking downloads",artifact.File,CompletedBytes:artifact.Size,TotalBytes:artifact.Size,TransferredBytes:received.GetValueOrDefault(artifact.Name)));
         });
         progress.Report(new("Installing dependencies"));
         Extract(downloaded["pip"],site,token);

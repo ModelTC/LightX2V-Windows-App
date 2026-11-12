@@ -10,15 +10,28 @@ import subprocess
 import sys
 import time
 import traceback
+import threading
 import uuid
 
 sys.dont_write_bytecode = True
 sys.path.insert(0,str(Path(__file__).resolve().parent))
+RUN_LOG = None
+EVENT_LOCK = threading.Lock()
+
 SIGMAS = [1.0, .978453, .95418, .926626, .89508, .845148, .704534, .414568]
 
 
 def emit(kind, **fields):
-    print(json.dumps({'protocol': 1, 'type': kind, **fields}, ensure_ascii=False), flush=True)
+    with EVENT_LOCK:
+        if RUN_LOG is not None:
+            if kind == 'log':
+                RUN_LOG.write(fields.get('message', '') + '\n')
+            elif kind in ('status', 'error', 'done', 'enhancement_phase'):
+                RUN_LOG.write(kind + ': ' + json.dumps(fields, ensure_ascii=False) + '\n')
+            elif kind == 'enhancement_result':
+                RUN_LOG.write('Enhanced prompt: ' + fields.get('prompt', '') + '\n')
+            RUN_LOG.flush()
+        print(json.dumps({'protocol': 1, 'type': kind, **fields}, ensure_ascii=False), flush=True)
 
 
 def atomic_json(path, value):
@@ -310,12 +323,18 @@ def run(request, config, parent):
 
 
 def main():
+    global RUN_LOG
     p=argparse.ArgumentParser();p.add_argument('mode',choices=('run','check'));p.add_argument('request');p.add_argument('--parent',type=int,default=0);args=p.parse_args()
     try:
         request=json.loads(Path(args.request).read_text(encoding='utf-8-sig'))
         if args.mode=='check':
             from environment_probe import probe
             return probe(request,emit)
+        if request.get("output"):
+            folder=Path(request["output"]).parent
+            folder.mkdir(parents=True,exist_ok=True)
+            RUN_LOG=(folder/"run.log").open("w",encoding="utf-8",buffering=1)
+            RUN_LOG.write("LightX2V generation log\n")
         config=validate(request)
         return run(request,config,args.parent)
     except Exception as exc:
@@ -325,6 +344,10 @@ def main():
                 folder=Path(request['output']).parent
                 if folder.is_dir(): (folder/'supervisor-error.log').write_text(detail,encoding='utf-8')
         except Exception: pass
+        if RUN_LOG is not None: RUN_LOG.write(detail+'\n')
         emit('error',message=str(exc));emit('done',status='failed',message=str(exc));return 1
+    finally:
+        if RUN_LOG is not None:
+            RUN_LOG.close();RUN_LOG=None
 
 if __name__=='__main__': raise SystemExit(main())

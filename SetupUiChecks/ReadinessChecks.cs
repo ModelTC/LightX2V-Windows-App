@@ -28,7 +28,7 @@ internal static partial class Program
     static async Task ReadinessChecks()
     {
         var f=ReadinessFixture("readiness-reopen");var catalog=new ReadinessCatalog();
-        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform))
+        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             var host=new StartupHost();await new StartupCoordinator(vm,host).StartAsync();
             Check(host.WorkspaceShows==1&&catalog.Calls==0&&!vm.IsChecking&&!vm.Ready,"A complete saved workspace opens immediately without a startup GPU probe or a persisted readiness claim");
@@ -43,13 +43,13 @@ internal static partial class Program
             Check(!Directory.Exists(Path.Combine(f.Settings.Workspace,"outputs"))||!Directory.EnumerateDirectories(Path.Combine(f.Settings.Workspace,"outputs")).Any(),"Cancelled validation does not allocate an output generation directory");
         }
         f=ReadinessFixture("readiness-failed");catalog=new(){Hold=false,Succeed=false};
-        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform))
+        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             vm.Ratio="1:1";vm.Prompt="Keep after failed GPU check";await vm.GenerateAsync();
             Check(!vm.IsGenerationBusy&&!vm.Ready&&vm.Turns.Count==0&&vm.Prompt=="Keep after failed GPU check"&&vm.Toast.Contains("Fixture GPU validation failed"),"Failed first-send validation preserves the draft, reports the reason and leaves no running task");
         }
         f=ReadinessFixture("readiness-session");catalog=new(){Hold=false};
-        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform))
+        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             Check(await EnsureForCheck(vm)&&await EnsureForCheck(vm)&&catalog.Calls==1,"A verified unchanged environment is reused for later sends within the session");
             var same=vm.Settings.Clone();same.EnhancementEnabled=!same.EnhancementEnabled;vm.ApplySettings(same);
@@ -57,7 +57,7 @@ internal static partial class Program
             File.AppendAllText(vm.Settings.Python,"changed executable");Check(await EnsureForCheck(vm)&&catalog.Calls==2,"Changing the Python executable invalidates the session verification fingerprint");
         }
         f=ReadinessFixture("readiness-settings-race");catalog=new(){IgnoreCancellation=true};
-        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform))
+        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             var oldCheck=vm.CheckAsync();await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Check(vm.IsChecking&&vm.SettingsCommand.CanExecute(null)&&vm.CanConfigureModels,"An explicit background environment check leaves settings and draft configuration interactive");
@@ -67,14 +67,14 @@ internal static partial class Program
             Check(!vm.Ready&&!vm.IsChecking&&vm.Settings.Python==changed.Python,"An old probe that ignores cancellation cannot overwrite a newer environment configuration");
         }
         f=ReadinessFixture("readiness-new-check-race");catalog=new(){IgnoreCancellation=true};
-        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform))
+        using(var vm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             var oldCheck=vm.CheckAsync();var changed=vm.Settings.Clone();changed.Python=Path.Combine(changed.Workspace,"new-check-python.exe");File.WriteAllText(changed.Python,"new check fixture");vm.ApplySettings(changed);
             var newCheck=vm.CheckAsync();Check(vm.IsChecking&&catalog.Calls==2,"A changed environment can start a new check while the old cancelled probe unwinds");
             catalog.Release.TrySetResult(true);await Cancelled(oldCheck);await newCheck;
             Check(vm.Ready&&!vm.IsChecking&&vm.Settings.Python==changed.Python,"A superseded check cannot clear or replace the newer check result");
         }
-        f=ReadinessFixture("readiness-dispose-race");catalog=new(){IgnoreCancellation=true};var disposedVm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform);
+        f=ReadinessFixture("readiness-dispose-race");catalog=new(){IgnoreCancellation=true};var disposedVm=new MainViewModel(f.Preferences,environmentCatalog:catalog,driverPlatform:f.Platform,modelDiscovery:new ModelDiscovery([],[]));
         var pendingCheck=disposedVm.CheckAsync();disposedVm.Dispose();catalog.Release.TrySetResult(true);await Cancelled(pendingCheck);
         Check(!disposedVm.Ready&&!disposedVm.IsChecking,"Closing the app cancels readiness and discards any late probe result");
     }

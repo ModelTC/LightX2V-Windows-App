@@ -3,7 +3,7 @@ namespace LightX2V.Windows;
 
 public sealed class SetupController : Observable,IDisposable
 {
-    readonly MainViewModel owner;readonly IEnvironmentCatalog catalog;bool computerScanned,environmentsSearched;CancellationTokenSource? cancel;Task? operation;bool busy,environmentReady;int page;string workspace,stage="",detail="",logs="",error="";double percent;EnvironmentCandidate? selected;bool mirror,useExisting;string backend;
+    readonly MainViewModel owner;readonly IEnvironmentCatalog catalog;readonly IModelDiscovery modelDiscovery;bool computerScanned,environmentsSearched;CancellationTokenSource? cancel;Task? operation;bool busy,environmentReady;int page;string workspace,stage="",detail="",logs="",error="";double percent;EnvironmentCandidate? selected;bool mirror,useExisting;string backend;
     CancellationTokenSource? searchCancellation;bool searchingEnvironments,environmentChoiceMade,disposed;readonly TimeSpan searchTimeout;
     public MainViewModel Owner=>owner;
     public L10n T=>owner.T;
@@ -18,11 +18,11 @@ public sealed class SetupController : Observable,IDisposable
     public bool ManagedSupported=>Hardware.Supports(Backend);
     public string HardwareLabel=>string.Join("\n",Hardware.All.Where(d=>d.Backend.Length>0).Select(d=>d.Name+" · "+d.Driver));
     public string ResourceLabel {get{try{var r=ResourceSnapshot.Read(Workspace);return $"{T["System memory"]} {r.TotalRam/1073741824.0:F1} GiB · {T["Free"]} {r.AvailableRam/1073741824.0:F1} GiB · {T["Disk"]} {r.DiskFree/1073741824.0:F1} GiB {T["Free"]}";}catch(Exception e){return e.Message;}}}
-    public int Page {get=>page;set{if(!Set(ref page,value))return;if(value!=1)StopEnvironmentSearch();if(value==3)Error="";Changed(nameof(PageTitle));}}
+    public int Page {get=>page;set{if(!Set(ref page,value))return;if(value!=1)StopEnvironmentSearch();if(value!=2)StopModelSearch();else if(!disposed)_=DiscoverModelsAsync();if(value==3)Error="";Changed(nameof(PageTitle));}}
     public string PageTitle=>T[Page==0?"Choose workspace":Page==1?"Prepare environment":Page==2?"Prepare models":"Setup complete"];
-    public string Workspace {get=>workspace;set{if(Driver?.Pending==true&&value!=workspace)return;if(value!=workspace){StopEnvironmentSearch();ClearPrepared();}Set(ref workspace,value);Changed(nameof(ResourceLabel));}}
+    public string Workspace {get=>workspace;set{if(Driver?.Pending==true&&value!=workspace)return;if(value!=workspace){StopEnvironmentSearch();StopModelSearch();ClearPrepared();}Set(ref workspace,value);Changed(nameof(ResourceLabel));}}
     public bool Mirror {get=>mirror;set=>Set(ref mirror,value);}
-    public bool UseExisting {get=>useExisting;set{if(!value&&SearchingEnvironments)environmentChoiceMade=true;Set(ref useExisting,value);}}
+    public bool UseExisting {get=>useExisting;set{Set(ref useExisting,value);}}
     public bool SearchingEnvironments {get=>searchingEnvironments;private set{Set(ref searchingEnvironments,value);Changed(nameof(EnvironmentSummary));}}
     public bool Busy {get=>busy;private set{Set(ref busy,value);owner.SetupStateChanged();Changed(nameof(CanContinue));}}
     public bool EnvironmentReady {get=>environmentReady;private set{Set(ref environmentReady,value);Changed(nameof(CanContinue));}}
@@ -34,14 +34,14 @@ public sealed class SetupController : Observable,IDisposable
     public double Percent {get=>percent;private set=>Set(ref percent,value);}
     public ObservableCollection<EnvironmentCandidate> Environments {get;}=[];
     public EnvironmentCandidate? Selected {get=>selected;set{Set(ref selected,value);if(value?.Ready==true){UseExisting=true;Driver?.ConfirmComputeReady();}}}
-    public SetupController(MainViewModel owner,IEnvironmentCatalog? catalog=null,DriverSetupModel? driver=null,IDriverPlatform? driverPlatform=null,TimeSpan? searchTimeout=null){this.catalog=catalog??new NativeEnvironmentCatalog();this.owner=owner;this.searchTimeout=searchTimeout??SetupDiscovery.EnvironmentSearchTimeout;workspace=owner.Settings.Workspace;backend=Backends.Resolve(owner.Settings.Backend,HardwareInfo.Read());Driver=driver??new(backend,()=>Workspace,T,driverPlatform,()=>owner.WorkspaceConfirmed);Driver.PropertyChanged+=DriverChanged;backend=Driver.Backend;if(Driver.Pending)page=1;Mirror=owner.T.Language=="zh";owner.T.PropertyChanged+=LanguageChanged;}
+    public SetupController(MainViewModel owner,IEnvironmentCatalog? catalog=null,DriverSetupModel? driver=null,IDriverPlatform? driverPlatform=null,TimeSpan? searchTimeout=null,IModelDiscovery? modelDiscovery=null){this.modelDiscovery=modelDiscovery??new ModelDiscovery();this.catalog=catalog??new NativeEnvironmentCatalog();this.owner=owner;this.searchTimeout=searchTimeout??SetupDiscovery.EnvironmentSearchTimeout;workspace=owner.Settings.Workspace;backend=Backends.Resolve(owner.Settings.Backend,HardwareInfo.Read());Driver=driver??new(backend,()=>Workspace,T,driverPlatform,()=>owner.WorkspaceConfirmed);Driver.PropertyChanged+=DriverChanged;backend=Driver.Backend;if(Driver.Pending)page=1;Mirror=owner.T.Language=="zh";owner.T.PropertyChanged+=LanguageChanged;}
     void DriverChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(HardwareLabel));Changed(nameof(ManagedSupported));Changed(nameof(BackendRecommendation));owner.SetupStateChanged();}
     void LanguageChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(PageTitle));Changed(nameof(Stage));Changed(nameof(ResourceLabel));Changed(nameof(EnvironmentSummary));Changed(nameof(BackendRecommendation));}
-    public void Restart(){DiscardImport();Backend=Backends.Resolve(owner.Settings.Backend,Hardware);Workspace=owner.Settings.Workspace;Page=0;Stage="";Detail="";Error="";Percent=0;EnvironmentReady=owner.Ready;ComputerScanned=false;environmentsSearched=false;Changed(nameof(EnvironmentSummary));}
-    void Progress(SetupProgress value){if(value.Stage.Length>0)Stage=value.Stage;Detail=value.Detail;Percent=value.Percent;if(value.Log!=null){Logs+=value.Log+System.Environment.NewLine;if(Logs.Length>40000)Logs=Logs[^30000..];}}
+    public void Restart(){StopModelSearch();Backend=Backends.Resolve(owner.Settings.Backend,Hardware);Workspace=owner.Settings.Workspace;Page=0;Stage="";Detail="";Error="";Percent=0;EnvironmentReady=owner.Ready;ComputerScanned=false;environmentsSearched=false;Changed(nameof(EnvironmentSummary));}
+    void Progress(SetupProgress value){if(value.Stage.Length>0)Stage=value.Stage;Detail=DownloadDisplay.Detail(T,value);Percent=value.Percent;if(value.Log!=null){Logs+=value.Log+System.Environment.NewLine;if(Logs.Length>40000)Logs=Logs[^30000..];}}
     async Task Execute(Func<CancellationToken,IProgress<SetupProgress>,Task> action)
     {
-        if(Busy||Driver.Busy||owner.IsChecking||owner.IsPreflighting)return;Error="";Busy=true;cancel=new();var progress=new Progress<SetupProgress>(Progress);
+        if(Busy||Driver.Busy||owner.IsChecking||owner.IsPreflighting)return;Error="";Busy=true;cancel=new();var source=cancel;var progress=new Progress<SetupProgress>(value=>{if(!disposed&&ReferenceEquals(cancel,source)&&!source.IsCancellationRequested)Progress(value);});
         try{operation=action(cancel.Token,progress);await operation;}
         catch(OperationCanceledException) when(cancel.IsCancellationRequested){Error=T["Setup cancelled; progress is saved"] ;Stage="Setup cancelled";}
         catch(Exception e){Logs+=e+System.Environment.NewLine;Error=FriendlySetupError(e.Message);Stage="Setup failed";}
@@ -55,34 +55,9 @@ public sealed class SetupController : Observable,IDisposable
         if(message==T["Complete the graphics software step first, then continue."])return message;
         return T["We could not finish preparing this computer. Check your internet connection and available disk space, then try again."];
     }
-    Preferences? imported;
-    public string ImportPreview {get;private set;}="";
-    public void DiscardImport()
-    {
-        if(imported is null)return;
-        imported=null;ImportPreview="";Workspace=owner.Settings.Workspace;Changed(nameof(ImportPreview));
-    }
-    public void PreviewImport(string file)
-    {
-        var value=StateStore.ReadPreferences(file);
-        if(!Path.IsPathFullyQualified(value.Settings.Workspace))throw new InvalidDataException("Choose an absolute workspace path.");
-        Workspace=value.Settings.Workspace;Backend=Backends.Resolve(value.Settings.Backend,Hardware);imported=value;
-        ImportPreview=string.Join("\n",new[]{file,value.Settings.Workspace,value.Settings.Python,value.Settings.Model,value.Settings.T2IDirectory,value.Settings.I2IDirectory}.Where(p=>p.Length>0));
-        Changed(nameof(ImportPreview));
-    }
     public AppSettings EnvironmentSettings()
     {
-        var settings=(imported?.Settings??owner.Settings).Clone();settings.Workspace=Workspace.Trim();settings.Backend=Backend;
-        if(Path.IsPathFullyQualified(Workspace)&&Path.IsPathFullyQualified((imported?.Settings??owner.Settings).Workspace)&&!settings.Workspace.Equals((imported?.Settings??owner.Settings).Workspace,StringComparison.OrdinalIgnoreCase))
-        {
-            var old=(imported?.Settings??owner.Settings).Workspace;var fresh=AppSettings.Fresh(settings.Workspace);
-            bool Managed(string path,string folder)=>Path.IsPathFullyQualified(path)&&AppMaintenance.Contains(Path.Combine(old,folder),path);
-            if(Managed(settings.Python,"environments"))settings.Python="";
-            if(Managed(settings.Repository,"runtimes"))settings.Repository="";
-            if(settings.Model.Length==0||Managed(settings.Model,"models"))settings.Model=fresh.Model;
-            if(settings.T2IDirectory.Length==0||Managed(settings.T2IDirectory,"models"))settings.T2IDirectory=fresh.T2IDirectory;
-            if(settings.I2IDirectory.Length==0||Managed(settings.I2IDirectory,"models"))settings.I2IDirectory=fresh.I2IDirectory;
-        }
+        var settings=owner.Settings.AtWorkspace(Workspace);settings.Backend=Backend;
         return settings;
     }
     public void ResumeModels(){Workspace=owner.Settings.Workspace;EnvironmentReady=true;Page=2;}
@@ -99,6 +74,7 @@ public sealed class SetupController : Observable,IDisposable
             }
             else{Page=1;await ScanComputerCore(token,progress);}
         });
+        if(Page==1&&ComputerScanned&&!Busy)_=SearchEnvironmentsCore();
     }
     public void AcceptCandidate(EnvironmentCandidate candidate)
     {
@@ -128,11 +104,11 @@ public sealed class SetupController : Observable,IDisposable
         StopEnvironmentSearch();
         if(Busy||Driver.Busy||!ComputerScanned||disposed)return;
         var settings=EnvironmentSettings();
-        if(Selected!=null)settings.Python=Selected.Path;
+
         var source=new CancellationTokenSource(searchTimeout);
         searchCancellation=source;
-        Environments.Clear();Selected=null;UseExisting=false;EnvironmentReady=false;
-        environmentChoiceMade=false;environmentsSearched=true;SearchingEnvironments=true;
+        Environments.Clear();selected=null;useExisting=false;EnvironmentReady=false;
+        environmentChoiceMade=false;Changed(nameof(Selected));Changed(nameof(UseExisting));environmentsSearched=true;SearchingEnvironments=true;
         Stage="Searching local environments";Detail="";Percent=0;Error="";
         bool Current()=>!disposed&&ReferenceEquals(searchCancellation,source)&&Backend==settings.Backend&&Workspace==settings.Workspace;
         void Publish(EnvironmentCandidate candidate)
@@ -140,7 +116,7 @@ public sealed class SetupController : Observable,IDisposable
             if(!Current())return;
             Upsert(candidate);
             if(!environmentChoiceMade&&candidate.Ready&&candidate.Backend==Backend&&
-                (Selected==null||candidate.Path.Equals(settings.Python,StringComparison.OrdinalIgnoreCase)))Selected=candidate;
+                (Selected==null||EnvironmentRank(candidate,settings)<EnvironmentRank(Selected,settings)||EnvironmentRank(candidate,settings)==EnvironmentRank(Selected,settings)&&string.Compare(candidate.Path,Selected.Path,StringComparison.OrdinalIgnoreCase)<0))Selected=candidate;
         }
         var progress=new Progress<SetupProgress>(value=>
         {
@@ -167,6 +143,8 @@ public sealed class SetupController : Observable,IDisposable
             source.Dispose();
         }
     }
+    public void ChooseAutomaticInstallation(){environmentChoiceMade=true;UseExisting=false;}
+    static int EnvironmentRank(EnvironmentCandidate candidate,AppSettings settings)=>candidate.Path.Equals(settings.Python,StringComparison.OrdinalIgnoreCase)?0:candidate.Path.Equals(SetupInstaller.ManagedPython(settings.Workspace,settings.Backend),StringComparison.OrdinalIgnoreCase)?1:2;
     public void StopEnvironmentSearch()
     {
         var source=searchCancellation;searchCancellation=null;
@@ -190,6 +168,7 @@ public sealed class SetupController : Observable,IDisposable
     {
         StopEnvironmentSearch();
         await Execute(async(token,progress)=>{EnvironmentSettings().ValidateWorkspace();await ScanComputerCore(token,progress);});
+        if(ComputerScanned&&!Busy)_=SearchEnvironmentsCore();
     }
     public async Task SearchEnvironmentsAsync()
     {
@@ -206,8 +185,9 @@ public sealed class SetupController : Observable,IDisposable
     {
         await Execute(async(token,progress)=>{
             var settings=EnvironmentSettings();settings.ValidateWorkspace();Workspace=settings.Workspace;
-            if(commit){owner.CommitSetup(settings);if(imported is {} saved){owner.SetLanguage(saved.Language);imported=null;ImportPreview="";Changed(nameof(ImportPreview));}}Driver.RestoreWorkspace();backend=Driver.Backend;Changed(nameof(Backend));Page=1;await ScanComputerCore(token,progress);
+            if(commit)owner.CommitSetup(settings);Driver.RestoreWorkspace();backend=Driver.Backend;Changed(nameof(Backend));Page=1;await ScanComputerCore(token,progress);
         });
+        if(ComputerScanned&&Page==1&&!Busy)_=SearchEnvironmentsCore();
     }
     void ClearPrepared(){PreparedSettings=null;PreparedEnvironment=null;EnvironmentReady=false;}
     public AppSettings? PreparedSettings {get;private set;}
@@ -235,24 +215,72 @@ public sealed class SetupController : Observable,IDisposable
             progress.Report(new("Preparing LightX2V source"));settings.Repository=await SetupInstaller.PrepareSource(settings.Workspace,token);token.ThrowIfCancellationRequested();
             settings.Backend=probe.Backend;PreparedSettings=settings.Clone();PreparedEnvironment=probe;
             if(commit)owner.CommitVerifiedEnvironment(settings,probe);
-            EnvironmentReady=true;Stage="Environment ready";Percent=100;Page=2;
+            EnvironmentReady=true;Stage="Environment ready";Percent=100;if(commit)Page=2;
         });
     }
-    async Task DiscoverModelsCore(CancellationToken token,IProgress<SetupProgress> progress)
+    internal void ConfigurationCommitted()
     {
-        progress.Report(new("Searching local models"));var paths=await Task.Run(()=>SetupDiscovery.Models(owner.Settings,token),token);
-        foreach(var card in owner.ModelCards)if(paths.TryGetValue(card.Key,out var path))card.Path=path;
-        if(!owner.Ready)await owner.CheckAsync(token);Stage="Model discovery complete";Changed(nameof(CanContinue));
+        // A wizard commit already owns its preparation state. Settings commits synchronize only after saving.
+        if(Busy)return;
+        StopEnvironmentSearch();Workspace=owner.Settings.Workspace;Backend=Backends.Resolve(owner.Settings.Backend,Hardware);
     }
-    public async Task DiscoverModelsAsync()=>await Execute(DiscoverModelsCore);
+    public EnvironmentSelectionModel CreateEnvironmentSelection(AppSettings draft)=>new(draft,T,catalog:catalog);
+    public async Task<(AppSettings Settings,EnvironmentCandidate Candidate)> VerifyDraftAsync(AppSettings draft,CancellationToken token=default)
+    {
+        var settings=owner.Settings.AtWorkspace(draft.Workspace);settings.Python=draft.Python;settings.Backend=draft.Backend;settings.ValidateEnvironment();
+        var probe=await catalog.Probe(settings.Python,settings.Workspace,token,settings.Backend).WaitAsync(token);
+        if(!probe.Ready||settings.Backend!="auto"&&probe.Backend!=settings.Backend)throw new InvalidOperationException(probe.Detail);
+        token.ThrowIfCancellationRequested();settings.Backend=probe.Backend;
+        settings.Repository=await SetupInstaller.PrepareSource(settings.Workspace,token);
+        return(settings,probe);
+    }
+    CancellationTokenSource? modelSearch;
+    bool searchingModels;
+    string modelSearchStatus="";
+    public bool SearchingModels {get=>searchingModels;private set=>Set(ref searchingModels,value);}
+    public string ModelSearchStatus {get=>modelSearchStatus;private set=>Set(ref modelSearchStatus,value);}
+    public void StopModelSearch()
+    {
+        var old=modelSearch;modelSearch=null;old?.Cancel();SearchingModels=false;
+    }
+    public async Task DiscoverModelsAsync()
+    {
+        StopModelSearch();
+        if(disposed||Page!=2||owner.IsDownloading)return;
+        var source=new CancellationTokenSource();modelSearch=source;
+        var settings=owner.Settings.Clone();var revisions=owner.ModelCards.ToDictionary(c=>c.Key,c=>c.PathRevision);
+        SearchingModels=true;ModelSearchStatus=T["Searching local models"];
+        bool Current()=>!disposed&&ReferenceEquals(modelSearch,source)&&Page==2&&owner.Settings.Workspace==settings.Workspace&&!owner.IsDownloading;
+        var progress=new Progress<ModelSearchProgress>(value=>
+        {
+            if(!Current())return;
+            if(value.Candidate is {} found)
+            {
+                var card=owner.ModelCards.Single(c=>c.Key==found.Key);
+                if(found.Ready&&card.PathRevision==revisions[card.Key])
+                {
+                    card.ApplyDiscoveredPath(found.Path);Changed(nameof(CanContinue));
+                }
+            }
+            ModelSearchStatus=T[value.Stage]+(value.Skipped>0?" · "+T["Some locations could not be searched"]:"");
+        });
+        try
+        {
+            var result=await modelDiscovery.SearchAsync(settings,progress,source.Token).WaitAsync(source.Token);
+            if(!Current())return;
+            ModelSearchStatus=T[result.Candidates.Any(c=>c.Ready)?"Usable models found":result.Skipped>0?"Search finished with inaccessible locations":result.Candidates.Count>0?"Only incomplete models found":"Search complete; no usable models found"];
+        }
+        catch(OperationCanceledException) when(source.IsCancellationRequested){}
+        finally{if(Current()){modelSearch=null;SearchingModels=false;}source.Dispose();}
+    }
     public async Task DownloadModelsAsync()
     {
-        if(Busy||owner.IsDownloading||!owner.CanConfigureModels)return;Error="";Stage="Downloading required models";
+        if(Busy||owner.IsDownloading||!owner.CanConfigureModels)return;StopModelSearch();Error="";Stage="Downloading required models";
         try{var done=await owner.DownloadRequiredModelsAsync();Stage=done?"All required files are ready":"Download stopped; downloaded files are kept";Changed(nameof(CanContinue));if(!done)Error=owner.Toast;}
         catch(Exception e){Error=e.Message;}
     }
-    public async Task CancelAsync(){StopEnvironmentSearch();cancel?.Cancel();await Driver.CancelAsync();if(operation!=null)try{await operation;}catch{}if(owner.IsDownloading)await owner.StopModelDownloadAsync();if(owner.IsGenerationBusy)await owner.StopAsync();}
-    public void Dispose(){disposed=true;StopEnvironmentSearch();cancel?.Cancel();Driver.PropertyChanged-=DriverChanged;Driver.Dispose();owner.T.PropertyChanged-=LanguageChanged;}
+    public async Task CancelAsync(){StopEnvironmentSearch();StopModelSearch();cancel?.Cancel();await Driver.CancelAsync();if(operation!=null)try{await operation;}catch{}if(owner.IsDownloading)await owner.StopModelDownloadAsync();if(owner.IsGenerationBusy)await owner.StopAsync();}
+    public void Dispose(){disposed=true;StopEnvironmentSearch();StopModelSearch();cancel?.Cancel();Driver.PropertyChanged-=DriverChanged;Driver.Dispose();owner.T.PropertyChanged-=LanguageChanged;}
 }
 
 public sealed partial class MainViewModel
@@ -260,7 +288,7 @@ public sealed partial class MainViewModel
     public SetupController Setup {get;private set;}=null!;
     public bool IsPreparingSetup=>Setup?.Busy==true||Setup?.Driver.Busy==true;
     public Action? RequestSetup;
-    void InitializeSetup(IEnvironmentCatalog? catalog=null,IDriverPlatform? driverPlatform=null)=>Setup=new(this,catalog,driverPlatform:driverPlatform);
+    void InitializeSetup(IEnvironmentCatalog? catalog=null,IDriverPlatform? driverPlatform=null,IModelDiscovery? modelDiscovery=null)=>Setup=new(this,catalog,driverPlatform:driverPlatform,modelDiscovery:modelDiscovery);
     internal void SetupStateChanged(){RefreshStatus();Changed(nameof(IsPreparingSetup));}
     internal void CommitSetup(AppSettings value)
     {
@@ -269,7 +297,7 @@ public sealed partial class MainViewModel
         var history=reload?StateStore.LoadHistory(value.Workspace):null;
         if(changed)Persist();InvalidateEnvironment();workspaceSelected=true;Settings=value.Clone();SavePreferences();
         if(reload){all.Clear();InputImages.Clear();Prompt="";LoadWorkspace(history);}
-        ReloadModelPaths();Changed(nameof(Settings));Changed(nameof(NeedsInitialSetup));
+        ReloadModelPaths();Setup.ConfigurationCommitted();Changed(nameof(Settings));Changed(nameof(NeedsInitialSetup));
     }
     public Task<bool> DownloadRequiredModelsAsync()=>StartRequiredModelDownloads();
     void DisposeSetup()=>Setup?.Dispose();

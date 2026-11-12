@@ -55,14 +55,11 @@ internal static partial class Program
         File.Delete(shardIndex);
 
         var downloads = new FakeModelDownloader();
-        using var vm = new MainViewModel(fixture.Preferences, downloads, driverPlatform: fixture.Platform);
+        using var vm = new MainViewModel(fixture.Preferences, downloads, driverPlatform: fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));
         vm.Prompt = "A basic image after model repair";
         vm.Setup.Page = 2;
-        var wizard = vm.CreateModelGuide(vm.TurboCard);
-        await Render(wizard, 760, 700, "models-check-and-repair");
-        var repair = Children<Button>((DependencyObject)wizard.Content).Single(button => AutomationProperties.GetAutomationId(button) == "GuideCheckRepair");
-        Check(vm.TurboCard.Ready && !vm.TurboCard.DownloadCommand.CanExecute(null) && repair.IsEnabled, "Ready model cards expose an explicit check-and-repair action without enabling redundant ordinary downloads");
-        repair.Command.Execute(null);
+        Check(vm.TurboCard.Ready && !vm.TurboCard.DownloadCommand.CanExecute(null) && vm.TurboCard.RepairCommand.CanExecute(null), "A ready model supports explicit integrity repair without offering a redundant download");
+        vm.TurboCard.RepairCommand.Execute(null);
         await UntilDownloadIdle(vm);
         Check(downloads.Requests.Count == 1 && vm.TurboCard.Ready, "Explicit repair reaches the downloader even when lightweight startup validation already passed");
         File.Delete(Path.Combine(model, "processor", "tokenizer.json"));
@@ -70,6 +67,6 @@ internal static partial class Program
         Check(!vm.TurboCard.Ready && !vm.CanGenerate && !vm.Setup.CanContinue, "Rechecking a model with a missing tokenizer blocks generation and setup completion");
         await vm.RepairModelAsync("turbo");
         Check(downloads.Requests.Count == 2 && vm.TurboCard.Ready && vm.CanGenerate && vm.Setup.CanContinue, "Repairing a missing tokenizer restores model readiness and ordinary generation");
-        wizard.Close();
+        vm.Setup.StopModelSearch();
     }
 }

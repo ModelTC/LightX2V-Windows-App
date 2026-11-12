@@ -32,17 +32,17 @@ internal static partial class Program
     static async Task StartupChecks()
     {
         var fixture=StartupFixture("startup-install-cuda");var downloads=new FakeModelDownloader{Hold="turbo",EtaSeconds=120};
-        using(var vm=new MainViewModel(fixture.Preferences,downloads,fixture.Catalog,fixture.Platform))
+        using(var vm=new MainViewModel(fixture.Preferences,downloads,fixture.Catalog,fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             Check(vm.UseAutomaticDownloadSource&&!vm.UseHuggingFace&&!vm.UseModelScope&&vm.Settings.DownloadSource=="auto","A fresh workspace defaults to automatic model-download source selection");
             vm.Prompt="保留我的创作草稿";var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();var wizard=host.Wizard!;
             Check(host.SetupShows==1&&host.WorkspaceShows==0&&!startup.IsCompleted,"A fresh install opens only setup; the workspace is not constructed before setup finishes");
             Check(wizard.Owner==null&&wizard.ShowInTaskbar&&wizard.WindowStartupLocation==WindowStartupLocation.CenterScreen&&wizard.ResizeMode==ResizeMode.CanResize,"Initial setup is an independent taskbar window with normal minimize/maximize controls and no modal workspace owner");
-            await vm.Setup.BeginWorkspaceAsync();Check(vm.Setup.Environments.Count==0&&fixture.Catalog.SearchCalls==0,"Continuing from save location does not search or adopt an existing environment");
+            await vm.Setup.BeginWorkspaceAsync();await WaitForSearch(vm.Setup);Check(fixture.Catalog.SearchCalls==1,"Continuing from save location automatically searches compatible environments");
             await vm.Setup.PrepareEnvironmentAsync(true);
             Check(vm.Setup.Error==""&&vm.Ready&&vm.Setup.EnvironmentReady&&vm.Setup.Page==2,"Automatic CUDA preparation verifies and advances directly to model preparation without a manual rescan");
             Check(vm.Setup.Environments.Single().Ready&&vm.Setup.Selected==vm.Setup.Environments[0]&&vm.Setup.UseExisting&&vm.Setup.EnvironmentSummary.Contains("1"),"A newly installed environment immediately updates the list, count and selected environment");
-            Check(fixture.Catalog.InstallCalls==1&&fixture.Catalog.InstalledProbeCalls==1&&fixture.Catalog.ProbeCalls==0&&fixture.Catalog.SearchCalls==0,"Installation uses one post-install GPU probe, with no duplicate connection probe or second environment search");
+            Check(fixture.Catalog.InstallCalls==1&&fixture.Catalog.InstalledProbeCalls==1&&fixture.Catalog.ProbeCalls==0&&fixture.Catalog.SearchCalls==1,"Installation uses one post-install GPU probe, with no duplicate connection probe or second environment search");
             Check(vm.Settings.Python==fixture.Catalog.InstallResult&&Files.Read<Preferences>(Path.Combine(fixture.Preferences,"preferences.json"))!.Settings.Python==fixture.Catalog.InstallResult,"The verified Python path is saved before continuing");
             vm.T2ICard.Path=fixture.Settings.T2IDirectory;vm.I2ICard.Path=fixture.Settings.I2IDirectory;
             vm.EnhancementEnabled=true;
@@ -84,13 +84,13 @@ internal static partial class Program
             Check(vm.CanGenerate&&!vm.T2ICard.Ready&&!vm.I2ICard.Ready,"The completed base-model setup permits ordinary generation with both optional models absent");
         }
         fixture=StartupFixture("startup-install-amd","amd_rocm");
-        using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform))
+        using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             await vm.Setup.BeginWorkspaceAsync();await vm.Setup.PrepareEnvironmentAsync(true);
-            Check(vm.Ready&&vm.Setup.Page==2&&vm.Setup.Selected?.Backend=="amd_rocm"&&fixture.Catalog.SearchCalls==0&&fixture.Catalog.InstalledProbeCalls==1,"AMD preparation also publishes and selects its verified environment without another search");
+            Check(vm.Ready&&vm.Setup.Page==2&&vm.Setup.Selected?.Backend=="amd_rocm"&&fixture.Catalog.SearchCalls==1&&fixture.Catalog.InstalledProbeCalls==1,"AMD preparation also publishes and selects its verified environment without another search");
         }
         fixture=StartupFixture("startup-cancel-probe");fixture.Catalog.DelayProbe=true;
-        using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform))
+        using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             await vm.Setup.BeginWorkspaceAsync();var preparing=vm.Setup.PrepareEnvironmentAsync(true);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Check(vm.Setup.Busy&&fixture.Catalog.InstalledProbeCalls==1,"Post-install checking remains cancellable while the new GPU environment initializes");await vm.Setup.CancelAsync();await preparing;
@@ -99,11 +99,11 @@ internal static partial class Program
         foreach(var wrongBackend in new[]{false,true})
         {
             fixture=StartupFixture(wrongBackend?"startup-wrong-backend":"startup-failed-probe");fixture.Catalog.ProbeResult=fixture.Catalog.ProbeResult! with{Ready=wrongBackend,Backend=wrongBackend?"amd_rocm":"cuda",Detail="Probe fixture did not pass"};
-            using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform);await vm.Setup.BeginWorkspaceAsync();await vm.Setup.PrepareEnvironmentAsync(true);
+            using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));await vm.Setup.BeginWorkspaceAsync();await vm.Setup.PrepareEnvironmentAsync(true);
             Check(!vm.Ready&&!vm.Setup.EnvironmentReady&&vm.Setup.Page==1&&vm.Setup.Error.Length>0&&vm.Settings.Python=="",wrongBackend?"A probe for another backend cannot mark CUDA setup complete":"A failed GPU check is shown inline and cannot mark installation as usable");
         }
         fixture=StartupFixture("startup-close-setup");
-        using(var vm=new MainViewModel(fixture.Preferences))
+        using(var vm=new MainViewModel(fixture.Preferences,modelDiscovery:new ModelDiscovery([],[])))
         {
             var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();host.Wizard!.Close();await startup;
             Check(host.WorkspaceShows==0&&host.Exits==1&&!host.Wizard.Completed,"Closing first-time setup exits the app instead of revealing an unconfigured workspace");
@@ -115,12 +115,12 @@ internal static partial class Program
             Check(pickerModel.Error==""&&pickerModel.Candidates.Single().Ready&&pickerModel.Selected==pickerModel.Candidates[0]&&pickerModel.Summary.Contains("1")&&fixture.Catalog.SearchCalls==1,"The settings environment picker also shows and selects a newly installed CUDA environment without another search");
         }
         fixture=StartupFixture("startup-resume-models");fixture.Settings.Python=fixture.Catalog.InstallResult;Files.Write(Path.Combine(fixture.Preferences,"preferences.json"),new Preferences{Settings=fixture.Settings});
-        using(var vm=new MainViewModel(fixture.Preferences))
+        using(var vm=new MainViewModel(fixture.Preferences,modelDiscovery:new ModelDiscovery([],[])))
         {
             var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();Check(!vm.NeedsInitialSetup&&!vm.RequiredModelsReady&&host.SetupShows==1&&host.WorkspaceShows==0,"Restarting after environment installation still shows only setup while model files are missing");host.Wizard!.Close();await startup;
         }
         TinyTurbo(fixture.Settings.Model);fixture.Settings.EnhancementEnabled=true;Files.Write(Path.Combine(fixture.Preferences,"preferences.json"),new Preferences{Settings=fixture.Settings});
-        using(var vm=new MainViewModel(fixture.Preferences))
+        using(var vm=new MainViewModel(fixture.Preferences,modelDiscovery:new ModelDiscovery([],[])))
         {
             var host=new StartupHost();await new StartupCoordinator(vm,host).StartAsync();Check(host.SetupShows==0&&host.WorkspaceShows==1&&vm.EnhancementEnabled&&!vm.T2ICard.Ready&&!vm.I2ICard.Ready,"A saved workspace with the base model opens directly even when its enabled optional enhancement models are missing");
         }
@@ -133,13 +133,13 @@ internal static partial class Program
     static async Task DownloadSourcePreferenceChecks()
     {
         var fixture=StartupFixture("download-source-preferences");
-        using var vm=new MainViewModel(fixture.Preferences);
+        using var vm=new MainViewModel(fixture.Preferences,modelDiscovery:new ModelDiscovery([],[]));
         foreach(var source in new[]{"huggingFace","modelScope","auto"})
         {
             if(source=="huggingFace")vm.UseHuggingFace=true;
             else if(source=="modelScope")vm.UseModelScope=true;
             else vm.UseAutomaticDownloadSource=true;
-            using var restored=new MainViewModel(fixture.Preferences);
+            using var restored=new MainViewModel(fixture.Preferences,modelDiscovery:new ModelDiscovery([],[]));
             Check(restored.Settings.DownloadSource==source&&restored.UseHuggingFace==(source=="huggingFace")&&restored.UseModelScope==(source=="modelScope")&&restored.UseAutomaticDownloadSource==(source=="auto"),"The selected download source survives reopening preferences without changing an explicit choice: "+source);
         }
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
@@ -148,7 +148,7 @@ internal static partial class Program
     static async Task OptionalModelDownloadChecks()
     {
         var fixture=ReadinessFixture("optional-model-download");var catalog=new ReadinessCatalog();var downloads=new FakeModelDownloader{Hold="t2i",EtaSeconds=120};
-        using var vm=new MainViewModel(fixture.Preferences,downloads,catalog,fixture.Platform);
+        using var vm=new MainViewModel(fixture.Preferences,downloads,catalog,fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));
         vm.Prompt="An ordinary image while optional files download";vm.Tier=0;vm.Ratio="1:1";
         Check(!vm.EnhancementEnabled&&vm.T2ICard.DownloadCommand.CanExecute(null)&&vm.I2ICard.DownloadCommand.CanExecute(null),"Both enhancement model cards offer independent downloads before enhancement is enabled");
         var window=new MainWindow(vm);await Render(window,1280,820,"optional-models-sidebar");
@@ -164,13 +164,10 @@ internal static partial class Program
         var etaLine=DownloadEtaLine(window,vm.T2ICard);
         Check(vm.T2ICard.DownloadEta=="预计还需约 2 分钟"&&etaLine.Text==vm.T2ICard.DownloadEta,"The right sidebar displays the optional model's remaining-time estimate in Chinese");
         new System.Windows.Interop.WindowInteropHelper(window).EnsureHandle();
-        var guide=vm.CreateModelGuide(vm.T2ICard);await Render(guide,600,490,"optional-model-guide-eta-zh");
-        var guideEtaLine=Children<TextBlock>((DependencyObject)guide.Content).Single(t=>AutomationProperties.GetAutomationId(t)=="ModelGuideDownloadEta");
-        Check(guideEtaLine.Text=="预计还需约 2 分钟"&&downloads.Requests.Count==1,"Opening the download guide shows the active model's Chinese estimate without starting another download");
+        var guide=vm.CreateModelGuide(vm.T2ICard,t2iDownload);
+        Check(!Children<TextBlock>((DependencyObject)guide.Child).Any(t=>AutomationProperties.GetAutomationId(t)=="ModelGuideDownloadEta")&&downloads.Requests.Count==1,"Opening a model guide neither repeats download status nor starts a download");
         vm.SetLanguage("en");await Render(window,1280,820,"optional-model-download-eta-en");
         Check(vm.T2ICard.DownloadEta=="About 2 min remaining"&&etaLine.Text==vm.T2ICard.DownloadEta,"The right sidebar updates an active remaining-time estimate to English");
-        await Render(guide,600,490,"optional-model-guide-eta-en");
-        Check(guideEtaLine.Text=="About 2 min remaining"&&downloads.Requests.Count==1,"The download guide updates the existing download estimate when switching to English");guide.Close();
         foreach(var (seconds,text) in new (double Seconds,string Text)[]
         {
             (59,"Less than a minute remaining"),

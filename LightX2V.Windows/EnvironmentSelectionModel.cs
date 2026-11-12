@@ -67,7 +67,7 @@ public sealed class EnvironmentSelectionModel : Observable,IDisposable
         if(Busy||disposed)return Task.CompletedTask;
         Installing=install;Busy=true;Error="";Detail="";Percent=0;stage=install?"Preparing your environment":"Searching local environments";Changed(nameof(Stage));
         var source=new CancellationTokenSource();cancel=source;
-        var progress=new Progress<SetupProgress>(p=>{if(disposed||cancel!=source||!Busy)return;stage=p.Stage;Changed(nameof(Stage));Detail=p.Detail;Percent=p.Percent;});
+        var progress=new Progress<SetupProgress>(p=>{if(disposed||cancel!=source||!Busy)return;stage=p.Stage;Changed(nameof(Stage));Detail=DownloadDisplay.Detail(T,p);Percent=p.Percent;});
         return operation=Run(action,source,progress);
     }
     async Task Run(Func<CancellationToken,IProgress<SetupProgress>,Task> action,CancellationTokenSource source,IProgress<SetupProgress> progress)

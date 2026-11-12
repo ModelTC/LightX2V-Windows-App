@@ -18,18 +18,23 @@ public sealed class ModelCard : Observable
     public string Title => owner.T[title];
     public string DisplayTitle=>Key=="turbo"?Title:Key=="t2i"?"PE-T2I":"PE-I2I";
     public string Repository { get; }
+    public long PathRevision {get;private set;}
     public string Path
     {
         get => path;
         set
         {
             var normalized = value?.Trim() ?? "";
-            if (Set(ref path, normalized)) owner.SetModelPath(this, normalized);
+            if (Set(ref path, normalized)){PathRevision++;owner.SetModelPath(this, normalized);}
         }
+    }
+    internal void ApplyDiscoveredPath(string value)
+    {
+        if(Set(ref path,value,nameof(Path)))owner.SetModelPath(this,value);
     }
     internal void AssignPath(string value)
     {
-        path = value;
+        PathRevision++;path = value;
         Changed(nameof(Path));
     }
     public bool Ready
@@ -60,12 +65,7 @@ public sealed class ModelCard : Observable
         get
         {
             if (!IsDownloading || downloadPhase != "downloading") return "";
-            if (etaSeconds is not double seconds || !double.IsFinite(seconds) || seconds < 0)
-                return owner.T["Estimating remaining time…"];
-            if (seconds < 60) return owner.T["Less than a minute remaining"];
-            var minutes = Math.Ceiling(seconds / 60);
-            if (minutes < 60) return string.Format(owner.T["About {0} min remaining"], minutes);
-            return string.Format(owner.T["About {0} h {1} min remaining"], Math.Floor(minutes / 60), minutes % 60);
+            return DownloadDisplay.Remaining(owner.T,etaSeconds);
         }
     }
     internal void UpdateDownloadEstimate(string phase, double? seconds = null)
@@ -80,7 +80,7 @@ public sealed class ModelCard : Observable
     public bool CanRepair => owner.CanConfigureModels && !owner.IsChecking;
     public Command ChooseCommand { get; }
     public Command DownloadCommand { get; }
-    public Command GuideCommand { get; }
+    public ParameterCommand GuideCommand { get; }
     public Command StatusCommand { get; }
     public Command RepairCommand { get; }
     public ModelCard(MainViewModel owner, string key, string title, string repository)
@@ -92,14 +92,14 @@ public sealed class ModelCard : Observable
         ChooseCommand = new(() =>
         {
             var dialog = new OpenFolderDialog { Title = owner.T["Choose"] + " " + Title };
-            if (dialog.ShowDialog() == true) Path = dialog.FolderName;
+            if (dialog.ShowDialog() == true){PathRevision++;Path = dialog.FolderName;}
         }, () => CanChoose);
         DownloadCommand = new(() =>
         {
             if (IsDownloading) _ = owner.StopModelDownloadAsync();
             else _ = owner.DownloadModelAsync(Key);
         }, () => CanDownload);
-        GuideCommand = new(() => owner.ShowModelGuide(this));
+        GuideCommand = new(anchor => {if(anchor is FrameworkElement element)owner.ShowModelGuide(this,element);});
         StatusCommand = new(() => owner.RecheckModel(this), () => !owner.IsDownloading && !owner.IsGenerationBusy);
         RepairCommand = new(() => _ = owner.RepairModelAsync(Key), () => CanRepair);
     }
@@ -346,6 +346,7 @@ public sealed partial class MainViewModel
                 }
                 ModelStateChanged();
             });
+            Setup.StopModelSearch();
             var request = new ModelDownloadRequest(card.Key, UseAutomaticDownloadSource ? "auto" : Settings.DownloadSource, card.Path, Settings.Python, Settings.Workspace);
             var result = await modelDownloader.DownloadAsync(request, progress, token);
             if (token.IsCancellationRequested || result.Cancelled)
