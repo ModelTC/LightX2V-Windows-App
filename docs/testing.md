@@ -30,7 +30,7 @@ Omitting the mode also runs `core`. The optional `startup` mode runs only startu
 From an interactive Windows session with the app closed, check an extracted package:
 
 ```powershell
-.\scripts\check_packaged_app.ps1 -Executable C:\Apps\LightX2V\LightX2V.Windows.exe -Report C:\LightX2V-QA\package-startup
+.\scripts\check_packaged_app.ps1 -Executable C:\Apps\LightX2V\LightX2V.exe -Report C:\LightX2V-QA\package-startup
 ```
 
 This check launches the packaged EXE using its bundled .NET runtime, accepts either the first-run wizard or a configured workspace, writes a UI startup report, and closes its own process. Validate image generation separately on the target hardware.
@@ -69,3 +69,5 @@ Only use isolated disposable fixtures for uninstall: each group, unchecked data 
 Run behavioral suites locally; CI retains compilation/package/publishing gates without installing behavioral test dependencies. First Stable is gated on completing this hardware matrix. RTX results are user-assisted and remain pending until provided.
 
 The `native` SetupUiChecks mode uses `LIGHTX2V_QA_NATIVE_SETTINGS` for existing read-only model/environment paths and requires an isolated workspace inside its fresh report directory. It runs actual app text-to-image and eight-reference editing. The `maintenance` mode must run alongside a complete verified portable payload; its caller checks exact removal, retained files and helper cleanup after the test process exits. Never point these fixtures at user data. `LIGHTX2V_QA_PYTHON` enables the real Python importer checks in core mode.
+
+For the public native launcher, run `scripts/check_launcher.ps1 -Executable <package>\LightX2V.exe -Report <fresh-report>`. It compiles an independent native child probe and checks Unicode/spaces, an empty argument, embedded quotes, a trailing slash and launcher exit. Keep this behavior check local, outside CI.

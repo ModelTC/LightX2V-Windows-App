@@ -17,7 +17,7 @@
 
 ## 从源码构建
 
-在 Windows x64 安装 .NET SDK 10.0.403 和 Python 3.12，然后运行：
+在 Windows x64 安装 .NET SDK 10.0.403、Python 3.12，以及带 Windows SDK 的 Visual Studio C++ x64 Build Tools，然后运行：
 
 ```powershell
 git clone https://github.com/ModelTC/LightX2V-Windows-App.git

@@ -4,7 +4,7 @@ namespace LightX2V.Windows;
 public sealed record DriverHelpProgress(string Backend,DateTimeOffset StartedAt);
 public sealed class DriverSetupModel : Observable,IDisposable
 {
-    readonly Func<string> workspace;readonly IDriverPlatform platform;CancellationTokenSource? cancellation;Task? operation;bool disposed,busy;string backend;
+    readonly Func<string> workspace;readonly Func<bool> canRestore;readonly IDriverPlatform platform;CancellationTokenSource? cancellation;Task? operation;bool disposed,busy;string backend;
     string messageKey="Checking your graphics software",error="",detail="";double percent;
     public L10n T {get;}
     public HardwareInfo Hardware {get;private set;}=HardwareInfo.Read();
@@ -21,9 +21,15 @@ public sealed class DriverSetupModel : Observable,IDisposable
     public string Message=>T[messageKey];public string Error=>T[error];public string Detail=>detail;public double Percent=>percent;
     public string Status=>T[Busy?"Working":Pending?"Finish the official installer":CanContinue?"Ready to continue":"Action needed"];
     string Marker=>Path.Combine(workspace(),"setup","driver-help.json");
-    public DriverSetupModel(string backend,Func<string> workspace,L10n language,IDriverPlatform? platform=null)
-    {this.backend=backend;this.workspace=workspace;T=language;this.platform=platform??new NativeDriverPlatform();try{var saved=File.Exists(Marker)?Files.Read<DriverHelpProgress>(Marker):null;if(saved?.Backend is "cuda" or "amd_rocm")this.backend=saved.Backend;}catch{}Restore();T.PropertyChanged+=LanguageChanged;}
-    void Restore(){try{Pending=File.Exists(Marker)&&Files.Read<DriverHelpProgress>(Marker)?.Backend==Backend;}catch{Pending=false;}}
+    public DriverSetupModel(string backend,Func<string> workspace,L10n language,IDriverPlatform? platform=null,Func<bool>? canRestore=null)
+    {this.canRestore=canRestore??(()=>true);this.backend=backend;this.workspace=workspace;T=language;this.platform=platform??new NativeDriverPlatform();RestoreWorkspace();T.PropertyChanged+=LanguageChanged;}
+    public void RestoreWorkspace()
+    {
+        if(Busy)return;Pending=false;
+        if(canRestore())try{var saved=File.Exists(Marker)?Files.Read<DriverHelpProgress>(Marker):null;if(saved?.Backend is "cuda" or "amd_rocm")backend=saved.Backend;}catch{}
+        Restore();Notify();
+    }
+    void Restore(){if(!canRestore()){Pending=false;return;}try{Pending=File.Exists(Marker)&&Files.Read<DriverHelpProgress>(Marker)?.Backend==Backend;}catch{Pending=false;}}
     void ClearPending(){if(File.Exists(Marker))File.Delete(Marker);Pending=false;}
     void LanguageChanged(object? sender,PropertyChangedEventArgs e)=>Notify();
     void Notify(){foreach(var name in new[]{nameof(CanContinue),nameof(CanDownload),nameof(NeedsHelp),nameof(Checked),nameof(Pending),nameof(Message),nameof(Error),nameof(Detail),nameof(Percent),nameof(Status),nameof(DeviceName),nameof(Vendor)})Changed(name);}

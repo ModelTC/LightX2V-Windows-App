@@ -40,7 +40,7 @@ internal static partial class Program
             var fixture=StartupFixture(changeExecutable?"incremental-environment-changed":"incremental-environment-selected");
             var first=StampedCandidate(fixture.Catalog.InstallResult,"cuda");var catalog=new IncrementalCatalog(first);
             using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:catalog,driverPlatform:fixture.Platform);
-            var scanning=vm.Setup.BeginWorkspaceAsync();
+            await vm.Setup.BeginWorkspaceAsync();var scanning=vm.Setup.SearchEnvironmentsAsync();
             await catalog.Searching.Task.WaitAsync(TimeSpan.FromSeconds(5));await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Check(vm.Setup.SearchingEnvironments&&!vm.Setup.Busy&&vm.Setup.Environments.Contains(first),"A compatible environment is published while other discovery checks are still running");
             vm.Setup.AcceptCandidate(first);
@@ -59,7 +59,7 @@ internal static partial class Program
         using(var vm=new MainViewModel(bounded.Preferences,driverPlatform:bounded.Platform))
         using(var setup=new SetupController(vm,timedCatalog,driverPlatform:bounded.Platform,searchTimeout:TimeSpan.FromMilliseconds(150)))
         {
-            var watch=Stopwatch.StartNew();await setup.ScanComputerAsync();
+            var watch=Stopwatch.StartNew();await setup.SearchEnvironmentsAsync();
             Check(watch.Elapsed<TimeSpan.FromSeconds(5)&&!setup.Busy&&!setup.SearchingEnvironments&&setup.Environments.Count==1,
                 "The total search budget returns usable results even if a discovery service ignores cancellation");
             timedCatalog.Release.TrySetResult(true);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);

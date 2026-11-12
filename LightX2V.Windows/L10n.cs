@@ -12,6 +12,7 @@ public sealed class L10n : Observable
     public string this[string key] => Language == "zh" ? Chinese.GetValueOrDefault(key, DriverStrings.Chinese.GetValueOrDefault(key, SetupStrings.Chinese.GetValueOrDefault(key,key))) : English.GetValueOrDefault(key, key);
     static readonly Dictionary<string, string> Chinese = new()
     {
+        ["Import existing settings"]="导入已有配置",["Imported paths are a preview. Save and continue to apply them."]="导入的路径仅供预览，保存并继续后生效。",["Save and continue"]="保存并继续",
         ["Uninstall could not finish. Your remaining files were preserved."]="卸载未能完成，尚未删除的文件已保留。",
         ["Show included application files"]="查看包含的应用文件",
         ["Only listed application files are removed. Other files in this folder are kept."]="只删除清单内的应用文件，此文件夹中的其他文件会保留。",

@@ -38,11 +38,11 @@ internal static partial class Program
             vm.Prompt="保留我的创作草稿";var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();var wizard=host.Wizard!;
             Check(host.SetupShows==1&&host.WorkspaceShows==0&&!startup.IsCompleted,"A fresh install opens only setup; the workspace is not constructed before setup finishes");
             Check(wizard.Owner==null&&wizard.ShowInTaskbar&&wizard.WindowStartupLocation==WindowStartupLocation.CenterScreen&&wizard.ResizeMode==ResizeMode.CanResize,"Initial setup is an independent taskbar window with normal minimize/maximize controls and no modal workspace owner");
-            await vm.Setup.BeginWorkspaceAsync();Check(vm.Setup.Environments.Count==0&&fixture.Catalog.SearchCalls==1,"The RTX fixture starts with no compatible local environment");
+            await vm.Setup.BeginWorkspaceAsync();Check(vm.Setup.Environments.Count==0&&fixture.Catalog.SearchCalls==0,"Continuing from save location does not search or adopt an existing environment");
             await vm.Setup.PrepareEnvironmentAsync(true);
             Check(vm.Setup.Error==""&&vm.Ready&&vm.Setup.EnvironmentReady&&vm.Setup.Page==2,"Automatic CUDA preparation verifies and advances directly to model preparation without a manual rescan");
             Check(vm.Setup.Environments.Single().Ready&&vm.Setup.Selected==vm.Setup.Environments[0]&&vm.Setup.UseExisting&&vm.Setup.EnvironmentSummary.Contains("1"),"A newly installed environment immediately updates the list, count and selected environment");
-            Check(fixture.Catalog.InstallCalls==1&&fixture.Catalog.InstalledProbeCalls==1&&fixture.Catalog.ProbeCalls==0&&fixture.Catalog.SearchCalls==1,"Installation uses one post-install GPU probe, with no duplicate connection probe or second environment search");
+            Check(fixture.Catalog.InstallCalls==1&&fixture.Catalog.InstalledProbeCalls==1&&fixture.Catalog.ProbeCalls==0&&fixture.Catalog.SearchCalls==0,"Installation uses one post-install GPU probe, with no duplicate connection probe or second environment search");
             Check(vm.Settings.Python==fixture.Catalog.InstallResult&&Files.Read<Preferences>(Path.Combine(fixture.Preferences,"preferences.json"))!.Settings.Python==fixture.Catalog.InstallResult,"The verified Python path is saved before continuing");
             vm.T2ICard.Path=fixture.Settings.T2IDirectory;vm.I2ICard.Path=fixture.Settings.I2IDirectory;
             vm.EnhancementEnabled=true;
@@ -87,7 +87,7 @@ internal static partial class Program
         using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform))
         {
             await vm.Setup.BeginWorkspaceAsync();await vm.Setup.PrepareEnvironmentAsync(true);
-            Check(vm.Ready&&vm.Setup.Page==2&&vm.Setup.Selected?.Backend=="amd_rocm"&&fixture.Catalog.SearchCalls==1&&fixture.Catalog.InstalledProbeCalls==1,"AMD preparation also publishes and selects its verified environment without another search");
+            Check(vm.Ready&&vm.Setup.Page==2&&vm.Setup.Selected?.Backend=="amd_rocm"&&fixture.Catalog.SearchCalls==0&&fixture.Catalog.InstalledProbeCalls==1,"AMD preparation also publishes and selects its verified environment without another search");
         }
         fixture=StartupFixture("startup-cancel-probe");fixture.Catalog.DelayProbe=true;
         using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform))

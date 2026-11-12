@@ -38,27 +38,13 @@ public sealed class AppSettings
     public string T2IDirectory {get;set;}="";
     public string I2IDirectory {get;set;}="";
     public string DownloadSource {get;set;}="auto";
-    public static string FindBackend()
-    {
-        var candidates = new List<string> { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ChatGPT", "windows跑通LightX2V") };
-        for (DirectoryInfo? p = new(AppContext.BaseDirectory); p != null; p = p.Parent) candidates.Add(p.FullName);
-        return candidates.FirstOrDefault(p => File.Exists(Path.Combine(p, "baseline-root.json")) && File.Exists(Path.Combine(p, "python312", "python.exe"))) ?? "";
-    }
-    public static AppSettings Detect(Action<string>? report = null) => LegacyWorkspaceImporter.TryRead(FindBackend(), report) ?? Fresh();
-    public static string PreferencesRoot()
-    {
-        var preferred=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"LightX2V","configuration");
-        try{Directory.CreateDirectory(preferred);var test=Path.Combine(preferred,".write-probe-"+Guid.NewGuid().ToString("N"));File.WriteAllText(test,"");File.Delete(test);return preferred;}
-        catch(IOException){}catch(UnauthorizedAccessException){}
-        var legacy=FindBackend();return legacy.Length>0?Path.Combine(legacy,"output","app-preferences"):Path.Combine(AppContext.BaseDirectory,"UserData");
-    }
+    public static string PreferencesRoot() => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"LightX2V","configuration");
     public static AppSettings Fresh(string? workspace = null)
     {
         workspace ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "LightX2V");
         string ModelPath(string key) => Path.Combine(workspace, "models", ModelCatalog.Get(key).Repository.Replace('/', Path.DirectorySeparatorChar));
         return new() { ModelSelected=false, Workspace = workspace, Model = ModelPath("turbo"), T2IDirectory = ModelPath("t2i"), I2IDirectory = ModelPath("i2i") };
     }
-    public static string? LegacyPreferences() {var root=FindBackend();var p=root.Length>0?Path.Combine(root,"output","app-preferences","preferences.json"):Path.Combine(AppContext.BaseDirectory,"UserData","preferences.json");return File.Exists(p)?p:null;}
     public void ValidateWorkspace(){if(!Path.IsPathFullyQualified(Workspace))throw new InvalidOperationException("Choose an absolute workspace path.");Directory.CreateDirectory(Workspace);var p=Path.Combine(Workspace,".write-probe-"+Guid.NewGuid().ToString("N"));File.WriteAllText(p,"");File.Delete(p);}
     public void ValidateEnvironment(){ValidateWorkspace();if(!Path.IsPathFullyQualified(Python)||!File.Exists(Python)||!Python.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Choose a native Windows Python executable.");}
     public AppSettings Clone() => new() { ModelSelected=ModelSelected, Backend=Backend, Workspace = Workspace, Python = Python, Repository = Repository, Model = Model,EnhancementEnabled=EnhancementEnabled,T2IDirectory=T2IDirectory,I2IDirectory=I2IDirectory,DownloadSource=DownloadSource };
@@ -71,7 +57,7 @@ public sealed class AppSettings
         Directory.CreateDirectory(Workspace);
     }
 }
-public sealed class Preferences { public int SchemaVersion {get;set;}=1; public bool ModelExpanded {get;set;}=true;public bool ParametersExpanded {get;set;}=true; public string Language { get; set; } = "zh"; public AppSettings Settings { get; set; } = new(); }
+public sealed class Preferences { public bool WorkspaceConfirmed {get;set;}=true; public int SchemaVersion {get;set;}=1; public bool ModelExpanded {get;set;}=true;public bool ParametersExpanded {get;set;}=true; public string Language { get; set; } = "zh"; public AppSettings Settings { get; set; } = new(); }
 public sealed class CreationParameters {public int Tier {get;set;}=1;public string Ratio {get;set;}="Adaptive";public bool EnhancementEnabled {get;set;}=true;}
 public sealed class WorkspaceState { public Dictionary<string,CreationParameters> Creations {get;set;}=[];public string? ActiveCreationId {get;set;} public int SchemaVersion { get; set; } = 1; public List<Generation> Generations { get; set; } = []; }
 public sealed class InputImage {public string Id {get;set;}=Guid.NewGuid().ToString("N");public string Path {get;set;}="";public string Name {get;set;}="";public int Width {get;set;}public int Height {get;set;}}

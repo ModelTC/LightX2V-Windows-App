@@ -39,7 +39,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
     public bool ParametersExpanded {get=>parametersExpanded;set{if(Set(ref parametersExpanded,value))SavePreferences();}}
     public bool ShowLog { get => showLog; set => Set(ref showLog, value); }
     public bool ShowInspector { get => showInspector; set => Set(ref showInspector, value); }
-    public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => HasSelectedModel && WorkspaceAvailable && !NeedsInitialSetup && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsGenerationBusy && !IsImporting && !IsBaseModelDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
+    public bool Welcome => Turns.Count == 0; public bool NeedsInitialSetup=>!workspaceSelected||!File.Exists(Settings.Python)||Setup?.Driver.Pending==true; public bool CanGenerate => HasSelectedModel && WorkspaceAvailable && !NeedsInitialSetup && TurboCard.Ready && !IsPreparingSetup && Setup?.Driver.Pending!=true && !IsGenerationBusy && !IsImporting && !IsBaseModelDownloading && EnhancementReady && ValidDimensions && Prompt.Trim().Length is > 0 and <= 20000;
     public string GenerateLabel => IsGenerationBusy ? T[IsStopping ? "Stopping" : "Stop generation"] : T["Generate image"];
     public Command NewCommand { get; }
     public Command GenerateCommand { get; }
@@ -62,21 +62,16 @@ public sealed partial class MainViewModel : Observable, IDisposable
     {
         this.modelDownloader=modelDownloader??new NativeModelDownloader();
         this.environmentCatalog=environmentCatalog??new NativeEnvironmentCatalog();
-        dispatcher = Dispatcher.CurrentDispatcher; var useDefaultPreferences=preferencesRoot==null; preferencesRoot ??= AppSettings.PreferencesRoot(); preferencesPath = Path.Combine(preferencesRoot, "preferences.json");
+        dispatcher = Dispatcher.CurrentDispatcher; preferencesRoot ??= AppSettings.PreferencesRoot(); preferencesPath = Path.Combine(preferencesRoot, "preferences.json");
         var saved = StateStore.LoadPreferences(preferencesPath);
         var prefs = saved.Preferences;
-        if (prefs is null && saved.Notice is null && useDefaultPreferences && AppSettings.LegacyPreferences() is { } old)
-        {
-            saved = StateStore.LoadPreferences(old);
-            prefs = saved.Preferences;
-            if (prefs is not null) StateStore.SavePreferences(preferencesPath, prefs);
-        }
         T.Use(prefs?.Language ?? "zh");
         string? startupNotice = saved.Notice;
-        Settings = prefs?.Settings ?? AppSettings.Detect(message => startupNotice = message);
+        Settings = prefs?.Settings ?? AppSettings.Fresh();
         modelExpanded=prefs?.ModelExpanded??false;parametersExpanded=prefs?.ParametersExpanded??false;
+        workspaceSelected=prefs?.WorkspaceConfirmed==true;
         InitializeImages();InitializeModels();InitializeSetup(this.environmentCatalog,driverPlatform);InitializeGenerationGuidance();
-        LoadWorkspace();
+        if(workspaceSelected)LoadWorkspace();
         if (startupNotice is not null) Toast = T[startupNotice] + (Toast.Length > 0 ? Environment.NewLine + Toast : "");
         SubmitCommand=new(()=>_=GenerateAsync(),()=>CanGenerate);StopCommand=new(()=>_=StopAsync(),()=>IsGenerationBusy&&!IsStopping);
         NewCommand = new(NewCreation,()=>!IsImporting); GenerateCommand = new(() => { if (IsGenerationBusy) _ = StopAsync(); else _ = GenerateAsync(); }, () => IsGenerationBusy && !IsStopping || CanGenerate);
@@ -102,7 +97,7 @@ public sealed partial class MainViewModel : Observable, IDisposable
         settings.ValidateWorkspace();var keepVerified=Ready&&verifiedEnvironmentKey==EnvironmentKey(settings);var different=settings.Workspace!=Settings.Workspace;
         var reload = different || !WorkspaceAvailable;
         var history = reload ? StateStore.LoadHistory(settings.Workspace) : null;
-        InvalidateEnvironment(keepVerified);Settings=settings.Clone();SavePreferences();
+        InvalidateEnvironment(keepVerified);workspaceSelected=true;Settings=settings.Clone();SavePreferences();
         if(reload){all.Clear();InputImages.Clear();Prompt="";LoadWorkspace(history);}
         Changed(nameof(Settings));Changed(nameof(NeedsInitialSetup));ReloadModelPaths();RefreshStatus();
     }
@@ -148,11 +143,10 @@ public sealed partial class MainViewModel : Observable, IDisposable
         try
         {
             settings.ValidateEnvironment();
-            if(settings.Repository.Equals(SetupInstaller.SourceDirectory(settings.Workspace),StringComparison.OrdinalIgnoreCase)||!File.Exists(Path.Combine(settings.Repository,"lightx2v","infer.py")))
-                settings.Repository=await SetupInstaller.PrepareSource(settings.Workspace,token);
             var probe=await environmentCatalog.Probe(settings.Python,settings.Workspace,token,settings.Backend);
             token.ThrowIfCancellationRequested();if(!Current())return;
             if(probe.Ready&&(!probe.Path.Equals(settings.Python,StringComparison.OrdinalIgnoreCase)||(settings.Backend!="auto"&&probe.Backend!=settings.Backend)))throw new InvalidOperationException("The environment probe does not match the selected Python and backend.");
+            if(probe.Ready){settings.Repository=await SetupInstaller.PrepareSource(settings.Workspace,token);token.ThrowIfCancellationRequested();if(!Current())return;}
             Settings.Repository=settings.Repository;Changed(nameof(Settings));ApplyEnvironmentProbe(probe);
         }
         catch(OperationCanceledException) when(token.IsCancellationRequested){throw;}

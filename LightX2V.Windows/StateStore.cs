@@ -42,6 +42,8 @@ public static class StateStore
         if (value.Language is not ("zh" or "en")) value.Language = "zh";
     }
 
+    public static Preferences ReadPreferences(string path) => Read<Preferences>(path, ValidatePreferences);
+
     public static Configuration LoadPreferences(string path)
     {
         if (!File.Exists(path) && !File.Exists(path + ".bak")) return new(null, null);

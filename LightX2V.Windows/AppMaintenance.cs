@@ -14,6 +14,7 @@ public sealed class UninstallPlan
     public long ParentStarted {get;set;}
     public string Application {get;set;}="";
     public bool RemoveApplication {get;set;}
+    public string EntryPoint {get;set;}="LightX2V.Windows.exe";
 }
 
 public static class AppMaintenance
@@ -63,7 +64,8 @@ public static class AppMaintenance
         var registry=Path.Combine(preferencesRoot,"workspaces.json");
         var records=ReadRegistry(registry);
         records.RemoveAll(s=>s.Workspace.Equals(settings.Workspace,StringComparison.OrdinalIgnoreCase));records.Add(settings);
-        var plan=new UninstallPlan{Application=Normalize(application)};
+        var layout=PackageLayout.Find(application);
+        var plan=new UninstallPlan{Application=Normalize(layout?.Root??application),EntryPoint=layout?.EntryPoint??"LightX2V.Windows.exe"};
         void Add(string path,string group,bool external=false)
         {
             if(!Directory.Exists(path)&&!File.Exists(path))return;
@@ -98,12 +100,12 @@ public static class AppMaintenance
         }
         Add(preferencesRoot,"application");
         // Only a published app directory is eligible. A checkout/debug output is never an app target.
-        if(File.Exists(Path.Combine(application,"build-manifest.json"))&&File.Exists(Path.Combine(application,"LightX2V.Windows.exe")))
+        if(layout!=null&&File.Exists(Path.Combine(layout.Root,layout.Executable)))
         {
-            ValidatePath(application);
-            using var manifest=JsonDocument.Parse(File.ReadAllText(Path.Combine(application,"build-manifest.json")));
-            var files=manifest.RootElement.GetProperty("sha256").EnumerateObject().Select(entry=>entry.Name).Append("build-manifest.json").Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-            var item=new UninstallItem(Normalize(application),"application",Files:files);
+            ValidatePath(layout.Root);
+            using var manifest=JsonDocument.Parse(File.ReadAllText(layout.Manifest));
+            var files=manifest.RootElement.GetProperty("sha256").EnumerateObject().Select(entry=>entry.Name).Append(Path.GetRelativePath(layout.Root,layout.Manifest)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            var item=new UninstallItem(Normalize(layout.Root),"application",Files:files);
             foreach(var target in Targets(item))ValidatePath(target);
             plan.Items.Add(item);
         }
@@ -124,7 +126,7 @@ public static class AppMaintenance
         }
         // Nested selected entries are represented by their exact selected ancestor once.
         selected=selected.Where(i=>!selected.Any(other=>other!=i&&other.Files==null&&Contains(other.Path,i.Path))).ToList();
-        return new(){Items=selected,Retained=retained,Application=discovered.Application,RemoveApplication=selected.Any(i=>Contains(i.Path,discovered.Application))};
+        return new(){Items=selected,Retained=retained,Application=discovered.Application,EntryPoint=discovered.EntryPoint,RemoveApplication=selected.Any(i=>Contains(i.Path,discovered.Application))};
     }
     public static async Task<string> LaunchAsync(UninstallPlan plan)
     {
@@ -134,8 +136,9 @@ public static class AppMaintenance
         {
             var job=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"LightX2V-maintenance",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(job);
             if(plan.Items.Any(i=>Contains(i.Path,job)))throw new InvalidDataException("The maintenance directory overlaps the uninstall plan.");
-            var app=AppContext.BaseDirectory;
-            using var manifest=JsonDocument.Parse(File.ReadAllText(Path.Combine(app,"build-manifest.json")));
+            var layout=PackageLayout.Find(AppContext.BaseDirectory)??throw new InvalidDataException("A packaged application is required for maintenance.");
+            var app=layout.Root;
+            using var manifest=JsonDocument.Parse(File.ReadAllText(layout.Manifest));
             var helper=Path.Combine(job,"helper");Directory.CreateDirectory(helper);
             foreach(var entry in manifest.RootElement.GetProperty("sha256").EnumerateObject())
             {
@@ -147,7 +150,7 @@ public static class AppMaintenance
             }
             using var parent=Process.GetCurrentProcess();plan.ParentPid=parent.Id;plan.ParentStarted=parent.StartTime.ToUniversalTime().Ticks;
             var file=Path.Combine(job,"plan.json");Files.Write(file,plan);var hash=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)));
-            var start=new ProcessStartInfo(Path.Combine(helper,"LightX2V.Windows.exe")){UseShellExecute=false,WorkingDirectory=job};
+            var start=new ProcessStartInfo(Path.Combine(helper,layout.Executable)){UseShellExecute=false,WorkingDirectory=job};
             foreach(var arg in new[]{"--maintenance",file,hash})start.ArgumentList.Add(arg);
             using var child=Process.Start(start)??throw new IOException("Could not start the maintenance helper.");
             return job;
@@ -175,7 +178,8 @@ public static class AppMaintenance
         }
         foreach(var item in plan.Items)DeleteItem(item);
         File.WriteAllText(Path.Combine(Path.GetDirectoryName(file)!,"result.txt"),"Uninstall completed.\n");
-        if(!plan.RemoveApplication&&File.Exists(Path.Combine(plan.Application,"LightX2V.Windows.exe")))Process.Start(new ProcessStartInfo(Path.Combine(plan.Application,"LightX2V.Windows.exe")){UseShellExecute=true});
+        if(plan.EntryPoint is not ("LightX2V.exe" or "LightX2V.Windows.exe"))throw new InvalidDataException("Invalid restart entry point.");
+        if(!plan.RemoveApplication&&File.Exists(Path.Combine(plan.Application,plan.EntryPoint)))Process.Start(new ProcessStartInfo(Path.Combine(plan.Application,plan.EntryPoint)){UseShellExecute=true});
     }
     static IEnumerable<string> Targets(UninstallItem item)
     {

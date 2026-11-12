@@ -21,7 +21,10 @@ def sha(path):
 
 
 def package(app):
-    app = app.resolve()
+    root = app.resolve()
+    app = root / "app"
+    if not (root / "LightX2V.exe").is_file():
+        raise ValueError("Missing native launcher")
     version = ET.parse(ROOT / 'LightX2V.Windows/LightX2V.Windows.csproj').findtext('./PropertyGroup/Version')
     if not version or not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ValueError('Invalid project version')
@@ -65,30 +68,38 @@ def package(app):
             'preferences.json', 'workspace.json', 'hardware-detection.json') or path.suffix.lower() in (
                 '.log', '.pdb', '.gguf', '.safetensors', '.whl', '.partial'):
             raise ValueError('Unexpected private/generated file in publish directory: ' + str(relative))
+    docs = root / 'docs'
+    shutil.copytree(ROOT / 'docs', docs, dirs_exist_ok=True)
     for name in ['README.md', 'README.zh-CN.md', 'THIRD_PARTY_NOTICES.md']:
-        shutil.copy2(ROOT / name, app / name)
-    shutil.copytree(ROOT / 'docs', app / 'docs', dirs_exist_ok=True)
-    shutil.copytree(ROOT / 'third_party', app / 'third_party', dirs_exist_ok=True)
+        content = (ROOT / name).read_text(encoding='utf-8')
+        (docs / name).write_text(content.replace('(docs/', '('), encoding='utf-8')
+    shutil.copytree(ROOT / 'third_party', docs / 'third_party', dirs_exist_ok=True)
+    for name in ['LICENSE.txt', 'ThirdPartyNotices.txt']:
+        shutil.move(str(app / name), docs / name)
+    if {p.name for p in root.iterdir()} != {'LightX2V.exe', 'app', 'docs'}:
+        raise ValueError('Unexpected top-level package files')
     try:
         commit = subprocess.check_output(['git', '-C', str(ROOT), 'rev-parse', '--verify', 'HEAD'], stderr=subprocess.DEVNULL, text=True).strip()
         dirty = bool(subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain'], text=True).strip())
     except (OSError, subprocess.CalledProcessError):
         commit, dirty = None, None
-    payload = sorted(p for p in app.rglob('*') if p.is_file() and p.name != 'build-manifest.json')
+    payload = sorted(p for p in root.rglob('*') if p.is_file() and p != app / 'build-manifest.json')
     manifest = dict(
         version=version, channel='latest', target='win-x64',
+        layoutVersion=2, entryPoint='LightX2V.exe', appExecutable='app/LightX2V.Windows.exe',
         sourceCommit=commit, sourceDirty=dirty,
+        inferenceSource=json.loads((app/'Resources/Setup/manifest.json').read_text(encoding='utf-8'))['source'],
         backends=['amd_rocm', 'cuda'], cudaHardwareAcceptance='pending',
         verification='Compilation and package integrity only. GPU acceptance scope is documented in docs/testing.md.',
-        sha256={p.relative_to(app).as_posix(): sha(p) for p in payload},
+        sha256={p.relative_to(root).as_posix(): sha(p) for p in payload},
     )
     (app / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
-    result = app.parent / 'LightX2V-APP-Windows-x64.zip'
+    result = root.parent / 'LightX2V-APP-Windows-x64.zip'
     prefix = f'LightX2V-Windows-{version}'
     with zipfile.ZipFile(result, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
-        for path in sorted(app.rglob('*')):
+        for path in sorted(root.rglob('*')):
             if path.is_file():
-                output.write(path, prefix + '/' + path.relative_to(app).as_posix())
+                output.write(path, prefix + '/' + path.relative_to(root).as_posix())
     result.with_suffix('.zip.sha256').write_text(sha(result) + '  ' + result.name + '\n', encoding='ascii')
     with zipfile.ZipFile(result) as output:
         if output.testzip():

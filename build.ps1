@@ -15,15 +15,16 @@ try {
     if ((Test-Path -LiteralPath $Destination) -and @(Get-ChildItem -LiteralPath $Destination -Force).Count -gt 0) {
         throw 'Use a new or empty output directory to avoid packaging stale files.'
     }
-    & $Dotnet publish "$PSScriptRoot\LightX2V.Windows\LightX2V.Windows.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:DebugType=None -p:DebugSymbols=false -o $Destination
+    & $Dotnet publish "$PSScriptRoot\LightX2V.Windows\LightX2V.Windows.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:DebugType=None -p:DebugSymbols=false -o (Join-Path $Destination 'app')
     if ($LASTEXITCODE -ne 0) { throw 'Windows app publish failed.' }
 
     $dotnetDirectory = Split-Path (Get-Command $Dotnet).Source
     foreach ($name in @('LICENSE.txt', 'ThirdPartyNotices.txt')) {
         $licensePath = Join-Path $dotnetDirectory $name
         if (-not (Test-Path -LiteralPath $licensePath)) { throw "Missing .NET license: $licensePath" }
-        Copy-Item -LiteralPath $licensePath -Destination (Join-Path $Destination $name)
+        Copy-Item -LiteralPath $licensePath -Destination (Join-Path $Destination ('app\'+$name))
     }
+    & "$PSScriptRoot\scripts\build_launcher.ps1" -Destination $Destination
     & $Python -X utf8 "$PSScriptRoot\scripts\package_app.py" --app $Destination
     if ($LASTEXITCODE -ne 0) { throw 'Portable package verification failed.' }
 }

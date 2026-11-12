@@ -837,8 +837,11 @@
     }
   ],
   "source": {
-    "revision": "58b8e2592519711457e9fface5a804d7c337a1ae",
+    "version": "0.6.1",
+    "revision": "43c6a11bb65b7357f06e9603fa92249bc16b484e",
     "archive": "lightx2v-native.zip",
-    "sha256": "0f8a6bf02273ec44192c233a87f50b2a720fc9da384f85ae63a282c37cab0b2a"
+    "sha256": "cb93e4a3bf7fd5ee843eefda554325ab829f441dc535e2997bbb8717b4cc1e81",
+    "upstreamArchiveSha256": "6f7f5e8f7b501aefa70bfab019f53ff07b1c216502ca2220f16009b5e10cc126",
+    "patchSha256": "e5fbcaf9795165ae21af87d1de05ee5940a27a0eb29422c80524a82f96f47b83"
   }
 }

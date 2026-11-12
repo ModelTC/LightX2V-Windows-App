@@ -24,7 +24,16 @@ for item in [manifest['python'], *packages]:
         raise ValueError('Invalid pinned artifact: ' + item['file'])
     if Path(item['file']).name != item['file']:
         raise ValueError('Invalid package name')
-archive = root / manifest['source']['archive']
+source = manifest['source']
+if source.get('version') != '0.6.1' or source['revision'] != '43c6a11bb65b7357f06e9603fa92249bc16b484e':
+    raise ValueError('Expected the fixed LightX2V 0.6.1 source')
+provenance = json.loads((root.parents[2] / 'third_party/source-provenance.json').read_text(encoding='utf-8'))
+for key in ('version', 'revision', 'sha256', 'upstreamArchiveSha256', 'patchSha256'):
+    if provenance[key] != source[key]:
+        raise ValueError('Source provenance differs: ' + key)
+if hashlib.sha256((root.parents[2] / provenance['patch']).read_bytes()).hexdigest() != source['patchSha256']:
+    raise ValueError('Windows compatibility patch checksum mismatch')
+archive = root / source['archive']
 if hashlib.sha256(archive.read_bytes()).hexdigest() != manifest['source']['sha256']:
     raise ValueError('Bundled native source checksum mismatch')
 with zipfile.ZipFile(archive) as source:

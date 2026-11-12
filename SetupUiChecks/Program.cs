@@ -133,6 +133,7 @@ internal static partial class Program
         await ReadinessChecks();
         if (startupOnly) return;
 
+        await FirstUseChecks();
         await ParityChecks();
         await VisualParityChecks();
         RecoveryChecks();

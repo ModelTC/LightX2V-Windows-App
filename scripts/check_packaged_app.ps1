@@ -1,4 +1,4 @@
-﻿param(
+param(
     [Parameter(Mandatory = $true)][string]$Executable,
     [Parameter(Mandatory = $true)][string]$Report
 )
@@ -14,11 +14,20 @@ $start = [System.Diagnostics.ProcessStartInfo]::new((Get-Item -LiteralPath $Exec
 $start.UseShellExecute = $false
 $start.EnvironmentVariables.Remove('DOTNET_ROOT')
 $start.EnvironmentVariables.Remove('DOTNET_ROOT_X64')
-$process = [System.Diagnostics.Process]::Start($start)
+$launched = [System.Diagnostics.Process]::Start($start)
+$process = $launched
+$child = Join-Path (Split-Path $start.FileName) 'app\LightX2V.Windows.exe'
+$usesLauncher = (Split-Path $start.FileName -Leaf) -eq 'LightX2V.exe'
+if ($usesLauncher) { $process = $null }
 try {
     $limit = (Get-Date).AddSeconds(60)
     $mode = ''
     while ((Get-Date) -lt $limit) {
+        if ($usesLauncher -and $null -eq $process) {
+            $candidate = Get-CimInstance Win32_Process -Filter "Name='LightX2V.Windows.exe'" | Where-Object { $_.ExecutablePath -eq $child -and $_.CreationDate -ge $launched.StartTime.AddSeconds(-1) } | Select-Object -First 1
+            if ($null -ne $candidate) { $process = Get-Process -Id $candidate.ProcessId }
+            else { Start-Sleep -Milliseconds 250; continue }
+        }
         $process.Refresh()
         if ($process.HasExited) { throw "Packaged app exited during startup with code $($process.ExitCode)." }
         if ($process.MainWindowHandle -ne 0) {
@@ -43,9 +52,10 @@ try {
     } | ConvertTo-Json | Set-Content (Join-Path $Report 'package-startup.json') -Encoding UTF8
 }
 finally {
-    if (-not $process.HasExited) {
+    if ($null -ne $process -and -not $process.HasExited) {
         $process.CloseMainWindow() | Out-Null
         if (-not $process.WaitForExit(15000)) { $process.Kill() }
     }
-    $process.Dispose()
+    if ($null -ne $process) { $process.Dispose() }
+    if ($usesLauncher) { $launched.Dispose() }
 }

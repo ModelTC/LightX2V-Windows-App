@@ -34,11 +34,12 @@ public sealed partial class MainViewModel
             StateStore.SavePreferences(preferencesPath, new Preferences
             {
                 Language = T.Language,
+                WorkspaceConfirmed = workspaceSelected,
                 Settings = Settings.Clone(),
                 ModelExpanded = ModelExpanded,
                 ParametersExpanded = ParametersExpanded
             });
-            if(Path.IsPathFullyQualified(Settings.Workspace))AppMaintenance.RegisterWorkspace(PreferencesDirectory,Settings);
+            if(workspaceSelected&&Path.IsPathFullyQualified(Settings.Workspace))AppMaintenance.RegisterWorkspace(PreferencesDirectory,Settings);
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException)
         {
@@ -86,12 +87,13 @@ public sealed partial class MainViewModel
         Changed(nameof(WorkspaceAvailable));
     }
 
-    bool workspacePersistenceUnavailable;
-    public bool WorkspaceAvailable => !workspacePersistenceUnavailable;
+    bool workspacePersistenceUnavailable,workspaceSelected;
+    internal bool WorkspaceConfirmed => workspaceSelected;
+    public bool WorkspaceAvailable => workspaceSelected&&!workspacePersistenceUnavailable;
 
     void Persist()
     {
-        if (loading || workspacePersistenceUnavailable || string.IsNullOrWhiteSpace(Settings.Workspace)) return;
+        if (loading || !workspaceSelected || workspacePersistenceUnavailable || string.IsNullOrWhiteSpace(Settings.Workspace)) return;
         try
         {
             StateStore.SaveHistory(Settings.Workspace, all,creationSettings,creation);

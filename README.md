@@ -17,7 +17,7 @@ Each channel keeps one current package at a fixed download URL. Ordinary success
 
 ## Build from source
 
-On Windows x64, install .NET SDK 10.0.403 and Python 3.12, then run:
+On Windows x64, install .NET SDK 10.0.403, Python 3.12, and Visual Studio C++ x64 Build Tools with a Windows SDK, then run:
 
 ```powershell
 git clone https://github.com/ModelTC/LightX2V-Windows-App.git

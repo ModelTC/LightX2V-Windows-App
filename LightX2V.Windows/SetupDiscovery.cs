@@ -39,7 +39,6 @@ public static class SetupDiscovery
         void Prefix(string value){Add(Path.Combine(value,"python.exe"));Add(Path.Combine(value,"Scripts","python.exe"));}
         IEnumerable<string> Children(string root){try{return Directory.GetDirectories(root);}catch{return [];}}
         foreach(var path in PreferredPythonPaths(settings))Add(path);
-        var legacy=AppSettings.FindBackend();if(legacy.Length>0)Prefix(Path.Combine(legacy,"python312"));
         var home=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         foreach(var root in new[]{home,Path.Combine(home,"AppData","Local"),@"C:\ProgramData"})foreach(var name in new[]{"miniconda3","anaconda3","miniforge3"})
         {
@@ -146,8 +145,6 @@ public static class SetupDiscovery
     public static Dictionary<string,string> Models(AppSettings settings,CancellationToken token)
     {
         var roots=new List<string>{settings.Model,settings.T2IDirectory,settings.I2IDirectory,Path.Combine(settings.Workspace,"models")};
-        var old=AppSettings.Detect();roots.AddRange([old.Model,old.T2IDirectory,old.I2IDirectory]);
-        var legacy=AppSettings.FindBackend();if(legacy.Length>0)roots.Add(Path.Combine(legacy,"output","app-models"));
         var home=Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         roots.AddRange([Path.Combine(home,".cache","huggingface","hub"),Path.Combine(home,".cache","modelscope","hub"),Path.Combine(home,".cache","modelscope","hub","models")]);
         foreach(var name in new[]{"HF_HOME","HUGGINGFACE_HUB_CACHE","MODELSCOPE_CACHE"})if(Environment.GetEnvironmentVariable(name) is {} value)roots.Add(value);

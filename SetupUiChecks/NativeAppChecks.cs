@@ -25,6 +25,12 @@ internal static partial class Program
         Check(editing.Completed&&editing.Request.InputImages.Count==8&&editing.Request.Resolution==512,"The real app completes eight-reference Adaptive editing through its normal request and backend flow");
         await Render(window,1280,820,"native-app-eight-reference-result");
         Check(!vm.IsGenerationBusy&&vm.Turns.Count==2,"Both real tasks restore app availability and remain in the same creation");
+        vm.NewCreation();vm.EnhancementEnabled=true;vm.Tier=0;vm.Ratio="1:1";
+        vm.Prompt="A yellow cup on a blue table.";await vm.GenerateAsync();var enhanced=vm.Turns.Last();
+        Check(enhanced.Completed&&enhanced.EnhancementCompleted&&enhanced.EnhancedPrompt.Length>0,"Pinned 0.6.1 completes text-to-image with the real local enhancement model");
+        await vm.AddImagePathsAsync([text.Request.Output]);vm.Ratio="Adaptive";vm.Prompt="Change the teapot to yellow.";
+        await vm.GenerateAsync();var enhancedEdit=vm.Turns.Last();
+        Check(enhancedEdit.Completed&&enhancedEdit.EnhancementCompleted&&enhancedEdit.Request.InputImages.Count==1,"Pinned 0.6.1 completes reference editing with the real I2I enhancement model");
         window.Close();
     }
 }

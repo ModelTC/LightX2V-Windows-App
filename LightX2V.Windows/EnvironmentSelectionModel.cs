@@ -16,7 +16,7 @@ public sealed class NativeEnvironmentCatalog : IEnvironmentCatalog
     public Task<EnvironmentCandidate> ProbeInstalled(string path,string workspace,CancellationToken token,string backend="auto")=>SetupDiscovery.Probe(path,workspace,token,backend,180);
     public Task<string> Install(string workspace,bool mirror,IProgress<SetupProgress> progress,CancellationToken token,string backend="amd_rocm")
     {
-        var legacy=AppSettings.FindBackend();return SetupInstaller.Install(workspace,mirror,legacy.Length>0?[Path.Combine(legacy,"downloads")]:[],progress,token,backend);
+        return SetupInstaller.Install(workspace,mirror,[],progress,token,backend);
     }
 }
 public sealed class EnvironmentSelectionModel : Observable,IDisposable

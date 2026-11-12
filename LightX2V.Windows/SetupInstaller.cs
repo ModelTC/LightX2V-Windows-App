@@ -14,7 +14,7 @@ public sealed class SetupArtifact
 {
     public string Name {get;set;}="";public string Version {get;set;}="";public string File {get;set;}="";public string Url {get;set;}="";public string? Mirror {get;set;}public string Sha256 {get;set;}="";public long Size {get;set;}public string Group {get;set;}="";
 }
-public sealed class SetupSource {public string Revision {get;set;}="";public string Archive {get;set;}="";public string Sha256 {get;set;}="";}
+public sealed class SetupSource {public string Version {get;set;}="";public string Revision {get;set;}="";public string Archive {get;set;}="";public string Sha256 {get;set;}="";}
 public sealed class SetupManifest
 {
     public int Schema {get;set;}public string Profile {get;set;}="";public SetupArtifact Python {get;set;}=new();public List<SetupArtifact> Packages {get;set;}=[];public SetupSource Source {get;set;}=new();

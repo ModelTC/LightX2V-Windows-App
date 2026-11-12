@@ -45,7 +45,7 @@ GitHub Actions compiles, verifies the package and publishes Latest. Behavioral t
 
 The two environment manifests pin the versions, sizes, and SHA-256 hashes of Python, PyTorch, and every wheel. Builds do not resolve the "latest version." `prepare_cuda_profile.py` changes the pinned manifests; run it only when deliberately updating dependencies, followed by renewed acceptance testing.
 
-`LightX2V.Windows/Resources/Setup/lightx2v-native.zip` contains the inference source required at runtime. At about 13 MB, it is the only large pinned source archive committed to the repository and does not use Git LFS. It is based on LightX2V commit `58b8e2592519711457e9fface5a804d7c337a1ae`. Changes to the 16 native Windows compatibility files are in `third_party/native-windows.patch`; the exact archive hash and changed files are recorded in `third_party/source-provenance.json`. The archive retains upstream licenses.
+`LightX2V.Windows/Resources/Setup/lightx2v-native.zip` contains the inference source required at runtime. It is the only large pinned source archive committed to the repository and does not use Git LFS. It is based on LightX2V 0.6.1 commit `43c6a11bb65b7357f06e9603fa92249bc16b484e`. Changes to the 11 common/Qwen native Windows compatibility files are in `third_party/windows-compat-0.6.1.patch`; the exact archive hash and changed files are recorded in `third_party/source-provenance.json`. The archive retains upstream licenses.
 
 Do not commit models, environments, download caches, generated images, personal settings, QA logs, development SSH configuration, or historical packages. Raw development acceptance records remain outside the repository.
 
@@ -68,3 +68,7 @@ First-use environment discovery prefers the selected and managed executables, pu
 `SetupController` supports preview preparation without committing the edited workspace. Settings commit a prepared, matched environment only when saved. Existing setup, driver, download and first-send verification services remain authoritative.
 
 Reference limits live in `Resources/image-input.json`, consumed by both C# and Python. Workspace indexes also carry backward-compatible per-creation parameters and the active creation ID. Immutable generation requests remain separate from draft settings.
+
+The native launcher is built with Visual Studio C++ x64 Build Tools (MSVC and Windows SDK), using a static CRT. The public ZIP contains only `LightX2V.exe`, `app`, and `docs` at its top level. The layout-v2 manifest is `app/build-manifest.json`, with paths relative to the package root. Runtime asset paths remain relative to the WPF executable inside `app`. Layout-v1 manifests remain readable for verification and uninstall.
+
+To reproduce the pinned source ZIP, download the exact `upstreamArchiveUrl` in `third_party/source-provenance.json`, then run `python scripts/rebuild_source.py <official-zip> <output-zip>`. The script verifies the upstream and patch hashes, applies the reviewed patch and requires the deterministic output hash to match the committed payload. Builds only verify these committed pins; they never resolve a moving tag or branch.
