@@ -58,9 +58,9 @@ internal static partial class Program
         using var vm = new MainViewModel(fixture.Preferences, downloads, driverPlatform: fixture.Platform);
         vm.Prompt = "A basic image after model repair";
         vm.Setup.Page = 2;
-        var wizard = new FirstRunWindow(vm);
+        var wizard = vm.CreateModelGuide(vm.TurboCard);
         await Render(wizard, 760, 700, "models-check-and-repair");
-        var repair = Children<Button>((DependencyObject)wizard.Content).Single(button => AutomationProperties.GetAutomationId(button) == "ModelCheckRepair" && ReferenceEquals(button.DataContext, vm.TurboCard));
+        var repair = Children<Button>((DependencyObject)wizard.Content).Single(button => AutomationProperties.GetAutomationId(button) == "GuideCheckRepair");
         Check(vm.TurboCard.Ready && !vm.TurboCard.DownloadCommand.CanExecute(null) && repair.IsEnabled, "Ready model cards expose an explicit check-and-repair action without enabling redundant ordinary downloads");
         repair.Command.Execute(null);
         await UntilDownloadIdle(vm);

@@ -51,6 +51,8 @@ internal static partial class Program
             await Task.Delay(1200);
             Check(model.Logs.Contains("history-only") && !model.Logs.Contains("other-task-output"),
                 "A historical task's log stays isolated from another task's live output");
+            model.ShowLog=false;model.Selected=history;model.LogCommand.Execute(null);
+            Check(model.Logs.Contains("history-only"),"Reopening a hidden log after selecting history targets the selected task");
             model.OpenLogCommand.Execute(generation);
             Check(model.Logs.Contains("other-task-output") && !model.Logs.Contains("history-only"),
                 "Returning to the running task reads its current log without historical output");

@@ -7,7 +7,7 @@ namespace LightX2V.Windows;
 
 public partial class MainWindow : Window
 {
-    bool closing;
+    bool closing;bool followConversation=true;
     string lastContent = "";
     WindowBounds? bounds;
     public MainViewModel ViewModel { get; }
@@ -15,7 +15,7 @@ public partial class MainWindow : Window
     {
         ViewModel = vm;
         DataContext = vm;
-        InitializeComponent();
+        InitializeComponent();InitializeComposer();
         // Fit before Show computes CenterScreen; changing size after creation leaves
         // the original off-screen center position behind on high-DPI displays.
         var initialArea = SystemParameters.WorkArea;
@@ -25,12 +25,19 @@ public partial class MainWindow : Window
         Height = Math.Min(Height, initialArea.Height);
         vm.RequestSetup = () => {if(!Application.Current.Windows.OfType<FirstRunWindow>().Any())new FirstRunWindow(vm){Owner=this}.ShowDialog();};
         vm.RequestSettings = () => new SettingsWindow(vm) { Owner = this }.ShowDialog();
-        vm.ContentUpdated += () =>
+        Conversation.ScrollChanged+=(_,e)=>
         {
-            var key = string.Join(",", vm.Turns.Select(g => g.Id + g.Status + g.EnhancementStatus));
-            if (key == lastContent) return;
-            lastContent = key;
-            Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => Conversation.ScrollToEnd());
+            if(e.ExtentHeightChange==0&&e.ViewportHeightChange==0&&e.VerticalChange!=0)
+                followConversation=Conversation.ScrollableHeight-Conversation.VerticalOffset<32;
+            else if(followConversation&&(e.ExtentHeightChange!=0||e.ViewportHeightChange!=0))
+                Dispatcher.BeginInvoke(DispatcherPriority.Loaded,()=>Conversation.ScrollToEnd());
+        };
+        vm.ContentUpdated+=()=>
+        {
+            var key=string.Join(",",vm.Turns.Select(g=>g.Id));
+            var changed=key!=lastContent;lastContent=key;
+            if(changed)followConversation=true;
+            if(followConversation)Dispatcher.BeginInvoke(DispatcherPriority.Loaded,()=>Conversation.ScrollToEnd());
         };
         Loaded += (_, _) =>
         {
@@ -46,6 +53,7 @@ public partial class MainWindow : Window
             if(vm.IsPreparingSetup){e.Cancel=true;closing=true;await vm.Setup.CancelAsync();Close();return;}
             if (!vm.IsGenerationBusy) return;
             e.Cancel = true;
+            if(vm.IsRunning&&MessageBox.Show(this,vm.T["The current image is unfinished. Quitting stops inference and releases model memory. Completed images are preserved."],vm.T["Stop generation and quit?"],MessageBoxButton.YesNo,MessageBoxImage.Question,MessageBoxResult.No)!=MessageBoxResult.Yes)return;
             closing = true;
             try { await vm.StopAsync(); while (vm.IsGenerationBusy) await Task.Delay(25); }
             finally { Close(); }

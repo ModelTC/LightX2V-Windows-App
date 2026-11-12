@@ -16,6 +16,7 @@ public sealed class ModelCard : Observable
     double? etaSeconds;
     public string Key { get; }
     public string Title => owner.T[title];
+    public string DisplayTitle=>Key=="turbo"?Title:Key=="t2i"?"PE-T2I":"PE-I2I";
     public string Repository { get; }
     public string Path
     {
@@ -38,12 +39,14 @@ public sealed class ModelCard : Observable
     }
     public string Status
     {
-        get => statusKey == null ? status : owner.T[statusKey];
+        get => statusKey == null ? status : owner.T[statusKey]+(status.Length>0?": "+status:"");
         internal set { statusKey = null; status = value; Changed(); }
     }
-    internal void SetStatus(string key)
+    internal (string? Key,string Value) CaptureStatus()=>(statusKey,status);
+    internal void RestoreStatus((string? Key,string Value) value){statusKey=value.Key;status=value.Value;Changed(nameof(Status));}
+    internal void SetStatus(string key,string detail="")
     {
-        statusKey = key;
+        status=detail;statusKey = key;
         Changed(nameof(Status));
     }
     public string Indicator => Ready ? "✓" : "○";
@@ -71,7 +74,7 @@ public sealed class ModelCard : Observable
         etaSeconds = seconds;
         Changed(nameof(DownloadEta));
     }
-    public string DownloadLabel => owner.T[IsDownloading ? "Stop" : Ready ? "Files ready" : Failed ? "Retry download" : "Download automatically"];
+    public string DownloadLabel => owner.T[IsDownloading ? "Stop" : Failed ? "Retry download" : "Download"];
     public bool CanChoose => owner.CanConfigureModels;
     public bool CanDownload => IsDownloading || !Ready && owner.CanConfigureModels && !owner.IsChecking;
     public bool CanRepair => owner.CanConfigureModels && !owner.IsChecking;
@@ -102,7 +105,7 @@ public sealed class ModelCard : Observable
     }
     internal void Refresh()
     {
-        foreach (var name in new[] { nameof(Title), nameof(DownloadLabel), nameof(DownloadEta), nameof(IsDownloading), nameof(CanChoose), nameof(CanDownload), nameof(CanRepair), nameof(Indicator), nameof(Status), nameof(ShowProgress) })
+        foreach (var name in new[] { nameof(Title),nameof(DisplayTitle), nameof(DownloadLabel), nameof(DownloadEta), nameof(IsDownloading), nameof(CanChoose), nameof(CanDownload), nameof(CanRepair), nameof(Indicator), nameof(Status), nameof(ShowProgress) })
             Changed(name);
     }
 }
@@ -119,7 +122,7 @@ public sealed partial class MainViewModel
         set
         {
             if (Settings.EnhancementEnabled == value) return;
-            Settings.EnhancementEnabled = value;
+            Settings.EnhancementEnabled = value;RememberCreation();
             SavePreferences();
             Changed();
             ModelStateChanged();
@@ -366,17 +369,17 @@ public sealed partial class MainViewModel
         catch (Exception error)
         {
             card.Failed = true;
-            card.Status = T["Download failed"] + ": " + error.Message;
+            card.SetStatus("Download failed",error.Message);
             return false;
         }
         finally
         {
             if (!completed)
             {
-                var message = card.Status;
+                var status = card.CaptureStatus();
                 RefreshModel(card);
-                card.Status = message;
-                Toast = message;
+                card.RestoreStatus(status);
+                Toast = card.Status;
             }
             card.UpdateDownloadEstimate("");
             DownloadingKey = null;

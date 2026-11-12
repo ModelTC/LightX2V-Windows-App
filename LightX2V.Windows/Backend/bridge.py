@@ -169,18 +169,20 @@ def run(request, config, parent):
     width,height,seed=request.get('width'),request.get('height'),request.get('seed')
     if any(type(n) is not int or n%32 or not 256<=n<=2752 for n in (width,height)): raise ValueError('Image dimensions must be multiples of 32 between 256 and 2752.')
     if width*height > 4400000: raise ValueError('Image dimensions exceed the supported 2K image presets.')
+    resolution=request.get('resolution')
+    if resolution is not None and (type(resolution) is not int or resolution not in (512,1024,2048)): raise ValueError('Invalid adaptive image resolution.')
     config=dict(config)
     if type(seed) is not int or not 0<=seed<=4294967295: raise ValueError('Seed must be between 0 and 4294967295.')
     task=request.get('task','t2i'); images=request.get('inputImages',[])
-    if task not in ('t2i','i2i') or not isinstance(images,list) or len(images)>3: raise ValueError('Invalid image task or reference count.')
-    if (task=='i2i') != bool(images): raise ValueError('Image editing needs reference images.')
+    from image_policy import validate_references, MAXIMUM_FILE_BYTES
+    validate_references(task, images)
     references=[]
     if images:
         from PIL import Image
         for item in images:
             path=Path(item['path']).resolve()
             if not path.is_relative_to((folder/'inputs').resolve()) or not path.is_file(): raise ValueError('Reference image must be a saved task input.')
-            if path.stat().st_size>50*1024**2: raise ValueError('Reference image is too large.')
+            if path.stat().st_size>MAXIMUM_FILE_BYTES: raise ValueError('Reference image is too large.')
             with Image.open(path) as image: image.verify()
             references.append(path.relative_to(folder.resolve()).as_posix())
         if request.get('referenceResolution',512)!=512: raise ValueError('Use the accepted 512 reference resolution.')

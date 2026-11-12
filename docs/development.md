@@ -4,7 +4,7 @@ The app uses WPF for the Windows interface and a Python inference backend.
 
 ```text
 LightX2V.Windows/       WPF app, Python bridge backend, styles, and pinned setup manifests
-SetupUiChecks/         Maintained Windows regression suite executed by CI
+SetupUiChecks/         Maintained Windows regression suite executed locally
 Tests/                 Python backend regressions and opt-in model/GPU checks
 scripts/               Build/release integrity checks and manual package startup check
 third_party/           Pinned inference source provenance, compatibility patches, and licenses
@@ -39,7 +39,7 @@ python -m unittest discover -s Tests -v
 dotnet build SetupUiChecks/SetupUiChecks.csproj -c Release
 ```
 
-GitHub Actions runs these checks and builds the package, saving the output as a workflow artifact. Ordinary branches do not modify Releases. Pushing a `v*` tag that matches the project version triggers a separate publishing job, which verifies the source commit, all file hashes, and uploaded assets again before publishing a pre-release. CI does not claim GPU acceptance. See [Testing Scope](testing.md).
+GitHub Actions compiles, verifies the package and publishes Latest. Behavioral tests run locally or on the AMD Windows host; see [Testing](testing.md). Stable is promoted manually from verified Latest bytes after AMD and RTX acceptance. See [Releasing](releasing.md).
 
 ## Setup Payloads and Source Provenance
 
@@ -63,8 +63,8 @@ Model startup checks read small configuration files and weight headers. Successf
 
 First-use environment discovery prefers the selected and managed executables, publishes candidates incrementally, and runs independently of the blocking preparation state. The wizard can select or prepare a verified candidate before the remaining search finishes. Search has a 45-second overall budget; filesystem discovery also runs off the UI thread with a bounded outer wait. Reusing a candidate checks its backend and executable fingerprint, and never persists GPU readiness across app launches.
 
-`StartupCoordinator` opens a separate wizard first when Python or required models are missing. `WpfStartupHost` uses ordinary `Show()`, a taskbar entry, and explicit exit control, and creates the workspace only after setup finishes. If workspace initialization finds that an existing user's configuration is unavailable, it hides the workspace before restoring the wizard. Do not change the initial wizard back to a `ShowDialog()` over the main window.
+`StartupCoordinator` retains the four-step Windows setup surface when the environment or base model is missing, or a driver installation is pending. General settings uses the compact three-card dialog shown in the Mac references. The initial surface is shown with ordinary `Show()` and a taskbar entry, and the workspace is created only after it finishes. Configured workspaces open without an automatic GPU probe.
 
-In v0.3.9, a configured workspace opens without an automatic GPU probe. The first generation request performs cancellable preflight checks and can reuse an existing session. Configuration snapshots and epoch guards prevent stale asynchronous results from being applied after the configuration changes. Explicit first-time setup can still probe the GPU.
+`SetupController` supports preview preparation without committing the edited workspace. Settings commit a prepared, matched environment only when saved. Existing setup, driver, download and first-send verification services remain authoritative.
 
-Automatic installation performs one real GPU check through the environment service. After it succeeds, the candidate environment is added to the list and selected, and that result is used to connect the workspace without a second duplicate check. The first check for a newly installed environment has a 180-second timeout, and an explicit manual check uses 90 seconds. Background discovery caps each candidate at 30 seconds within the 45-second overall search budget. All checks are cancellable. Injected test services cover installation, checks, failure, and cancellation; fixtures do not validate real CUDA installation or image generation.
+Reference limits live in `Resources/image-input.json`, consumed by both C# and Python. Workspace indexes also carry backward-compatible per-creation parameters and the active creation ID. Immutable generation requests remain separate from draft settings.

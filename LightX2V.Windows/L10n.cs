@@ -4,9 +4,38 @@ public sealed class L10n : Observable
 {
     public static L10n Current { get; } = new(); public string Language { get; private set; } = "zh";
     public void Use(string language) { Language = language == "en" ? "en" : "zh"; Changed("Item[]"); Changed(nameof(Language)); }
+    public string Relocalize(string message)
+    {
+        var key=Chinese.FirstOrDefault(pair=>pair.Value==message).Key;
+        return this[key??message];
+    }
     public string this[string key] => Language == "zh" ? Chinese.GetValueOrDefault(key, DriverStrings.Chinese.GetValueOrDefault(key, SetupStrings.Chinese.GetValueOrDefault(key,key))) : English.GetValueOrDefault(key, key);
     static readonly Dictionary<string, string> Chinese = new()
     {
+        ["Uninstall could not finish. Your remaining files were preserved."]="卸载未能完成，尚未删除的文件已保留。",
+        ["Show included application files"]="查看包含的应用文件",
+        ["Only listed application files are removed. Other files in this folder are kept."]="只删除清单内的应用文件，此文件夹中的其他文件会保留。",
+        ["The current image is unfinished. Quitting stops inference and releases model memory. Completed images are preserved."]="当前图片尚未生成完成。退出会停止推理并释放模型内存，已完成的图片会保留。",
+        ["Stop generation and quit?"]="停止生成并退出？",
+        ["View task files"]="查看任务文件",
+        ["Retry with these settings"]="复用这些设置重试",
+        ["Open full log"]="打开完整日志",
+        ["The selected files will be permanently deleted after LightX2V closes."]="LightX2V 关闭后，将永久删除所选文件。",
+        ["Choose what to remove first."]="请先选择要删除的内容。",
+        ["Delete selected items…"]="删除所选项目…",
+        ["Includes configured external folders."]="包含已配置的外部文件夹。",
+        ["Remove app and settings"]="删除应用和设置",
+        ["Remove workspace data"]="删除工作区数据",
+        ["Remove model weights"]="删除模型权重",
+        ["Select the files to delete. Unchecked items will be kept."]="请选择要删除的文件，未勾选的项目将保留。",
+        ["Choose what to remove"]="选择要删除的内容",
+        ["Uninstall"]="卸载",
+        ["You can add up to {0} images."]="最多可添加 {0} 张图片。",
+        ["Automatic"]="自动",
+        ["Standard"]="标准版",
+        ["Welcome to LightX2V"]="欢迎使用 LightX2V",
+        ["Settings, history, images, logs and caches are stored here."]="设置、历史、图片、日志和缓存保存在这里。",
+        ["3 settings · Change the language anytime"]="3 项设置 · 可随时切换语言",
         ["Saved settings could not be read. Your original file was preserved."]="暂时无法读取已保存的设置，原文件已保留。",
         ["Settings were restored from the last valid backup."]="已从最近一次有效备份恢复设置。",
         ["Creation history was recovered from saved task records."]="已从保存的任务记录恢复创作历史。",
@@ -104,7 +133,7 @@ public sealed class L10n : Observable
         ["Installing dependencies"]="正在安装运行依赖",
 
         ["Download source"]="下载源",["Download all models"]="下载全部模型",["Stop downloads"]="停止下载",["Download guide"]="下载指南",["Download"]="下载",["Stop"]="停止",["Prompt enhancement"]="Prompt 增强",["Model files ready"]="模型文件已就绪",["Missing model files"]="模型文件不完整",["Preparing download"]="准备下载…",["Checking model files"]="正在校验模型文件…",["Download failed"]="下载失败",["Download cancelled"]="下载已停止",["All models ready"]="全部模型已就绪",["Configure Python first"]="请先在设置中选择原生 Windows Python 环境",["Model download help"]="自动下载会获取并校验完整模型。也可使用对应的官方工具运行下方命令手动下载。",["Copy command"]="复制命令",["Open model page"]="打开模型页面",["Show reasoning"]="显示思考过程",["Copy enhanced prompt"]="复制增强提示词",["Thinking"]="正在思考",["Writing enhanced prompt"]="正在编写增强提示词",["Enhanced"]="已增强",["Enhancement incomplete"]="增强未完成",["enhancement"]="正在增强提示词",
-        ["Add reference images"]="添加参考图片",["Remove image"]="移除图片",["Up to 3 reference images"]="最多添加 3 张参考图片",["Choose an aspect ratio"]="请选择画面比例",["missing_image"]="找不到所选图片",["image_too_large"]="图片需小于 50 MB、5000 万像素",["unsupported_image"]="请选择 PNG、JPEG、WebP、BMP 或 TIFF 图片",["invalid_image"]="无法读取此图片，请检查文件是否有效",
+        ["Add reference images"]="添加参考图片",["Remove image"]="移除图片",["Up to 3 reference images"]="最多添加 3 张参考图片",["Choose an aspect ratio"]="请选择画面比例",["missing_image"]="找不到所选图片",["image_too_large"]="图片需小于 100 MB、4000 万像素",["unsupported_image"]="请选择 PNG、JPEG、WebP、BMP 或 TIFF 图片",["invalid_image"]="无法读取此图片，请检查文件是否有效",
         ["General settings"]="通用设置",["Settings summary"]="共 3 项配置，语言可随时切换。",["Configured"]="已配置",["Not configured"]="未配置",["PyTorch environment"]="PyTorch 环境",["LightX2V workspace"]="LightX2V 工作目录",["Advanced configuration"]="高级配置",["Search local environment"]="搜索本机环境",["Check passed"]="检查通过",["Not checked"]="未检查",["No native environment found"]="未找到可用的原生 Windows 环境，请选择 Python 环境",["Workspace help"]="创作记录、参考图片和生成结果会保存在此目录中。",["Python help"]="选择原生 Windows python.exe，或填写包含 python.exe 的环境目录。",
         ["8-step generation"]="8 步生成",
         ["New creation"] = "新建创作",
@@ -188,5 +217,5 @@ public sealed class L10n : Observable
         ["Exit while running"] = "正在生成图像。退出将停止本次任务。",
         ["Generation cancelled"] = "本次生成已停止，可复制上方提示词重新生成。"
     };
-    static readonly Dictionary<string, string> English = new() { ["Launch location restricts desktop integration"]="This launch location restricts opening websites and folders. Close this copy and reopen LightX2V from its desktop shortcut or a normal installation folder.", ["Requested browser to open model page"]="The model page was sent to your browser. If no window appears, copy the link into your browser.", ["Link copied"]="Link copied. Paste it into your browser to open the page.", ["enhancement"]="Enhancing prompt",["Model download help"]="Automatic download retrieves and verifies all model files. For a manual download, run this command with the corresponding official CLI.",["Configure Python first"]="Choose a native Windows Python environment in Settings first.", ["missing_image"]="The selected image is missing.",["image_too_large"]="Choose an image under 50 MB and 50 million pixels.",["unsupported_image"]="Choose a PNG, JPEG, WebP, BMP or TIFF image.",["invalid_image"]="Unable to read this image.",["Up to 3 reference images"]="Add up to 3 reference images.",["Settings summary"]="3 settings. You can switch language at any time.", ["Generated"]="Generated", ["running"] = "Generating", ["completed"] = "Completed", ["failed"] = "Failed", ["cancelled"] = "Cancelled", ["interrupted"] = "Interrupted", ["loading"] = "Loading model", ["encoding"] = "Encoding prompt", ["sampling"] = "Generating image", ["decoding"] = "Decoding image", ["Interrupted message"] = "The app exited before generation finished. Copy the earlier prompt to try again.", ["Generation failed"] = "Generation failed. Open the log for details.", ["2K memory"] = "2K images need more available memory", ["Enter a valid seed"] = "Enter an integer seed between 0 and 4294967295.", ["Settings description"] = "Connect a native Windows inference environment. Creation history, parameters and images are stored in the workspace.", ["Generation cancelled"] = "Generation stopped. Copy the earlier prompt to try again." };
+    static readonly Dictionary<string, string> English = new() { ["Launch location restricts desktop integration"]="This launch location restricts opening websites and folders. Close this copy and reopen LightX2V from its desktop shortcut or a normal installation folder.", ["Requested browser to open model page"]="The model page was sent to your browser. If no window appears, copy the link into your browser.", ["Link copied"]="Link copied. Paste it into your browser to open the page.", ["enhancement"]="Enhancing prompt",["Model download help"]="Automatic download retrieves and verifies all model files. For a manual download, run this command with the corresponding official CLI.",["Configure Python first"]="Choose a native Windows Python environment in Settings first.", ["missing_image"]="The selected image is missing.",["image_too_large"]="Choose an image under 100 MB and 40 million pixels.",["unsupported_image"]="Choose a PNG, JPEG, WebP, BMP or TIFF image.",["invalid_image"]="Unable to read this image.",["Up to 3 reference images"]="Add up to 3 reference images.",["Settings summary"]="3 settings. You can switch language at any time.", ["Generated"]="Generated", ["running"] = "Generating", ["completed"] = "Completed", ["failed"] = "Failed", ["cancelled"] = "Cancelled", ["interrupted"] = "Interrupted", ["loading"] = "Loading model", ["encoding"] = "Encoding prompt", ["sampling"] = "Generating image", ["decoding"] = "Decoding image", ["Interrupted message"] = "The app exited before generation finished. Copy the earlier prompt to try again.", ["Generation failed"] = "Generation failed. Open the log for details.", ["2K memory"] = "2K images need more available memory", ["Enter a valid seed"] = "Enter an integer seed between 0 and 4294967295.", ["Settings description"] = "Connect a native Windows inference environment. Creation history, parameters and images are stored in the workspace.", ["Generation cancelled"] = "Generation stopped. Copy the earlier prompt to try again." };
 }

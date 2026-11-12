@@ -76,14 +76,14 @@ def package(app):
         commit, dirty = None, None
     payload = sorted(p for p in app.rglob('*') if p.is_file() and p.name != 'build-manifest.json')
     manifest = dict(
-        version=version, channel='internal-beta', target='win-x64',
+        version=version, channel='latest', target='win-x64',
         sourceCommit=commit, sourceDirty=dirty,
         backends=['amd_rocm', 'cuda'], cudaHardwareAcceptance='pending',
         verification='Compilation and package integrity only. GPU acceptance scope is documented in docs/testing.md.',
         sha256={p.relative_to(app).as_posix(): sha(p) for p in payload},
     )
     (app / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
-    result = app.parent / f'LightX2V-Windows-{version}-win-x64.zip'
+    result = app.parent / 'LightX2V-APP-Windows-x64.zip'
     prefix = f'LightX2V-Windows-{version}'
     with zipfile.ZipFile(result, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
         for path in sorted(app.rglob('*')):

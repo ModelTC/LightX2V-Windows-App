@@ -8,6 +8,18 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        if(e.Args.Length==3&&e.Args[0]=="--maintenance")
+        {
+            ShutdownMode=ShutdownMode.OnExplicitShutdown;
+            try{await AppMaintenance.ExecuteAsync(e.Args[1],e.Args[2]);Shutdown();}
+            catch(Exception error)
+            {
+                try{File.WriteAllText(Path.Combine(Path.GetDirectoryName(e.Args[1])!,"failure.txt"),error.ToString());}catch(Exception reportError){System.Diagnostics.Trace.WriteLine(reportError);}
+                MessageBox.Show(L10n.Current["Uninstall could not finish. Your remaining files were preserved."]+"\n"+error.Message,"LightX2V");Shutdown(1);
+            }
+            try{AppMaintenance.ScheduleHelperCleanup(e.Args[1]);}catch(Exception cleanupError){System.Diagnostics.Trace.WriteLine(cleanupError);}
+            return;
+        }
         instance = new Mutex(true, "Local\\LightX2V.Windows.App", out var first);
         if (!first) { MessageBox.Show("LightX2V APP is already running.", "LightX2V APP"); Shutdown(); return; }
         DispatcherUnhandledException += (_, args) =>

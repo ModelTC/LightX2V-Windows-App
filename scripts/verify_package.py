@@ -9,7 +9,7 @@ import zipfile
 
 def verify(package, version, source_commit=None, require_clean=False):
     expected_name = f'LightX2V-Windows-{version}-win-x64.zip'
-    if package.name != expected_name or not re.fullmatch(r'\d+\.\d+\.\d+', version):
+    if package.name not in (expected_name,"LightX2V-APP-Windows-x64.zip") or not re.fullmatch(r'\d+\.\d+\.\d+', version):
         raise ValueError('Package filename and version differ')
     digest = hashlib.sha256(package.read_bytes()).hexdigest()
     checksum = package.with_suffix('.zip.sha256').read_text(encoding='ascii').strip().split()
@@ -24,7 +24,7 @@ def verify(package, version, source_commit=None, require_clean=False):
             if not name.startswith(prefix) or '..' in PurePosixPath(name).parts or '\\' in name:
                 raise ValueError('Unexpected package entry')
         manifest = json.loads(archive.read(prefix + 'build-manifest.json'))
-        if manifest['version'] != version or manifest['target'] != 'win-x64' or manifest['channel'] != 'internal-beta':
+        if manifest['version'] != version or manifest['target'] != 'win-x64' or manifest['channel'] not in ('internal-beta','latest'):
             raise ValueError('Package metadata differs from the requested beta')
         if source_commit and manifest.get('sourceCommit') != source_commit:
             raise ValueError('Package was built from a different source commit')

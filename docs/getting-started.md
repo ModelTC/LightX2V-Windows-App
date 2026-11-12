@@ -6,14 +6,11 @@ Download the Windows x64 ZIP from this repository's Releases page and choose **E
 
 This is an unsigned preview build. A SHA-256 file is provided for checking download integrity. If Windows blocks the app, first confirm that it came from this project's Releases page. You do not need to disable Windows protection or change system security settings.
 
-## Complete setup in four steps
+## Complete first-time setup
 
-1. **Workspace:** Choose a folder you can read and write, with enough space for the environment, models, and creations. Allow about 100 GB of free space. If a long path causes installation problems, choose a shorter location such as `D:\LightX2V`.
-2. **Prepare your computer:** The app scans your graphics hardware and recommends a backend. Graphics software, also called a driver, lets Windows use the GPU. Keep a working installed driver; if one is missing, follow the official installation assistant. Save other work before a requested restart. Return to the app, check again, and choose a compatible environment or use automatic preparation.
-3. **Download model files:** Click **Download required files automatically**. The Qwen image model is about 32 GB and is the only model required to finish setup. **Automatic (recommended)** checks Hugging Face and ModelScope and selects an available download route; either source can also be selected manually. Download status includes recent speed and estimated remaining transfer time. Interrupted downloads can be retried and completed data reused. Download optional prompt enhancement models later from the workspace's right sidebar. You can keep enhancement off and create images with the base model while those optional files download.
-4. **Finish setup:** Click **Start creating** to enter the workspace. Generating a sample image is not required.
+The Windows four-step assistant is retained: choose a workspace, prepare the computer, download required image files, then start creating. Hardware scanning, official driver guidance, checked environment selection and automatic installation keep their existing flow. Only the base image model is required; no sample generation is required. Finishing preparation selects Standard.
 
-The app includes the .NET runtime. Automatic preparation installs its own Python in the selected workspace without replacing system Python. WSL and a system CUDA Toolkit are not required. NVIDIA needs a compatible graphics driver; the current CUDA profile requires a driver exposing CUDA 12.8 or newer and must pass the actual GPU environment check.
+For later changes, **General settings** uses three compact cards: language, workspace and PyTorch environment. Environment search and preview preparation do not switch your active workspace until you save. You can reopen **Setup assistant** from settings. WSL and a system CUDA Toolkit are not required; the portable package includes .NET.
 
 ## Create your first image
 
@@ -38,3 +35,11 @@ For generation failures, inspect the task logs. Starting with v0.3.7, tasks also
 v0.3.8 reuses v0.3.7 models, Python environments, and workspaces without clearing directories. It fixes Windows weight-reading paths and improves crash diagnostics; see [Windows checkpoint I/O](windows-checkpoint-io.md).
 
 Starting with v0.3.9, select a sent prompt and use Ctrl+C or the context menu to copy it. The image-as-reference button below a generated result appends that image to the draft. Enter editing instructions and generate; existing draft text and parameters are not restored from the old task. A configured workspace is interactive on launch. Necessary environment checks run on submission, support cancellation, and preserve the draft on failure.
+
+## Input and maintenance
+
+Enter sends, Shift+Enter inserts a newline, and Ctrl+Enter remains available. An IME candidate confirmation does not submit. Add up to eight references using the file picker, drag and drop, clipboard image paste, or a generated image. Imports use a shared 100 MB / 40 megapixel policy; a failed batch preserves the previous draft.
+
+Each creation remembers its size, aspect ratio and enhancement preference. Reusing a task selects its original creation and prepares the input without submitting it. Generation uses a new random seed.
+
+General settings includes **Uninstall** with model weights, workspace data, and app/settings groups. Review the exact paths before confirming. External resources are unchecked by default; overlapping retained resources and directory links are rejected. Application removal follows the packaged file manifest and keeps other files placed in the application folder. A packaged application is needed to launch its maintenance helper. A failed maintenance job leaves a diagnostic under `%LOCALAPPDATA%\LightX2V-maintenance`. In-app updates and INT8 remain deferred.

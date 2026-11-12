@@ -72,10 +72,10 @@ internal static partial class Program
     static async Task ModelDownloadChecks()
     {
         var settings=AppSettings.Fresh(Path.Combine(root,"automatic-models-isolated"));var prefs=Path.Combine(root,"automatic-models-prefs");Files.Write(Path.Combine(prefs,"preferences.json"),new Preferences{Settings=settings});
-        var fake=new FakeModelDownloader{Hold="turbo"};using var vm=new MainViewModel(prefs,fake,new FakeCatalog(),new FakeDriverPlatform());vm.Setup.Page=2;var wizard=new FirstRunWindow(vm);
+        var fake=new FakeModelDownloader{Hold="turbo"};using var vm=new MainViewModel(prefs,fake,new FakeCatalog(),new FakeDriverPlatform());vm.SelectStandardModel();vm.Setup.Page=2;var wizard=new MainWindow(vm);
         await Render(wizard,760,700,"models-missing-zh");
-        var automatic=Children<Button>((DependencyObject)wizard.Content).Single(b=>AutomationProperties.GetAutomationId(b)=="SetupDownloadModels");
-        Check(automatic.IsEnabled&&automatic.Content.ToString()==vm.T["Download required files automatically"]&&fake.Requests.Count==0,"Step three exposes an explicit one-click automatic download without downloading on page render");
+        var automatic=Children<Button>((DependencyObject)wizard.Content).Single(b=>ReferenceEquals(b.DataContext,vm.TurboCard)&&b.Command==vm.TurboCard.DownloadCommand);
+        Check(automatic.IsEnabled&&fake.Requests.Count==0,"Step three exposes an explicit one-click automatic download without downloading on page render");
         automatic.Command.Execute(null);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         Check(vm.IsDownloading&&vm.DownloadingKey=="turbo"&&!vm.CanConfigureModels&&vm.TurboCard.Percent==42,"The wizard button invokes the download pipeline and exposes numeric progress while configuration is locked");
         Check(fake.Requests.Single().Source=="auto"&&fake.Requests.Single().Destination==vm.TurboCard.Path,"One-click download passes automatic source selection and the destination directly, without a CLI prompt");await Render(wizard,760,700,"models-downloading");

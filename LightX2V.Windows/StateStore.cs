@@ -8,7 +8,7 @@ public sealed class UnsupportedStateVersionException() : IOException("This works
 // and never rewrite a schema that this application does not understand.
 public static class StateStore
 {
-    public sealed record History(List<Generation> Generations, bool Recovered, bool SkippedRecords);
+    public sealed record History(List<Generation> Generations, bool Recovered, bool SkippedRecords) {public Dictionary<string,CreationParameters> Creations {get;init;}=[];public string? ActiveCreationId {get;init;}}
     public sealed record Configuration(Preferences? Preferences, string? Notice);
 
     static bool Recoverable(Exception error) => error is JsonException or InvalidDataException or IOException or UnauthorizedAccessException;
@@ -89,6 +89,9 @@ public static class StateStore
     {
         if (value.SchemaVersion != 1) throw new UnsupportedStateVersionException();
         if (value.Generations is null) throw new InvalidDataException("Saved history is missing.");
+        value.Creations ??= [];
+        foreach(var item in value.Creations.Values)
+            if(item is null||item.Tier is <0 or >2||!Presets.Ratios.Contains(item.Ratio))throw new InvalidDataException("Saved creation settings are invalid.");
         foreach (var generation in value.Generations) ValidateGeneration(generation);
     }
 
@@ -98,11 +101,13 @@ public static class StateStore
         var recovered = File.Exists(path);
         DateTime? indexSavedAt = null;
         var records = new Dictionary<string, Generation>();
+        WorkspaceState? index=null;
         if (File.Exists(path))
         {
             try
             {
-                foreach (var item in Read<WorkspaceState>(path, ValidateHistory).Generations) records[item.Id] = item;
+                index=Read<WorkspaceState>(path, ValidateHistory);
+                foreach (var item in index.Generations) records[item.Id] = item;
                 indexSavedAt = File.GetLastWriteTimeUtc(path);
                 recovered = false;
             }
@@ -115,7 +120,8 @@ public static class StateStore
         {
             try
             {
-                foreach (var item in Read<WorkspaceState>(path + ".bak", ValidateHistory).Generations) records[item.Id] = item;
+                index=Read<WorkspaceState>(path + ".bak", ValidateHistory);
+                foreach (var item in index.Generations) records[item.Id] = item;
                 recovered = true;
             }
             catch (UnsupportedStateVersionException) { throw; }
@@ -140,11 +146,11 @@ public static class StateStore
                 catch (Exception error) when (Recoverable(error)) { skipped = true; }
             }
         }
-        return new(records.Values.OrderBy(item => item.CreatedAt).ToList(), recovered, skipped);
+        return new(records.Values.OrderBy(item => item.CreatedAt).ToList(), recovered, skipped){Creations=index?.Creations??[],ActiveCreationId=index?.ActiveCreationId};
     }
 
-    public static void SaveHistory(string workspace, List<Generation> generations) =>
-        Save(Path.Combine(workspace, "workspace.json"), new WorkspaceState { Generations = generations }, ValidateHistory);
+    public static void SaveHistory(string workspace, List<Generation> generations,Dictionary<string,CreationParameters>? creations=null,string? activeCreationId=null) =>
+        Save(Path.Combine(workspace, "workspace.json"), new WorkspaceState { Generations = generations,Creations=creations??[],ActiveCreationId=activeCreationId }, ValidateHistory);
 
     static void Save<T>(string path, T value, Action<T> validate)
     {

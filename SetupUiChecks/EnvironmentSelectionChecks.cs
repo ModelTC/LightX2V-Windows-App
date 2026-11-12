@@ -130,7 +130,7 @@ internal static partial class Program
         Files.Write(Path.Combine(prefs, "preferences.json"), new Preferences { Settings = settings });
         var platform = new FakeDriverPlatform { Computer = HardwareInfo.FromAdapters([new("AMD Radeon fixture GPU", "32")]) };
         using var vm = new MainViewModel(prefs, environmentCatalog: fake, driverPlatform: platform);
-        var wizard = new FirstRunWindow(vm);
+        var wizard = new FirstRunWindow(vm,standalone:true);
         await Render(wizard, 760, 660, "wizard-workspace");
         vm.Setup.Backend = "cuda";
         Check(vm.Setup.EnvironmentSettings().Backend == "cuda" && vm.Settings.Backend != "cuda", "Wizard backend changes remain unsaved drafts");

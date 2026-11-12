@@ -33,7 +33,8 @@ public sealed class AppSettings
 {
     public string Workspace { get; set; } = ""; public string Python { get; set; } = ""; public string Repository { get; set; } = ""; public string Model { get; set; } = "";
     public string Backend {get;set;}="auto";
-    public bool EnhancementEnabled {get;set;}
+    public bool ModelSelected {get;set;}=true;
+    public bool EnhancementEnabled {get;set;}=true;
     public string T2IDirectory {get;set;}="";
     public string I2IDirectory {get;set;}="";
     public string DownloadSource {get;set;}="auto";
@@ -55,12 +56,12 @@ public sealed class AppSettings
     {
         workspace ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "LightX2V");
         string ModelPath(string key) => Path.Combine(workspace, "models", ModelCatalog.Get(key).Repository.Replace('/', Path.DirectorySeparatorChar));
-        return new() { Workspace = workspace, Model = ModelPath("turbo"), T2IDirectory = ModelPath("t2i"), I2IDirectory = ModelPath("i2i") };
+        return new() { ModelSelected=false, Workspace = workspace, Model = ModelPath("turbo"), T2IDirectory = ModelPath("t2i"), I2IDirectory = ModelPath("i2i") };
     }
     public static string? LegacyPreferences() {var root=FindBackend();var p=root.Length>0?Path.Combine(root,"output","app-preferences","preferences.json"):Path.Combine(AppContext.BaseDirectory,"UserData","preferences.json");return File.Exists(p)?p:null;}
     public void ValidateWorkspace(){if(!Path.IsPathFullyQualified(Workspace))throw new InvalidOperationException("Choose an absolute workspace path.");Directory.CreateDirectory(Workspace);var p=Path.Combine(Workspace,".write-probe-"+Guid.NewGuid().ToString("N"));File.WriteAllText(p,"");File.Delete(p);}
     public void ValidateEnvironment(){ValidateWorkspace();if(!Path.IsPathFullyQualified(Python)||!File.Exists(Python)||!Python.EndsWith(".exe",StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Choose a native Windows Python executable.");}
-    public AppSettings Clone() => new() { Backend=Backend, Workspace = Workspace, Python = Python, Repository = Repository, Model = Model,EnhancementEnabled=EnhancementEnabled,T2IDirectory=T2IDirectory,I2IDirectory=I2IDirectory,DownloadSource=DownloadSource };
+    public AppSettings Clone() => new() { ModelSelected=ModelSelected, Backend=Backend, Workspace = Workspace, Python = Python, Repository = Repository, Model = Model,EnhancementEnabled=EnhancementEnabled,T2IDirectory=T2IDirectory,I2IDirectory=I2IDirectory,DownloadSource=DownloadSource };
     public void Validate()
     {
         foreach (var p in new[] { Workspace, Python, Repository, Model }) if (!Path.IsPathFullyQualified(p)) throw new InvalidOperationException("Choose absolute paths in Settings.");
@@ -71,7 +72,8 @@ public sealed class AppSettings
     }
 }
 public sealed class Preferences { public int SchemaVersion {get;set;}=1; public bool ModelExpanded {get;set;}=true;public bool ParametersExpanded {get;set;}=true; public string Language { get; set; } = "zh"; public AppSettings Settings { get; set; } = new(); }
-public sealed class WorkspaceState { public int SchemaVersion { get; set; } = 1; public List<Generation> Generations { get; set; } = []; }
+public sealed class CreationParameters {public int Tier {get;set;}=1;public string Ratio {get;set;}="Adaptive";public bool EnhancementEnabled {get;set;}=true;}
+public sealed class WorkspaceState { public Dictionary<string,CreationParameters> Creations {get;set;}=[];public string? ActiveCreationId {get;set;} public int SchemaVersion { get; set; } = 1; public List<Generation> Generations { get; set; } = []; }
 public sealed class InputImage {public string Id {get;set;}=Guid.NewGuid().ToString("N");public string Path {get;set;}="";public string Name {get;set;}="";public int Width {get;set;}public int Height {get;set;}}
 public sealed class InferenceRequest
 {
@@ -117,8 +119,9 @@ public sealed class Generation : Observable
     [JsonIgnore] public string ResultStatus => L10n.Current[Completed?"Generated":Status];
     [JsonIgnore] public string Duration => L10n.Current.Language=="zh"?$"{(int)Seconds/60} 分 {(int)Seconds%60} 秒":$"{(int)Seconds/60}m {(int)Seconds%60}s";
     [JsonIgnore] public string CreatedTime => CreatedAt.ToString("HH:mm");
+    [JsonIgnore] public string LogRunLabel=>CreatedAt.ToString("HH:mm:ss")+" · "+ResultStatus;
     [JsonIgnore] public string Meta => L10n.Current[Status] + " · " + Elapsed + $" · {Request.Width} × {Request.Height} · seed {Request.Seed}";
-    public void Refresh() { foreach (var n in new[] { nameof(Title), nameof(Subtitle), nameof(PhaseText), nameof(Elapsed), nameof(Completed), nameof(Running), nameof(Failed), nameof(Meta), nameof(Error), nameof(PreviewPath),nameof(ResultStatus),nameof(Duration),nameof(EnhancementStatus),nameof(EnhancementThinking),nameof(EnhancedPrompt),nameof(EnhancementRatio),nameof(EnhancementCompleted),nameof(EnhancementLabel),nameof(EnhancementDuration),nameof(HasEnhancement),nameof(ShowImageStage),nameof(EnhancementFailed) }) Changed(n); }
+    public void Refresh() { foreach (var n in new[] { nameof(Title), nameof(Subtitle), nameof(PhaseText), nameof(Elapsed), nameof(Completed), nameof(Running), nameof(Failed), nameof(Meta), nameof(Error), nameof(PreviewPath),nameof(LogRunLabel),nameof(ResultStatus),nameof(Duration),nameof(EnhancementStatus),nameof(EnhancementThinking),nameof(EnhancedPrompt),nameof(EnhancementRatio),nameof(EnhancementCompleted),nameof(EnhancementLabel),nameof(EnhancementDuration),nameof(HasEnhancement),nameof(ShowImageStage),nameof(EnhancementFailed) }) Changed(n); }
 }
 public sealed class PromptEnhancementSettings
 {

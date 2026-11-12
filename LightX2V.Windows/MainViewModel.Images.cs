@@ -8,12 +8,14 @@ namespace LightX2V.Windows;
 
 public sealed partial class MainViewModel
 {
+    internal void ReportImportError(string message)=>Toast=message;
     public ObservableCollection<InputImage> InputImages {get;}=[];
-    bool importing,disposed;
+    bool importing,disposed;int pendingImports;
+    readonly SemaphoreSlim importQueue=new(1,1);
     Process? importer;
     public bool IsImporting{get=>importing;private set{Set(ref importing,value);RefreshStatus();Changed(nameof(CanAddImages));}}
     public bool HasInputImages=>InputImages.Count>0;
-    public bool CanAddImages=>File.Exists(Settings.Python)&&!IsRunning&&!IsPreflighting&&!IsImporting&&!IsBaseModelDownloading;
+    public bool CanAddImages=>!disposed&&File.Exists(Settings.Python)&&!IsPreparingSetup&&!IsBaseModelDownloading;
     public Command AddImagesCommand{get;private set;}=null!;
     public ParameterCommand RemoveImageCommand{get;private set;}=null!;
     public ParameterCommand ReferenceGenerationCommand{get;private set;}=null!;
@@ -28,24 +30,30 @@ public sealed partial class MainViewModel
     {
         if(!CanAddImages)return;
         var dialog=new OpenFileDialog{Title=T["Add reference images"],Filter="Images|*.png;*.jpg;*.jpeg;*.webp;*.bmp;*.tif;*.tiff",Multiselect=true};
-        if(dialog.ShowDialog()==true)await AddImagePathsAsync(dialog.FileNames);
+        if(dialog.ShowDialog()==true)await AddImagePathsAsync(dialog.FileNames,true);
     }
     public async Task ReferenceGenerationAsync(Generation? generation)
     {
         if(disposed||generation?.Completed!=true||!CanAddImages)return;
         await AddImagePathsAsync([generation.Request.Output]);
     }
-    public async Task AddImagePathsAsync(IEnumerable<string> paths)
+    public async Task AddImagePathsAsync(IEnumerable<string> paths,bool deduplicate=false)
     {
-        if(!CanAddImages)return;
-        var selected=paths.ToArray();if(selected.Length==0)return;
-        if(InputImages.Count+selected.Length>3){Toast=T["Up to 3 reference images"];return;}
+        var selected=paths.ToArray();if(selected.Length==0||!CanAddImages)return;
+        pendingImports++;IsImporting=true;
+        await importQueue.WaitAsync();
+        if(!CanAddImages){pendingImports--;IsImporting=pendingImports>0;importQueue.Release();return;}
         var settings=Settings.Clone();IsImporting=true;Toast="";
+        var batch=new List<InputImage>();var created=new List<string>();
+        var hashes=new HashSet<string>();
         try
         {
+            if(deduplicate)foreach(var existing in InputImages)
+                hashes.Add(await Task.Run(()=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(existing.Path)))));
             foreach(var path in selected)
             {
                 var output=Path.Combine(settings.Workspace,"imports",Guid.NewGuid().ToString("N")+".png");
+                created.Add(output);
                 var start=new ProcessStartInfo(settings.Python){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=System.Text.Encoding.UTF8,StandardErrorEncoding=System.Text.Encoding.UTF8};
                 foreach(var a in new[]{"-X","utf8",Path.Combine(AppContext.BaseDirectory,"Backend","import_image.py"),Path.GetFullPath(path),output})start.ArgumentList.Add(a);
                 var temp=Path.Combine(settings.Workspace,"tmp");Directory.CreateDirectory(temp);start.Environment["TEMP"]=temp;start.Environment["TMP"]=temp;
@@ -54,11 +62,23 @@ public sealed partial class MainViewModel
                 var response=await stdout;_ = await stderr;importer=null;if(disposed)return;
                 using var json=JsonDocument.Parse(response);var data=json.RootElement;
                 if(process.ExitCode!=0)throw new InvalidOperationException(T[data.GetProperty("code").GetString()??"invalid_image"]);
-                InputImages.Add(new(){Path=output,Name=data.GetProperty("name").GetString()!,Width=data.GetProperty("width").GetInt32(),Height=data.GetProperty("height").GetInt32()});
+                if(deduplicate)
+                {
+                    var digest=await Task.Run(()=>Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(output))));
+                    if(!hashes.Add(digest)){File.Delete(output);continue;}
+                }
+                if(InputImages.Count+batch.Count>=InputImagePolicy.MaximumCount)throw new InvalidOperationException(string.Format(T["You can add up to {0} images."],InputImagePolicy.MaximumCount));
+                batch.Add(new(){Path=output,Name=data.GetProperty("name").GetString()!,Width=data.GetProperty("width").GetInt32(),Height=data.GetProperty("height").GetInt32()});
             }
+            if(!disposed){foreach(var image in batch)InputImages.Add(image);created.Clear();}
         }
         catch(Exception e){if(!disposed)Toast=e.Message;}
-        finally{importer=null;IsImporting=false;}
+        finally
+        {
+            foreach(var path in created)foreach(var candidate in new[]{path,Path.ChangeExtension(path,".tmp")})
+                try{File.Delete(candidate);}catch(IOException error){Trace.WriteLine(error);}catch(UnauthorizedAccessException error){Trace.WriteLine(error);}
+            importer=null;pendingImports--;IsImporting=pendingImports>0;importQueue.Release();
+        }
     }
     (int Width,int Height) CurrentDimensions()
     {

@@ -1,33 +1,28 @@
 # LightX2V Windows App
 
-[English](README.md) | 简体中文
+[English](README.md)
 
-在 Windows 上用文字或最多 3 张参考图片创作图像。使用 [LightX2V](https://github.com/ModelTC/LightX2V) 和 [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo) 本地推理，可选 [llama.cpp](https://github.com/ggml-org/llama.cpp) 提示词增强。
-
-Windows 11 x64，无需 WSL。支持 AMD ROCm / NVIDIA CUDA（预览）；[实测设备与范围](docs/testing.md)。
+[![构建 Windows App](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml/badge.svg)](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml)
 
 ## 下载
 
-| 版本 | Windows x64 | 状态 |
+| 通道 | Windows 11 · x64 | 状态 |
 | --- | --- | --- |
-| v0.3.12 | [下载 App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.12/LightX2V-Windows-0.3.12-win-x64.zip) | 内测版 / Pre-release |
+| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | 开发版；对应提交和 SHA-256 见发布页 |
+| Stable | 尚未提供 | 完成 AMD 与 RTX 验收后首次发布 |
 
-完整解压 ZIP，运行 `LightX2V.Windows.exe`，按向导准备运行环境并下载模型。
+每个通道保留一个当前安装包，下载地址固定。普通成功构建更新 Latest；Stable 手动晋升已验证的 Latest 安装包，不重新编译。
 
-当前构建未进行代码签名。[使用指南](docs/getting-started.md) · [发布说明](docs/releases/v0.3.12.md)
-
-## 支持的模型
-
-- [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo)
-- [Qwen-Image-2.1-PE-T2I-GGUF-Q8_0](https://huggingface.co/lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0)
-- [Qwen-Image-2.1-PE-I2I-GGUF-Q8_0](https://huggingface.co/lightx2v/Qwen-Image-2.1-PE-I2I-GGUF-Q8_0)
+[使用说明](docs/getting-started.md) · [验证范围](docs/testing.md) · [发布管理](docs/releasing.md)
 
 ## 从源码构建
 
-在 Windows 安装 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) 和 Python 3.12，然后在仓库根目录运行：
+在 Windows x64 安装 .NET SDK 10.0.403 和 Python 3.12，然后运行：
 
 ```powershell
+git clone https://github.com/ModelTC/LightX2V-Windows-App.git
+cd LightX2V-Windows-App
 .\build.ps1
 ```
 
-[构建与开发](docs/development.md) · [第三方组件](THIRD_PARTY_NOTICES.md)
+[开发说明](docs/development.md) · [第三方组件](THIRD_PARTY_NOTICES.md)

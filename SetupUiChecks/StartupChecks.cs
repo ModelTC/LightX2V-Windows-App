@@ -157,8 +157,9 @@ internal static partial class Program
         var t2iDownload=modelButtons.Single(b=>ReferenceEquals(b.Command,vm.T2ICard.DownloadCommand));
         var i2iDownload=modelButtons.Single(b=>ReferenceEquals(b.Command,vm.I2ICard.DownloadCommand));
         var enhancementToggle=(CheckBox)window.FindName("EnhancementToggle");
-        Check(t2iDownload.IsEnabled&&i2iDownload.IsEnabled&&enhancementToggle.IsChecked==false,"The actual right sidebar exposes both optional download actions while enhancement is off");
-        var downloading=vm.DownloadModelAsync("t2i");await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        Check(!t2iDownload.IsEnabled&&!i2iDownload.IsEnabled&&enhancementToggle.IsChecked==false,"Idle enhancement cards are muted and disabled when enhancement is off, matching the Mac reference");
+        vm.EnhancementEnabled=true;Check(t2iDownload.IsEnabled&&i2iDownload.IsEnabled,"Enabling enhancement makes both independent model downloads available");
+        var downloading=vm.DownloadModelAsync("t2i");await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);vm.EnhancementEnabled=false;
         Check(vm.IsDownloading&&vm.DownloadingKey=="t2i"&&downloads.Requests.Single().Resource=="t2i"&&vm.CanGenerate,"Downloading a selected optional model leaves the ready base model available for ordinary generation");
         var etaLine=DownloadEtaLine(window,vm.T2ICard);
         Check(vm.T2ICard.DownloadEta=="预计还需约 2 分钟"&&etaLine.Text==vm.T2ICard.DownloadEta,"The right sidebar displays the optional model's remaining-time estimate in Chinese");

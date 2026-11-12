@@ -1,41 +1,28 @@
 # LightX2V Windows App
 
-[![Windows CI](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml/badge.svg?branch=main)](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml)
+[简体中文](README.zh-CN.md)
 
-English | [Chinese (Simplified)](README.zh-CN.md)
-
-A native Windows app for local text-to-image generation and editing with up to three reference images. Powered by [LightX2V](https://github.com/ModelTC/LightX2V) and [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo), with optional [llama.cpp](https://github.com/ggml-org/llama.cpp) prompt enhancement.
-
-Windows 11 x64, no WSL required. AMD ROCm / NVIDIA CUDA (preview); see [tested hardware](docs/testing.md).
+[![Build Windows App](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml/badge.svg)](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml)
 
 ## Download
 
-| Version | Windows x64 | Status |
+| Channel | Windows 11 · x64 | Status |
 | --- | --- | --- |
-| v0.3.12 | [Download App](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/v0.3.12/LightX2V-Windows-0.3.12-win-x64.zip) | Pre-release |
+| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | Development build; see the release for its exact commit and SHA-256 |
+| Stable | Not available yet | First Stable requires completed AMD and RTX acceptance |
 
-Extract the entire ZIP, run `LightX2V.Windows.exe`, and follow the wizard to prepare the environment and download models.
+Each channel keeps one current package at a fixed download URL. Ordinary successful builds update Latest; Stable is manually promoted from the verified Latest package without rebuilding.
 
-Current builds are unsigned. [Setup guide](docs/getting-started.md) · [Release notes](docs/releases/v0.3.12.md)
-
-## Supported models
-
-- [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo)
-- [Qwen-Image-2.1-PE-T2I-GGUF-Q8_0](https://huggingface.co/lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0)
-- [Qwen-Image-2.1-PE-I2I-GGUF-Q8_0](https://huggingface.co/lightx2v/Qwen-Image-2.1-PE-I2I-GGUF-Q8_0)
-
-## Automated builds
-
-Every push and pull request runs the Windows build, Python tests, CPU tensor checks, offscreen application checks, and package verification. Successful builds upload a Windows x64 ZIP under the workflow's **Artifacts** section, retained for 30 days. Version tags automatically publish a verified beta package to Releases and record the `windows-x64` deployment environment.
-
-[Build history and artifacts](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml) · [Published releases](https://github.com/ModelTC/LightX2V-Windows-App/releases)
+[Usage](docs/getting-started.md) · [Testing](docs/testing.md) · [Release management](docs/releasing.md)
 
 ## Build from source
 
-On Windows, install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and Python 3.12, then run from the repository root:
+On Windows x64, install .NET SDK 10.0.403 and Python 3.12, then run:
 
 ```powershell
+git clone https://github.com/ModelTC/LightX2V-Windows-App.git
+cd LightX2V-Windows-App
 .\build.ps1
 ```
 
-[Development](docs/development.md) · [Third-party components](THIRD_PARTY_NOTICES.md)
+[Development](docs/development.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)

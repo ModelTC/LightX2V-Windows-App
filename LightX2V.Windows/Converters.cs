@@ -42,3 +42,11 @@ public sealed class BackendIndexConverter : IValueConverter
     public object Convert(object value,Type targetType,object parameter,CultureInfo culture)=>Equals(value,"cuda")?1:0;
     public object ConvertBack(object value,Type targetType,object parameter,CultureInfo culture)=>Equals(value,1)?"cuda":"amd_rocm";
 }
+
+public sealed class ReferenceIndexConverter : IValueConverter {public object Convert(object value,Type target,object parameter,CultureInfo culture)=>value is int index?(index+1).ToString():"";public object ConvertBack(object value,Type target,object parameter,CultureInfo culture)=>Binding.DoNothing;}
+
+public sealed class TurnSpacingConverter : IMultiValueConverter
+{
+    public object Convert(object[] values,Type target,object parameter,CultureInfo culture)=>new Thickness(0,0,0,values.Length==2&&values[0] is int index&&values[1] is int count&&index<count-1?36:0);
+    public object[] ConvertBack(object value,Type[] targets,object parameter,CultureInfo culture)=>throw new NotSupportedException();
+}

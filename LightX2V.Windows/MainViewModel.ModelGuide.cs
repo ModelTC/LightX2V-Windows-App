@@ -13,7 +13,7 @@ public sealed partial class MainViewModel
         var window = new Window
         {
             Title = T["Download guide"], DataContext = this,
-            Owner = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault(),
+            Owner = Application.Current.Windows.OfType<MainWindow>().FirstOrDefault(window=>window.IsVisible),
             Width = 620, Height = 510, MinWidth = 480, MinHeight = 360,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Background = System.Windows.Media.Brushes.White

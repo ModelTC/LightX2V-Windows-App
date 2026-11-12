@@ -19,7 +19,7 @@ internal static partial class Program
     }
     static (AppSettings Settings,string Preferences,FakeDriverPlatform Platform) ReadinessFixture(string name)
     {
-        var f=StartupFixture(name);f.Settings.Python=f.Catalog.InstallResult;f.Settings.EnhancementEnabled=false;
+        var f=StartupFixture(name);f.Settings.ModelSelected=true;f.Settings.Python=f.Catalog.InstallResult;f.Settings.EnhancementEnabled=false;
         f.Settings.Repository=Path.Combine(f.Settings.Workspace,"source-fixture");Directory.CreateDirectory(Path.Combine(f.Settings.Repository,"lightx2v"));File.WriteAllText(Path.Combine(f.Settings.Repository,"lightx2v","infer.py"),"# Never executed by readiness checks");
         TinyTurbo(f.Settings.Model);Files.Write(Path.Combine(f.Preferences,"preferences.json"),new Preferences{Settings=f.Settings});return(f.Settings,f.Preferences,f.Platform);
     }
@@ -37,7 +37,7 @@ internal static partial class Program
             Check(vm.CanGenerate&&vm.EnvironmentStatus==vm.T["Ready to create"],"A configured typed draft can request generation before its first-session GPU validation");
             var sending=vm.GenerateAsync();await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Check(vm.IsPreflighting&&vm.IsGenerationBusy&&vm.IsChecking&&!vm.IsRunning&&catalog.Calls==1,"First send exposes cancellable validation without creating a running generation");
-            Check(!vm.SettingsCommand.CanExecute(null)&&!vm.CanConfigureModels&&!vm.CanAddImages&&vm.GenerateCommand.CanExecute(null),"Preflight prevents environment changes and double-send while keeping the stop action enabled");
+            Check(!vm.SettingsCommand.CanExecute(null)&&!vm.CanConfigureModels&&vm.CanAddImages&&vm.GenerateCommand.CanExecute(null),"Preflight prevents environment changes and double-send while keeping the stop action enabled");
             vm.Prompt="Next edited draft";await vm.StopAsync();await sending;
             Check(!vm.IsPreflighting&&!vm.IsGenerationBusy&&!vm.IsChecking&&!vm.Ready&&vm.Prompt=="Next edited draft"&&vm.Turns.Count==0,"Cancelling first-send validation preserves the edited draft and creates no fake conversation task");
             Check(!Directory.Exists(Path.Combine(f.Settings.Workspace,"outputs"))||!Directory.EnumerateDirectories(Path.Combine(f.Settings.Workspace,"outputs")).Any(),"Cancelled validation does not allocate an output generation directory");

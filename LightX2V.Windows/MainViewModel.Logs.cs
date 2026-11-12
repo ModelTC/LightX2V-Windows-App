@@ -4,6 +4,19 @@ namespace LightX2V.Windows;
 
 public sealed partial class MainViewModel
 {
+    public Generation? LogTarget {get=>logTarget;set{if(value!=null)OpenLog(value);}}
+    Command? revealLogCommand;
+    public Command RevealLogCommand=>revealLogCommand??=new(()=>_=RevealFullLogAsync());
+    async Task RevealFullLogAsync()
+    {
+        if(logTarget==null)return;
+        try
+        {
+            var path=new[]{"inference.log",Path.Combine("enhancement","llama.log"),"request.json"}.Select(p=>Path.Combine(logTarget.Directory,p)).FirstOrDefault(File.Exists)??logTarget.Directory;
+            await WindowsShell.RevealAsync(path);
+        }
+        catch(Exception error){Toast=ShellFailure(error,"Unable to open Explorer");}
+    }
     Generation? logTarget;string streamedLogId="",streamedLogs="";
     void BeginGenerationLogs(Generation generation){streamedLogId=generation.Id;streamedLogs="";logTarget=generation;Logs="";}
     void ResetLogViewer(){ShowLog=false;logTarget=null;Logs="";}
@@ -15,7 +28,7 @@ public sealed partial class MainViewModel
     void ToggleLog(){if(ShowLog)ShowLog=false;else OpenLog(logTarget??Turns.LastOrDefault()??activeJob);}
     void OpenLog(Generation? generation)
     {
-        if(generation==null)return;logTarget=generation;Toast="";ShowLog=true;RefreshLogPanel();
+        if(generation==null)return;logTarget=generation;Changed(nameof(LogTarget));Toast="";ShowLog=true;RefreshLogPanel();
     }
     static string ReadLogTail(string path)
     {

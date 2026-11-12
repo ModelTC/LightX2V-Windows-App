@@ -1,18 +1,19 @@
-name: Build Windows beta
+name: Build Windows App
 
 on:
   push:
     branches: ['**']
-    tags: ['v*']
+    tags-ignore: [latest, stable]
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# Latest publication and Stable promotion share the same publisher lock.
 concurrency:
-  group: windows-build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: lightx2v-windows-release
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -36,163 +37,51 @@ jobs:
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.12'
-      - name: Check repository and setup pins
-        run: |
-          python scripts/check_repository.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python prepare_setup.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run Python tests
-        run: python -m unittest discover -s Tests -v
-      - name: Compile Windows application checks
-        run: dotnet build SetupUiChecks/SetupUiChecks.csproj -c Release
-      - name: Build and verify portable package
+      - name: Compile, package and verify pinned payloads
         run: ./build.ps1
-      - name: Check core application flows offscreen
-        run: |
-          dotnet publish SetupUiChecks/SetupUiChecks.csproj -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o artifacts/startup-checks
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $report = Join-Path $env:GITHUB_WORKSPACE 'artifacts/startup-results'
-          $executable = Join-Path $env:GITHUB_WORKSPACE 'artifacts/startup-checks/SetupUiChecks.exe'
-          $check = Start-Process -FilePath $executable -ArgumentList ('"' + $report + '" core') -PassThru -Wait
-          if ($check.ExitCode -ne 0) {
-            Get-Content "$report/failure.txt" -Raw -ErrorAction SilentlyContinue
-            throw 'Offscreen core application checks failed.'
-          }
-          $result = Get-Content "$report/checks.json" -Raw | ConvertFrom-Json
-          Write-Output "Passed $($result.passed.Count) offscreen startup, recovery, bridge and model-download checks."
-      - name: Verify release provenance
+      - name: Verify exact source provenance
         env:
           SOURCE_COMMIT: ${{ github.sha }}
         run: |
           $version = ([xml](Get-Content LightX2V.Windows/LightX2V.Windows.csproj -Raw)).Project.PropertyGroup.Version
-          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
-            throw 'Release tag and project version differ.'
-          }
-          python scripts/verify_package.py "dist/LightX2V-Windows-$version-win-x64.zip" --version $version --source-commit $env:SOURCE_COMMIT --require-clean
+          python scripts/verify_package.py dist/LightX2V-APP-Windows-x64.zip --version $version --source-commit $env:SOURCE_COMMIT --require-clean
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Upload beta package
+      - name: Retain verified build for publisher
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: LightX2V-Windows-win-x64-${{ github.sha }}
+          name: Windows-package-${{ github.sha }}
           path: |
-            dist/*-win-x64.zip
-            dist/*-win-x64.zip.sha256
+            dist/LightX2V-APP-Windows-x64.zip
+            dist/LightX2V-APP-Windows-x64.zip.sha256
           if-no-files-found: error
-          retention-days: 30
-      - name: Record build scope
-        run: |
-          @'
-          ## Windows beta build
-
-          This artifact is a self-contained Windows x64 package.
-          Compilation, standard-library Python tests, offscreen core application checks and package integrity passed.
-          This runner did not install GPU drivers or execute GPU inference.
-          AMD and CUDA hardware acceptance scope is documented in docs/testing.md.
-          Version tags publish a prerelease only after a separate verification job.
-          '@ >> $env:GITHUB_STEP_SUMMARY
-
-  cpu-tests:
-    name: Test CPU tensor and checkpoint behavior
-    runs-on: windows-latest
-    timeout-minutes: 20
-    env:
-      PYTHONUTF8: '1'
-      LIGHTX2V_TEST_CHECKPOINT_IO_REAL: '1'
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - name: Check out source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-      - name: Install the pinned CPU test runtime
-        run: |
-          python -m pip install --disable-pip-version-check --only-binary=:all: torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m pip install --disable-pip-version-check --only-binary=:all: numpy==2.5.4 safetensors==0.8.0
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -c "import torch; assert torch.__version__ == '2.11.0+cpu', torch.__version__; assert torch.version.cuda is None and torch.version.hip is None; print(torch.__version__)"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Run real CPU tensor and checkpoint tests
-        run: |
-          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'Tests'
-          @'
-          import unittest
-          names = [
-              'test_adaptive_streaming.StreamingTests',
-              'test_adaptive_streaming.OneShotLifecycleTests',
-              'test_checkpoint_reader.HeaderAndReadTests',
-              'test_checkpoint_reader.OwnedTensorReadTests',
-              'test_checkpoint_io.CheckpointPolicyTests',
-              'test_checkpoint_io.RealSafetensorsPolicyTests.test_owned_cpu_tensor_survives_context_close_and_gc',
-              'test_checkpoint_io.RealSafetensorsPolicyTests.test_repeated_chinese_path_reads_with_gc_and_memory_churn',
-              'test_checkpoint_io.RealSafetensorsPolicyTests.test_cpu_pread_does_not_call_torch_whole_file_storage',
-              'test_checkpoint_io.RealSafetensorsPolicyTests.test_real_numpy_framework_is_unchanged',
-          ]
-          suite = unittest.defaultTestLoader.loadTestsFromNames(names)
-          result = unittest.TextTestRunner(verbosity=2).run(suite)
-          if not result.wasSuccessful() or result.skipped:
-              raise SystemExit(1)
-          '@ | python -
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Record CPU test scope
-        run: |
-          @'
-          ## CPU tensor validation
-
-          Pinned PyTorch 2.11.0 CPU tests passed without skipped selected cases.
-          This job checks BF16 tensor results, bounded checkpoint reads, storage lifetime and Windows safetensors policy with small generated fixtures.
-          Real checkpoint parity and GPU execution remain hardware acceptance checks.
-          '@ >> $env:GITHUB_STEP_SUMMARY
+          retention-days: 1
 
   publish:
-    name: Publish Windows beta
-    needs: [build, cpu-tests]
-    if: startsWith(github.ref, 'refs/tags/v')
+    name: Publish verified Latest
+    needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    environment:
-      name: windows-x64
-      url: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}
     permissions:
       contents: write
       deployments: write
+    environment:
+      name: windows-x64
+      url: https://github.com/${{ github.repository }}/releases/tag/latest
     steps:
-      - name: Check out release source
+      - name: Check out publisher
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Download the verified Windows build
+      - name: Download verified build
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          name: LightX2V-Windows-win-x64-${{ github.sha }}
+          name: Windows-package-${{ github.sha }}
           path: dist
-      - name: Verify and publish prerelease
+      - name: Verify and replace Latest
         env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          SOURCE_COMMIT: ${{ github.sha }}
-        shell: bash
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/publish_latest.py dist/LightX2V-APP-Windows-x64.zip
+      - name: Record download and verification scope
         run: |
-          set -euo pipefail
-          version="${RELEASE_TAG#v}"
-          package="dist/LightX2V-Windows-${version}-win-x64.zip"
-          notes="docs/releases/${RELEASE_TAG}.md"
-          test -f "$notes"
-          python3 scripts/verify_package.py "$package" --version "$version" --source-commit "$SOURCE_COMMIT" --require-clean
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo 'A release with this tag already exists; refusing to replace its assets.' >&2
-            exit 1
-          fi
-          gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease --latest=false \
-            --title "${RELEASE_TAG} · Windows beta" --notes-file "$notes" \
-            "$package" "${package}.sha256"
-          python3 scripts/publish_verified_draft.py "$RELEASE_TAG" "$SOURCE_COMMIT" --directory dist/upload-verification
-          printf '## Windows beta published\n\n[Download %s](https://github.com/%s/releases/tag/%s)\n' "$RELEASE_TAG" "$GH_REPO" "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+          printf '[Download Latest APP](https://github.com/%s/releases/download/latest/LightX2V-APP-Windows-x64.zip)\n\nSource commit: `%s`. Compilation and package integrity passed. Behavioral and GPU validation run locally; see docs/testing.md.\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

@@ -9,7 +9,7 @@ public sealed class SetupController : Observable,IDisposable
     public L10n T=>owner.T;
     public DriverSetupModel Driver {get;}
     public HardwareInfo Hardware=>Driver.Hardware;
-    public string Backend {get=>backend;set{if(Busy||Driver?.Busy==true||Driver?.Pending==true||Backend==value)return;StopEnvironmentSearch();backend=value;Driver!.Backend=value;Selected=null;UseExisting=false;EnvironmentReady=false;Environments.Clear();environmentsSearched=false;Changed();Changed(nameof(EnvironmentSummary));Changed(nameof(BackendRecommendation));Changed(nameof(Requirements));Changed(nameof(HardwareLabel));Changed(nameof(ManagedSupported));}}
+    public string Backend {get=>backend;set{if(Busy||Driver?.Busy==true||Driver?.Pending==true||Backend==value)return;StopEnvironmentSearch();ClearPrepared();backend=value;Driver!.Backend=value;Selected=null;UseExisting=false;EnvironmentReady=false;Environments.Clear();environmentsSearched=false;Changed();Changed(nameof(EnvironmentSummary));Changed(nameof(BackendRecommendation));Changed(nameof(Requirements));Changed(nameof(HardwareLabel));Changed(nameof(ManagedSupported));}}
     public bool ComputerScanned {get=>computerScanned;private set=>Set(ref computerScanned,value);}
     public bool HasDetectedBackend=>Hardware.All.Any(d=>d.Backend==Backend);
     public string BackendRecommendation=>!ComputerScanned?T["Scanning your computer…"]:!HasDetectedBackend&&Hardware.DetectionFailed?T["Graphics detection could not finish. Your driver may already be installed. Scan again or copy the detection details for help."]:!HasDetectedBackend?T["No supported graphics card was identified. Check the graphics software below, then scan again."]:string.Format(T[Driver.Pending?"Finish the pending {0} installation before changing the backend.":"Selected {0} for your graphics card. You can keep this choice."],Backends.Label(Backend));
@@ -20,7 +20,7 @@ public sealed class SetupController : Observable,IDisposable
     public string ResourceLabel {get{try{var r=ResourceSnapshot.Read(Workspace);return $"{T["System memory"]} {r.TotalRam/1073741824.0:F1} GiB · {T["Free"]} {r.AvailableRam/1073741824.0:F1} GiB · {T["Disk"]} {r.DiskFree/1073741824.0:F1} GiB {T["Free"]}";}catch(Exception e){return e.Message;}}}
     public int Page {get=>page;set{if(!Set(ref page,value))return;if(value!=1)StopEnvironmentSearch();if(value==3)Error="";Changed(nameof(PageTitle));}}
     public string PageTitle=>T[Page==0?"Choose workspace":Page==1?"Prepare environment":Page==2?"Prepare models":"Setup complete"];
-    public string Workspace {get=>workspace;set{if(Driver?.Pending==true&&value!=workspace)return;if(value!=workspace)StopEnvironmentSearch();Set(ref workspace,value);Changed(nameof(ResourceLabel));}}
+    public string Workspace {get=>workspace;set{if(Driver?.Pending==true&&value!=workspace)return;if(value!=workspace){StopEnvironmentSearch();ClearPrepared();}Set(ref workspace,value);Changed(nameof(ResourceLabel));}}
     public bool Mirror {get=>mirror;set=>Set(ref mirror,value);}
     public bool UseExisting {get=>useExisting;set{if(!value&&SearchingEnvironments)environmentChoiceMade=true;Set(ref useExisting,value);}}
     public bool SearchingEnvironments {get=>searchingEnvironments;private set{Set(ref searchingEnvironments,value);Changed(nameof(EnvironmentSummary));}}
@@ -55,7 +55,21 @@ public sealed class SetupController : Observable,IDisposable
         if(message==T["Complete the graphics software step first, then continue."])return message;
         return T["We could not finish preparing this computer. Check your internet connection and available disk space, then try again."];
     }
-    public AppSettings EnvironmentSettings(){var settings=owner.Settings.Clone();settings.Workspace=Workspace;settings.Backend=Backend;return settings;}
+    public AppSettings EnvironmentSettings()
+    {
+        var settings=owner.Settings.Clone();settings.Workspace=Workspace.Trim();settings.Backend=Backend;
+        if(Path.IsPathFullyQualified(Workspace)&&Path.IsPathFullyQualified(owner.Settings.Workspace)&&!settings.Workspace.Equals(owner.Settings.Workspace,StringComparison.OrdinalIgnoreCase))
+        {
+            var old=owner.Settings.Workspace;var fresh=AppSettings.Fresh(settings.Workspace);
+            bool Managed(string path,string folder)=>Path.IsPathFullyQualified(path)&&AppMaintenance.Contains(Path.Combine(old,folder),path);
+            if(Managed(settings.Python,"environments"))settings.Python="";
+            if(Managed(settings.Repository,"runtimes"))settings.Repository="";
+            if(settings.Model.Length==0||Managed(settings.Model,"models"))settings.Model=fresh.Model;
+            if(settings.T2IDirectory.Length==0||Managed(settings.T2IDirectory,"models"))settings.T2IDirectory=fresh.T2IDirectory;
+            if(settings.I2IDirectory.Length==0||Managed(settings.I2IDirectory,"models"))settings.I2IDirectory=fresh.I2IDirectory;
+        }
+        return settings;
+    }
     public void ResumeModels(){Workspace=owner.Settings.Workspace;EnvironmentReady=true;Page=2;}
     public async Task ResumeStartupAsync()
     {
@@ -176,28 +190,22 @@ public sealed class SetupController : Observable,IDisposable
         await Execute(async(token,_)=>{await Driver.CheckAsync();token.ThrowIfCancellationRequested();Changed(nameof(BackendRecommendation));});
         if(ComputerScanned&&!Busy)await SearchEnvironmentsCore();
     }
-    public async Task BeginWorkspaceAsync()
+    public async Task BeginWorkspaceAsync(bool commit=true)
     {
         await Execute(async(token,progress)=>{
-            var before=owner.Settings.Workspace;var settings=owner.Settings.Clone();settings.Workspace=Workspace.Trim();settings.Backend=Backend;settings.ValidateWorkspace();Workspace=settings.Workspace;
-            var fresh=AppSettings.Fresh(settings.Workspace);
-            if(string.IsNullOrWhiteSpace(before)||!Path.GetFullPath(before).Equals(Path.GetFullPath(settings.Workspace),StringComparison.OrdinalIgnoreCase))
-            {
-                if(settings.Python.StartsWith(Path.Combine(before,"environments"),StringComparison.OrdinalIgnoreCase))settings.Python="";
-                if(settings.Repository.StartsWith(Path.Combine(before,"runtimes"),StringComparison.OrdinalIgnoreCase))settings.Repository="";
-                if(settings.Model.Length==0||settings.Model.StartsWith(Path.Combine(before,"models"),StringComparison.OrdinalIgnoreCase))settings.Model=fresh.Model;
-                if(settings.T2IDirectory.Length==0||settings.T2IDirectory.StartsWith(Path.Combine(before,"models"),StringComparison.OrdinalIgnoreCase))settings.T2IDirectory=fresh.T2IDirectory;
-                if(settings.I2IDirectory.Length==0||settings.I2IDirectory.StartsWith(Path.Combine(before,"models"),StringComparison.OrdinalIgnoreCase))settings.I2IDirectory=fresh.I2IDirectory;
-            }
-            owner.CommitSetup(settings);Page=1;await ScanComputerCore(token,progress);
+            var settings=EnvironmentSettings();settings.ValidateWorkspace();Workspace=settings.Workspace;
+            if(commit)owner.CommitSetup(settings);Page=1;await ScanComputerCore(token,progress);
         });
         if(ComputerScanned&&!Busy)await SearchEnvironmentsCore();
     }
-    public async Task PrepareEnvironmentAsync(bool install)
+    void ClearPrepared(){PreparedSettings=null;PreparedEnvironment=null;EnvironmentReady=false;}
+    public AppSettings? PreparedSettings {get;private set;}
+    public EnvironmentCandidate? PreparedEnvironment {get;private set;}
+    public async Task PrepareEnvironmentAsync(bool install,bool commit=true)
     {
         StopEnvironmentSearch();
         await Execute(async(token,progress)=>{
-            var settings=owner.Settings.Clone();settings.Workspace=Workspace.Trim();settings.Backend=Backend;settings.ValidateWorkspace();
+            var settings=EnvironmentSettings();settings.Workspace=Workspace.Trim();settings.ValidateWorkspace();
             EnvironmentReady=false;
             if(!await Driver.EnsureReadyAsync(token))throw new InvalidOperationException(T["Complete the graphics software step first, then continue."]);
             if(install)
@@ -214,8 +222,9 @@ public sealed class SetupController : Observable,IDisposable
             if(!probe.Ready||probe.Backend!=Backend)throw new InvalidOperationException(probe.Detail);
             Selected=probe;UseExisting=true;
             progress.Report(new("Preparing LightX2V source"));settings.Repository=await SetupInstaller.PrepareSource(settings.Workspace,token);token.ThrowIfCancellationRequested();
-            settings.Backend=probe.Backend;owner.CommitVerifiedEnvironment(settings,probe);
-            EnvironmentReady=true;Stage="Environment ready";Percent=100;await DiscoverModelsCore(token,progress);Page=2;
+            settings.Backend=probe.Backend;PreparedSettings=settings.Clone();PreparedEnvironment=probe;
+            if(commit)owner.CommitVerifiedEnvironment(settings,probe);
+            EnvironmentReady=true;Stage="Environment ready";Percent=100;if(commit)await DiscoverModelsCore(token,progress);Page=2;
         });
     }
     async Task DiscoverModelsCore(CancellationToken token,IProgress<SetupProgress> progress)
@@ -248,7 +257,7 @@ public sealed partial class MainViewModel
         var reload=changed||!WorkspaceAvailable;
         var history=reload?StateStore.LoadHistory(value.Workspace):null;
         if(changed)Persist();InvalidateEnvironment();Settings=value.Clone();SavePreferences();
-        if(reload){all.Clear();LoadWorkspace(history);NewCreation();}
+        if(reload){all.Clear();InputImages.Clear();Prompt="";LoadWorkspace(history);}
         ReloadModelPaths();Changed(nameof(Settings));Changed(nameof(NeedsInitialSetup));
     }
     public Task<bool> DownloadRequiredModelsAsync()=>StartRequiredModelDownloads();

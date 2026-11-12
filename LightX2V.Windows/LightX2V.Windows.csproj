@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework><UseWPF>true</UseWPF>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AssemblyName>LightX2V.Windows</AssemblyName>
-    <Version>0.3.12</Version><ApplicationIcon>Resources\LightX2V.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
+    <Version>0.4.0</Version><ApplicationIcon>Resources\LightX2V.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
   <ItemGroup><Content Include="Backend\**\*.py;Resources\*.json;Resources\*.ico;Resources\Setup\**\*;Runtime\**\*" Exclude="**\__pycache__\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
 </Project>

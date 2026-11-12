@@ -98,6 +98,6 @@ public sealed class FirstRunWindow : Window
     }
     async Task Next()
     {
-        if(setup.Page==0)await setup.BeginWorkspaceAsync();else if(setup.Page==1){if(!setup.ComputerScanned){await setup.ScanComputerAsync();return;}if(!setup.Driver.Checked)await setup.Driver.CheckAsync();if(!setup.Driver.CanContinue){if(setup.Driver.CanDownload)await setup.Driver.DownloadAndOpenAsync();else await setup.Driver.CheckAsync(true);}else await setup.PrepareEnvironmentAsync(!setup.UseExisting);}else if(setup.Page==2){if(setup.CanContinue)setup.Page=3;else await setup.DownloadModelsAsync();}else{Completed=true;Close();}Refresh();
+        if(setup.Page==0)await setup.BeginWorkspaceAsync();else if(setup.Page==1){if(!setup.ComputerScanned){await setup.ScanComputerAsync();return;}if(!setup.Driver.Checked)await setup.Driver.CheckAsync();if(!setup.Driver.CanContinue){if(setup.Driver.CanDownload)await setup.Driver.DownloadAndOpenAsync();else await setup.Driver.CheckAsync(true);}else await setup.PrepareEnvironmentAsync(!setup.UseExisting);}else if(setup.Page==2){if(setup.CanContinue)setup.Page=3;else await setup.DownloadModelsAsync();}else{owner.SelectStandardModel();Completed=true;Close();}Refresh();
     }
 }

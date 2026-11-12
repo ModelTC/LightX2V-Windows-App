@@ -7,12 +7,14 @@ public sealed partial class MainViewModel
     Command? downloadEnhancementCommand,disableEnhancementCommand;
     ModelCard CurrentEnhancementCard=>HasInputImages?I2ICard:T2ICard;
     public bool NeedsEnhancementDownload=>EnhancementEnabled&&!CurrentEnhancementCard.Ready&&!IsGenerationBusy;
+    public bool ShowGenerationGuidance=>CanGenerateReason.Length>0&&CanGenerateReason!=T["Describe the image you want to create."];
     public string CanGenerateReason
     {
         get
         {
             if(!WorkspaceAvailable)return T["Creation history could not be opened. Check workspace permissions or choose another workspace in Settings."];
             if(IsGenerationBusy)return "";
+            if(!HasSelectedModel)return T["Choose model"];
             if(Setup?.Driver.Pending==true)return T["Finish the graphics software step in setup, then check again."];
             if(NeedsInitialSetup)return T["Finish setting up this computer before creating an image."];
             if(IsPreparingSetup)return T["Wait for setup to finish preparing this computer."];
@@ -41,6 +43,7 @@ public sealed partial class MainViewModel
     {
         if(args.PropertyName is not (nameof(CanGenerate) or nameof(WorkspaceAvailable)))return;
         Changed(nameof(CanGenerateReason));
+        Changed(nameof(ShowGenerationGuidance));
         Changed(nameof(NeedsEnhancementDownload));
         Changed(nameof(ShowEnhancementActions));
     }

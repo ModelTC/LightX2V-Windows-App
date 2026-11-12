@@ -11,7 +11,7 @@ using LightX2V.Windows;
 
 internal static partial class Program
 {
-    static bool startupOnly;
+    static bool startupOnly,nativeOnly,maintenanceOnly;
     static string root = "";
     static readonly List<string> passed = [];
     static void Check(bool condition, string message)
@@ -41,7 +41,7 @@ internal static partial class Program
         content.UpdateLayout();
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
         content.UpdateLayout();
-        foreach (var id in new[] { "SetupContinue", "SetupBack", "SetupClose", "EnvironmentSearch", "EnvironmentClose" })
+        foreach (var id in new[] { "SettingsSave", "SettingsClose", "SetupContinue", "SetupBack", "SetupClose", "EnvironmentSearch", "EnvironmentClose" })
         {
             var button = Children<Button>(content).FirstOrDefault(b => AutomationProperties.GetAutomationId(b) == id);
             if (button == null) continue;
@@ -76,16 +76,16 @@ internal static partial class Program
     {
         if (args.Length is < 1 or > 2)
         {
-            Console.Error.WriteLine("Usage: SetupUiChecks.exe <output-directory> [core|startup]");
+            Console.Error.WriteLine("Usage: SetupUiChecks.exe <output-directory> [core|startup|native|maintenance]");
             return 2;
         }
         var mode = args.Length == 2 ? args[1] : "core";
-        if (mode is not ("core" or "startup"))
+        if (mode is not ("core" or "startup" or "native" or "maintenance"))
         {
-            Console.Error.WriteLine($"Unknown check mode '{mode}'. Supported modes are core and startup.");
+            Console.Error.WriteLine($"Unknown check mode '{mode}'. Supported modes are core, startup, native and maintenance.");
             return 2;
         }
-        startupOnly = mode == "startup";
+        startupOnly = mode == "startup";nativeOnly=mode=="native";maintenanceOnly=mode=="maintenance";
         root = Path.GetFullPath(args[0]);
         Directory.CreateDirectory(root);
         RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
@@ -127,10 +127,14 @@ internal static partial class Program
 
     static async Task Run()
     {
+        if(maintenanceOnly){await MaintenanceProcessChecks();return;}
+        if(nativeOnly){await NativeAppChecks();return;}
         await StartupChecks();
         await ReadinessChecks();
         if (startupOnly) return;
 
+        await ParityChecks();
+        await VisualParityChecks();
         RecoveryChecks();
         await BridgeChecks();
         await ModelDownloadChecks();
