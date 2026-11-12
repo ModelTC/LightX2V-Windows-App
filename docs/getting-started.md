@@ -4,7 +4,7 @@
 
 Download the Windows x64 ZIP from this repository's Releases page and choose **Extract All**. Open the extracted folder and run `LightX2V.exe`. Keep the entire folder: extracting only the EXE or running it directly inside the ZIP is not supported.
 
-This is an unsigned preview build. A SHA-256 file is provided for checking download integrity. If Windows blocks the app, first confirm that it came from this project's Releases page. You do not need to disable Windows protection or change system security settings.
+This is an unsigned preview build. The release page provides the package SHA-256 for checking download integrity. If Windows blocks the app, first confirm that it came from this project's Releases page. You do not need to disable Windows protection or change system security settings.
 
 ## Complete first-time setup
 

@@ -161,13 +161,14 @@ public static class ModelValidation
             foreach (var relative in model.RequiredFiles)
             {
                 var path = ChildPath(directory, relative);
-                var info = new FileInfo(path);
+                var info = ModelFile(path);
                 if (!info.Exists || info.Length == 0) return false;
                 if (!relative.EndsWith(".json", StringComparison.OrdinalIgnoreCase)) continue;
                 var stamp = (info.Length, info.LastWriteTimeUtc.Ticks);
-                if (relative == "processor/tokenizer.json" && validatedTokenizers.TryGetValue(path, out var cached) && cached == stamp)
+                var cacheTokenizer=relative=="processor/tokenizer.json"&&!DirectoryLinkParent(path)&&!DirectoryLinkParent(info.FullName);
+                if (cacheTokenizer && validatedTokenizers.TryGetValue(info.FullName, out var cached) && cached == stamp)
                     continue;
-                using var stream = File.OpenRead(path);
+                using var stream = File.OpenRead(info.FullName);
                 using var json = JsonDocument.Parse(stream);
                 if (json.RootElement.ValueKind != JsonValueKind.Object) return false;
                 if (model.JsonProperties.TryGetValue(relative, out var expected))
@@ -176,10 +177,15 @@ public static class ModelValidation
                 if (relative == "processor/tokenizer.json")
                 {
                     // This only caches a lightweight format check. Explicit repair still hashes every file.
-                    info.Refresh();
-                    if (stamp != (info.Length, info.LastWriteTimeUtc.Ticks)) return false;
-                    if (validatedTokenizers.Count >= 64) validatedTokenizers.Clear();
-                    validatedTokenizers[path] = stamp;
+                    var current=ModelFile(path);
+                    if (!current.FullName.Equals(info.FullName,StringComparison.OrdinalIgnoreCase)||stamp!=(current.Length,current.LastWriteTimeUtc.Ticks)) return false;
+                    // Explicitly selected directory aliases remain readable, but are not cached:
+                    // a junction can change targets without changing the file's visible stamp.
+                    if(cacheTokenizer&&!DirectoryLinkParent(path)&&!DirectoryLinkParent(current.FullName))
+                    {
+                        if (validatedTokenizers.Count >= 64) validatedTokenizers.Clear();
+                        validatedTokenizers[current.FullName] = stamp;
+                    }
                 }
             }
             if (model.SampleSigmas.Length > 0)
@@ -199,6 +205,23 @@ public static class ModelValidation
         {
             return false;
         }
+    }
+
+    static bool DirectoryLinkParent(string path)
+    {
+        for(var directory=new DirectoryInfo(Path.GetDirectoryName(path)!);directory!=null;directory=directory.Parent)
+            if((directory.Attributes&FileAttributes.ReparsePoint)!=0)return true;
+        return false;
+    }
+
+    static FileInfo ModelFile(string path)
+    {
+        var file=new FileInfo(path);
+        // Windows reports a file symlink's own length as zero. Cache snapshots reference
+        // blob files; inspect their final metadata without traversing directory links.
+        return file.Exists&&(file.Attributes&FileAttributes.ReparsePoint)!=0
+            ?file.ResolveLinkTarget(true) as FileInfo??throw new InvalidDataException("A model file link does not resolve to a regular file.")
+            :file;
     }
 
     static string ChildPath(string directory, string relative)
@@ -224,7 +247,7 @@ public static class ModelValidation
     public static bool Gguf(string path)
     {
         if (!File.Exists(path)) return false;
-        var size = new FileInfo(path).Length;
+        var size = ModelFile(path).Length;
         if (size < ModelCatalog.MinimumGgufBytes) return false;
         var name = Path.GetFileName(path);
         foreach (var model in ModelCatalog.Models.Values)

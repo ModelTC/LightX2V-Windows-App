@@ -52,6 +52,52 @@ internal static partial class Program
             Check(vm.TurboCard.Path==manual,cancelSearch?"Late model results cannot cross a workspace change":"Background discovery cannot replace a manually edited model path");
             setup.StopModelSearch();
         }
+        var snapshot=Path.Combine(lab,"hf","hub","models--Qwen--Qwen-Image-2.1-Turbo","snapshots","fixture");
+        bool linkSupport=true;
+        try
+        {
+            foreach(var source in Directory.GetFiles(model,"*",SearchOption.AllDirectories))
+            {
+                var destination=Path.Combine(snapshot,Path.GetRelativePath(model,source));Directory.CreateDirectory(Path.GetDirectoryName(destination)!);File.CreateSymbolicLink(destination,source);
+            }
+        }
+        catch(Exception error) when(error is UnauthorizedAccessException||error is IOException&&((error.HResult&0xffff)==1314))
+        {linkSupport=false;File.WriteAllText(Path.Combine(root,"file-link-fixture-skipped.txt"),"File symbolic links are unavailable at the current user privilege. No Windows policy was changed.");}
+        if(linkSupport)
+        {
+            Check(ModelValidation.Ready(snapshot,"turbo"),"A complete HF-style snapshot with file links passes the same model completeness policy");
+            var cached=new ModelDiscovery([Path.Combine(lab,"hf")],[]).Search(settings,null,CancellationToken.None);
+            Check(cached.Candidates.Any(c=>c.Key=="turbo"&&c.Ready&&c.Path==snapshot),"Automatic cache discovery accepts snapshot file links while keeping directory traversal read-only");
+            var tokenizer=Path.Combine(model,"processor","tokenizer.json");var wrong=Path.Combine(lab,"wrong-tokenizer.json");
+            File.WriteAllText(wrong,File.ReadAllText(tokenizer).Replace("1.0","9.0"));File.SetLastWriteTimeUtc(wrong,File.GetLastWriteTimeUtc(tokenizer));
+            var link=Path.Combine(snapshot,"processor","tokenizer.json");File.Delete(link);File.CreateSymbolicLink(link,wrong);
+            Check(!ModelValidation.Ready(snapshot,"turbo"),"Repointing a tokenizer link invalidates cached validation even when length and timestamp match");
+            File.Delete(link);File.CreateSymbolicLink(link,Path.Combine(lab,"missing-tokenizer.json"));
+            Check(!ModelValidation.Ready(snapshot,"turbo"),"A broken snapshot file link is never accepted as a complete model");
+            var gguf=Path.Combine(lab,"probe.gguf");using(var stream=File.Create(gguf)){stream.Write("GGUF"u8);stream.SetLength(ModelCatalog.MinimumGgufBytes);}
+            var ggufLink=Path.Combine(lab,"linked.gguf");File.CreateSymbolicLink(ggufLink,gguf);
+            Check(ModelValidation.Gguf(ggufLink),"PE file-link checks use the target length rather than the Windows link's zero length");
+        }
+        var alias=Path.Combine(lab,"selected-model-alias");
+        void Junction(string target)
+        {
+            var start=new System.Diagnostics.ProcessStartInfo("cmd.exe"){UseShellExecute=false,CreateNoWindow=true,RedirectStandardOutput=true,RedirectStandardError=true};
+            foreach(var argument in new[]{"/c","mklink","/J",alias,target})start.ArgumentList.Add(argument);
+            using var process=System.Diagnostics.Process.Start(start)!;process.WaitForExit();
+            if(process.ExitCode!=0)throw new IOException("Could not create the isolated directory-link fixture: "+process.StandardError.ReadToEnd());
+        }
+        Junction(model);
+        try
+        {
+            Check(ModelValidation.Ready(alias,"turbo"),"An explicitly selected directory alias remains compatible with model validation");
+            var wrongModel=Path.Combine(lab,"wrong-model");Copy(model,wrongModel);
+            var originalTokenizer=Path.Combine(model,"processor","tokenizer.json");var wrongTokenizer=Path.Combine(wrongModel,"processor","tokenizer.json");
+            File.WriteAllText(wrongTokenizer,File.ReadAllText(originalTokenizer).Replace("1.0","9.0"));
+            File.SetLastWriteTimeUtc(wrongTokenizer,File.GetLastWriteTimeUtc(originalTokenizer));
+            Directory.Delete(alias);Junction(wrongModel);
+            Check(!ModelValidation.Ready(alias,"turbo"),"Repointing a directory alias cannot reuse tokenizer validation with matching length and timestamp");
+        }
+        finally{Directory.Delete(alias);}
         var old=AppSettings.Fresh(Path.Combine(lab,"old-workspace"));
         var relocated=old.AtWorkspace(Path.Combine(lab,"new-workspace"));
         Check(AppMaintenance.Contains(relocated.Workspace,relocated.Model)&&AppMaintenance.Contains(relocated.Workspace,relocated.T2IDirectory)&&AppMaintenance.Contains(relocated.Workspace,relocated.I2IDirectory),"Workspace changes relocate all managed model defaults through one settings rule");
