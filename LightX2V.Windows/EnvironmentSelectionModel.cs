@@ -28,8 +28,7 @@ public sealed class EnvironmentSelectionModel : Observable,IDisposable
     public DriverSetupModel Driver {get;}
     HardwareInfo hardware=>Driver.Hardware;
     public bool ManagedSupported=>supportOverride??hardware.Supports(Backend);
-    public string Backend {get=>Backends.Resolve(settings.Backend,hardware);set{if(Busy||Driver.Pending||Backend==value)return;settings.Backend=value;Driver.Backend=value;Candidates.Clear();Selected=null;searched=false;Changed();foreach(var name in new[]{nameof(ManagedSupported),nameof(CanInstall),nameof(Requirements),nameof(ManagedDescription),nameof(Summary),nameof(BackendHint)})Changed(name);}}
-    public string BackendHint=>T[Backend=="cuda"?"CUDA support is in preview. Full RTX image generation still needs hardware acceptance.":"Automatic AMD installation is verified on Radeon 8060S. Other AMD GPUs require a compatible existing environment."];
+    public string Backend {get=>Backends.Resolve(settings.Backend,hardware);set{if(Busy||Driver.Pending||Backend==value)return;settings.Backend=value;Driver.Backend=value;Candidates.Clear();Selected=null;searched=false;Changed();foreach(var name in new[]{nameof(ManagedSupported),nameof(CanInstall),nameof(Requirements),nameof(ManagedDescription),nameof(Summary)})Changed(name);}}
     public ObservableCollection<EnvironmentCandidate> Candidates {get;}=[];
     public EnvironmentCandidate? Selected {get;private set;}
     public Action<EnvironmentCandidate>? Chosen;
@@ -56,7 +55,7 @@ public sealed class EnvironmentSelectionModel : Observable,IDisposable
         T.PropertyChanged+=LanguageChanged;
     }
     void DriverChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(Busy));Changed(nameof(CanInstall));Changed(nameof(ManagedSupported));Changed(nameof(Summary));}
-    void LanguageChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(Summary));Changed(nameof(Stage));Changed(nameof(BackendHint));}
+    void LanguageChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(Summary));Changed(nameof(Stage));}
     void Upsert(EnvironmentCandidate value)
     {
         var old=Candidates.FirstOrDefault(x=>x.Path.Equals(value.Path,StringComparison.OrdinalIgnoreCase));if(old!=null)Candidates.Remove(old);

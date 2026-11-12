@@ -54,7 +54,7 @@ Use the paths from the app's configuration. `--tiers 512,1K,2K --edit` also exer
 
 ## Recorded results
 
-Hardware results retain their version and configuration scope. [v0.3.12](releases/v0.3.12.md) records the AMD development-machine validation. [RTX 4070 Laptop results](rtx-4070-laptop-results.md) records the reported v0.3.8 text-to-image runs and remaining scenarios. Earlier release notes retain their corresponding acceptance results.
+Hardware results retain their version and configuration scope. [v0.3.12](releases/v0.3.12.md) records the AMD development-machine validation. [RTX 4070 Laptop results](rtx-4070-laptop-results.md) records the user-confirmed CUDA acceptance and the detailed historical v0.3.8 text-to-image runs. Earlier release notes retain their corresponding acceptance results.
 
 Keep raw QA data outside the source tree. Review local paths, prompts, reference images, and other personal information before sharing reports.
 
@@ -66,7 +66,7 @@ On both AMD and RTX, record app commit, GPU, driver, VRAM/RAM, stage times and l
 
 Only use isolated disposable fixtures for uninstall: each group, unchecked data preservation, external paths, overlapping groups, directory links, changed plan hash, permissions failures, application exit and helper cleanup. Never test deletion with the user's real models or creations.
 
-Run behavioral suites locally; CI retains compilation/package/publishing gates without installing behavioral test dependencies. First Stable is gated on completing this hardware matrix. RTX results are user-assisted and remain pending until provided.
+Run behavioral suites locally; CI retains compilation/package/publishing gates without installing behavioral test dependencies. First Stable is gated on completing this hardware matrix. CUDA acceptance on the RTX 4070 Laptop has been confirmed by the user. Keep future build-specific regression results separate from that recorded acceptance.
 
 The `native` SetupUiChecks mode uses `LIGHTX2V_QA_NATIVE_SETTINGS` for existing read-only model/environment paths and requires an isolated workspace inside its fresh report directory. It runs actual app text-to-image and eight-reference editing. The `maintenance` mode must run alongside a complete verified portable payload; its caller checks exact removal, retained files and helper cleanup after the test process exits. Never point these fixtures at user data. `LIGHTX2V_QA_PYTHON` enables the real Python importer checks in core mode.
 
@@ -79,4 +79,4 @@ The `desktop` SetupUiChecks mode requires an interactive Windows session and a f
 
 The `native` mode also exercises a disposable first-use workspace beside the supplied model collection, automatically searches the installed environments and all three models, then removes only that disposable workspace. Generation outputs stay in the report workspace. It verifies real enhancement, stop, full log retention and history reopening. Do not use the report directory for personal files.
 
-[The v0.4.2 release scope](releases/v0.4.2.md) retains RTX and additional physical-scale acceptance as separate manual work. Keep original preferences and shared resources intact during upgrades.
+[The v0.4.2 release scope](releases/v0.4.2.md) records the user-confirmed RTX 4070 Laptop CUDA acceptance; additional build-specific and physical-scale checks remain separate manual work. Keep original preferences and shared resources intact during upgrades.

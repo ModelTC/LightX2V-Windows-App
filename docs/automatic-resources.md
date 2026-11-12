@@ -70,9 +70,9 @@ Stage events are `stage_begin`, `stage_end`, and `stage_error`; `stage_id` and `
 
 Before submitting Issues, remove personal information from logs, including usernames, local paths, prompts, and reference images.
 
-## Manual RTX 4070 Laptop acceptance testing
+## RTX 4070 Laptop regression checklist
 
-The 8 GB GPU memory and 32 GB system memory configuration remains an acceptance testing target. Planning unit tests cannot replace actual image generation. Acceptance records should include the App version, GPU and driver, GPU environment, system memory, and resources available before generation.
+The user has confirmed CUDA acceptance on the RTX 4070 Laptop; see [the recorded results](rtx-4070-laptop-results.md). Use this checklist for future regressions on the 8 GB GPU memory / 32 GB system memory configuration. Planning unit tests cannot replace actual image generation. Acceptance records should include the App version, GPU and driver, GPU environment, system memory, and resources available before generation.
 
 1. Configure the CUDA environment through the existing wizard, complete the GPU check, and reuse downloaded models. Connect AC power and close applications that use substantial GPU or system memory.
 2. Use a prompt of your choice and a fixed aspect ratio to test 512, then 1K, followed by 2K as the hardware permits. Disable enhancement first, then separately test the complete workflow with enhancement enabled. Smaller dimensions help isolate image workspace overhead; they do not establish that loading issues are resolved.
@@ -80,7 +80,7 @@ The 8 GB GPU memory and 32 GB system memory configuration remains an acceptance 
 4. Test stopping a task during enhancement and during image generation. Confirm that the interface becomes usable again and the task's processes exit before starting the next task.
 5. Save the resource plan, stage and host logs, duration, and result for each task. Record successful installation, a passed environment check, successful generation, and acceptable speed separately.
 
-Only a complete workflow with valid output on the relevant hardware can establish that a configuration has passed acceptance testing. CUDA support remains in preview.
+Only a complete workflow with valid output on the relevant hardware can establish that a configuration has passed acceptance testing. The recorded CUDA acceptance applies to the RTX 4070 Laptop and does not certify every CUDA device.
 
 ## Component lifecycle within a single task
 

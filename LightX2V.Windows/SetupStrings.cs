@@ -3,8 +3,7 @@ internal static class SetupStrings
 {
     public static readonly IReadOnlyDictionary<string,string> Chinese=new Dictionary<string,string>
     {
-        ["Copy detection details"]="复制检测信息",
-        ["Graphics detection could not finish. Your driver may already be installed. Scan again or copy the detection details for help."]="显卡检测暂未完成，这不代表驱动没有安装。请重新扫描，或复制检测信息以便排查。",
+        ["Graphics detection could not finish. Your driver may already be installed. Scan again."]="显卡检测暂未完成，这不代表驱动没有安装。请重新扫描。",
         ["Setup complete"]="配置完成",
         ["Start creating"]="开始创作",
         ["You're all set. Let your ideas take shape!"]="准备就绪，开始创作吧！",
@@ -44,8 +43,6 @@ internal static class SetupStrings
         ["System memory"]="系统内存",["Disk"]="磁盘",["Free"]="可用",
         ["Inference backend"]="推理后端",
         ["Pinned configuration · Native Windows"]="固定依赖配置 · 原生 Windows",
-        ["CUDA support is in preview. Full RTX image generation still needs hardware acceptance."]="CUDA 支持为预览版，完整出图仍待 RTX 实机验收。",
-        ["Automatic AMD installation is verified on Radeon 8060S. Other AMD GPUs require a compatible existing environment."]="AMD 自动安装已在 Radeon 8060S 验证，其他 AMD 显卡需要兼容的已有环境。",
         ["Automatic installation needs a detected NVIDIA GPU or the verified Radeon 8060S. You can check an existing compatible environment."]="自动安装需要检测到 NVIDIA 显卡或已验证的 Radeon 8060S，也可检查兼容的已有环境。",
         ["Environment downloads are verified and reused. Disk space is checked before installation."]="已下载的安装包会先校验再复用，安装前会检查磁盘空间。",
         ["BF16 models use substantial system memory. Close other applications and start with 512."]="BF16 模型需要较多系统内存，建议关闭其他应用并从 512 档开始。",

@@ -40,7 +40,6 @@ internal static class DriverStrings
         ["Download and open the official assistant"]="下载并打开官方安装助手",
         ["I have finished installing · Check again"]="我已安装，重新检查",
         ["Check this computer again"]="重新检查电脑",
-        ["More help and computer information"]="更多帮助与电脑信息（可选）",
         ["If the installer asks you to restart, save your other files and restart the computer. Reopen LightX2V to continue; downloaded files are kept."]="安装器如果提示重启，请先保存其他文件，再重启电脑。重新打开 LightX2V 即可继续，已下载的文件会保留。",
         ["Open the official download page"]="打开官方下载页面",
         ["Copy official link"]="复制官网链接",

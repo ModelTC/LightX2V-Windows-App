@@ -1,6 +1,10 @@
-# RTX 4070 Laptop hardware results: v0.3.8
+# RTX 4070 Laptop CUDA acceptance
 
-This page summarizes user-provided records from a Windows test machine, using source commit `c5c1f713be99aa3ab1e59e50425c91025f84e866`. These are not results from simulating CUDA on the AMD development machine. The raw logs and generated images are not distributed with the public source.
+On 2026-11-12, the user confirmed that CUDA had passed acceptance on the RTX 4070 Laptop. This is a user-reported hardware acceptance result, not a CUDA simulation on the AMD host. The confirmation did not include a new build identifier or additional raw measurements; the detailed v0.3.8 records below retain their original scope. It does not imply acceptance of every NVIDIA GPU or automatically authorize Stable promotion.
+
+## Detailed v0.3.8 records
+
+This section summarizes user-provided records from a Windows test machine, using source commit `c5c1f713be99aa3ab1e59e50425c91025f84e866`. These are not results from simulating CUDA on the AMD development machine. The raw logs and generated images are not distributed with the public source.
 
 ## Test machine and results
 
@@ -25,4 +29,4 @@ All four runs completed 8 steps, produced decodable PNGs, and had worker exit co
 - The single 2K run had a commit peak of 34.61 / 35.31 GiB, leaving approximately 0.70 GiB of headroom. Substantial physical memory was still available; the two metrics must not be conflated.
 - The first worker startup / import was slower than later samples. However, this report did not measure the time from App launch to an interactive interface, so it cannot directly serve as a timing baseline for this round of startup interface changes.
 
-Full CUDA acceptance therefore remains `pending`, with this page documenting the scope of RTX text-to-image hardware results received so far. Follow-up testing should cover relaunches, reference images, and recovery after stopping a task. Windows currently still supports at most 3 reference images.
+These limitations describe the archived v0.3.8 measurements, not the current CUDA acceptance status confirmed above. v0.3.8 supported at most three references; the current app supports eight. Keep future regression evidence scoped to its tested build and workflows, including relaunches, reference images and recovery after stopping a task.

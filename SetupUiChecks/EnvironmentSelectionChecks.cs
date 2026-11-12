@@ -118,7 +118,7 @@ internal static partial class Program
         await model.SearchAsync();
         await model.InstallAsync();
         Check(fake.LastBackend == "cuda" && model.Candidates.Single().Backend == "cuda", "The CUDA choice reaches search and automatic installation without reusing ROCm");
-        await Render(picker, 800, 700, "environment-cuda-preview");
+        await Render(picker, 800, 700, "environment-cuda");
         model.Backend = "amd_rocm";
         fake.Found = [];
         await model.SearchAsync();

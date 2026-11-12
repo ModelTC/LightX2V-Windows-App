@@ -54,7 +54,7 @@ public sealed class DriverSetupModel : Observable,IDisposable
         if(userRequested&&result.Ready)ClearPending();
         messageKey=Pending?"Finish the official installation, then return here and check again.":result.Condition switch
         {
-            DriverCondition.CheckFailed=>"Graphics detection could not finish. Your driver may already be installed. Scan again or copy the detection details for help.",
+            DriverCondition.CheckFailed=>"Graphics detection could not finish. Your driver may already be installed. Scan again.",
             DriverCondition.Ready=>"Your graphics software is installed. Continue to prepare the image-generation components.",
             DriverCondition.Missing=>"Your computer needs graphics software before it can generate images. The official assistant will choose it for you.",
             DriverCondition.Outdated=>"Your graphics software needs an update. Use the official assistant below, then check again.",

@@ -30,7 +30,7 @@ Stopped downloads can be retried. Model status buttons recheck local completenes
 
 Damaged preferences and history indexes are preserved alongside their originals with a `.corrupt-*` suffix. The app can restore valid `.bak` settings or rebuild history from saved task records. An unsupported newer workspace format is preserved and requires a compatible app version.
 
-For generation failures, inspect the task logs. Starting with v0.3.7, tasks also save `resource-plan.json`, stage telemetry, and host-memory samples. For GPU detection problems, copy the detection information under **More help and computer information**, or inspect `setup/hardware-detection.json` in the workspace. Review usernames, local paths, prompts, and reference images before sharing diagnostic data.
+For generation failures, inspect the task logs. Starting with v0.3.7, tasks also save `resource-plan.json`, stage telemetry, and host-memory samples. For GPU detection problems, inspect `setup/hardware-detection.json` in the workspace. Review usernames, local paths, prompts, and reference images before sharing diagnostic data.
 
 v0.3.8 reuses v0.3.7 models, Python environments, and workspaces without clearing directories. It fixes Windows weight-reading paths and improves crash diagnostics; see [Windows checkpoint I/O](windows-checkpoint-io.md).
 
