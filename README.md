@@ -8,7 +8,7 @@
 
 | Channel | Windows 11 · x64 | Commit | Date (UTC+8) |
 | --- | --- | --- | --- |
-| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`a05b184`](https://github.com/ModelTC/LightX2V-Windows-App/commit/a05b184cb465238d546f6009e44d09f1bf06dc1e) | 2026-11-12 20:24 |
+| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`960c149`](https://github.com/ModelTC/LightX2V-Windows-App/commit/960c1498d0823a91f93080ee32f9a8c29eef0955) | 2026-11-21 11:50 |
 | Stable | Not available yet | — | — |
 
 Each channel keeps one current package at a fixed download URL. Ordinary successful builds update Latest; Stable is manually promoted from the verified Latest package without rebuilding.

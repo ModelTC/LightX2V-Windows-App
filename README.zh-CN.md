@@ -8,7 +8,7 @@
 
 | 通道 | Windows 11 · x64 | 提交 | 日期 (UTC+8) |
 | --- | --- | --- | --- |
-| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`a05b184`](https://github.com/ModelTC/LightX2V-Windows-App/commit/a05b184cb465238d546f6009e44d09f1bf06dc1e) | 2026-11-12 20:24 |
+| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`960c149`](https://github.com/ModelTC/LightX2V-Windows-App/commit/960c1498d0823a91f93080ee32f9a8c29eef0955) | 2026-11-21 11:50 |
 | Stable | 尚未提供 | — | — |
 
 每个通道保留一个当前安装包，下载地址固定。普通成功构建更新 Latest；Stable 手动晋升已验证的 Latest 安装包，不重新编译。
