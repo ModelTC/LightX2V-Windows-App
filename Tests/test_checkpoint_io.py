@@ -98,7 +98,10 @@ class RealSafetensorsPolicyTests(unittest.TestCase):
                     if name=='safetensors' or name.startswith('safetensors.')
                     if module is not None and hasattr(module,'safe_open')]
         self.addCleanup(self.restore)
-        io.install_windows_checkpoint_io()
+        # Exercise the Windows policy with real safetensors on any developer host.
+        # Only the policy's platform probe is simulated on non-Windows hosts.
+        with patch.object(io, 'sys', types.SimpleNamespace(platform='win32', modules=sys.modules)):
+            io.install_windows_checkpoint_io()
         self.temp=tempfile.TemporaryDirectory(prefix='checkpoint-io-');self.addCleanup(self.temp.cleanup)
         self.path=Path(self.temp.name)/'中文路径'/ '权重.safetensors';self.path.parent.mkdir()
         self.expected={'bf16':self.torch.arange(128,dtype=self.torch.float32).reshape(16,8).to(self.torch.bfloat16),
