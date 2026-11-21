@@ -157,12 +157,15 @@ def record_download(client, tag, sha, date):
     for _ in range(3):
         head = client.api("GET", "git/ref/heads/main")["object"]["sha"]
         entries = []
-        for path, stable_label in (("README.md", "Download Stable APP"), ("README.zh-CN.md", "下载 Stable APP")):
+        for path, stable_label, recommended in (
+            ("README.md", "Download Stable APP", "Recommended"),
+            ("README.zh-CN.md", "下载 Stable APP", "推荐"),
+        ):
             file = client.api("GET", f"contents/{path}?ref={head}")
             content = base64.b64decode(file["content"]).decode("utf-8")
 
             def row(match):
-                download = match[1] if tag == "latest" else f"[{stable_label}]({url}/releases/download/stable/{ASSET_NAME})"
+                download = match[1] if tag == "latest" else f"[⬇️ {stable_label}]({url}/releases/download/stable/{ASSET_NAME}) · **⭐ {recommended}**"
                 return f"| {channel} | {download} | [`{sha[:7]}`]({url}/commit/{sha}) | {date} |"
 
             updated, count = pattern.subn(row, content)

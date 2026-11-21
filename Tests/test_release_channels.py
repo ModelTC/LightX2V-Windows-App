@@ -174,6 +174,8 @@ class DownloadTableTests(unittest.TestCase):
 
         publisher.record_download(repo, 'stable', sha, date)
         self.assertEqual(len(repo.commits), 2)
+        self.assertIn('**⭐ Recommended**', repo.files['README.md'])
+        self.assertIn('**⭐ 推荐**', repo.files['README.zh-CN.md'])
         for path, value in repo.files.items():
             self.assertEqual(value.splitlines()[0], latest_rows[path])
             self.assertIn('/releases/download/stable/' + publisher.ASSET_NAME, value.splitlines()[1])

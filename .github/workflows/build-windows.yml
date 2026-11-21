@@ -3,7 +3,6 @@ name: Build Windows App
 on:
   push:
     branches: ['**']
-    tags-ignore: [latest, stable]
   pull_request:
   workflow_dispatch:
 

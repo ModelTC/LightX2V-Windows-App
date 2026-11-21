@@ -1,6 +1,6 @@
 # Latest and Stable
 
-Normal successful branch/tag builds publish one non-expiring Windows x64 package at:
+Normal successful branch builds publish one non-expiring Windows x64 package at:
 
 `https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip`
 
@@ -16,4 +16,4 @@ There is no Windows Stable yet. Complete the Standard-model AMD and RTX scenario
 
 After publishing a verified package, the publisher records the source commit and package upload time (UTC+8) in the Release notes and both README download tables. Stable retains the original Latest package date. The README rows are committed together on `main`; the ZIP includes the standalone documentation rather than a snapshot of the rolling download tables. If the README update fails, the verified package stays published and the workflow reports the error. Rerun publication to repair the tables.
 
-Each channel retains one package. Source history and old versioned beta releases remain intact during migration. The former version-tag publishing workflow is retired; ordinary version tags now build Latest. Public release text is English. In-app update checking remains deferred.
+Each channel retains one package. The repository uses the rolling `latest` tag and adds `stable` at the first promotion. Build and release history are recorded in Git commits and Release notes. Public release text is English. In-app update checking remains deferred.

@@ -1,8 +1,8 @@
-# LightX2V Windows App
+# LightX2V
 
 [简体中文](README.zh-CN.md)
 
-[![Build Windows App](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml/badge.svg)](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/build-windows.yml)
+A native Windows app for local image generation and editing with [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo). It uses [LightX2V](https://github.com/ModelTC/LightX2V) for inference and [llama.cpp](https://github.com/ggml-org/llama.cpp) for optional prompt enhancement. CUDA and ROCm have been exercised on the RTX 4070 Laptop GPU and Radeon 8060S.
 
 ## Download
 
@@ -11,11 +11,19 @@
 | Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`7d3f6cd`](https://github.com/ModelTC/LightX2V-Windows-App/commit/7d3f6cd99cf9855e3144d0e8de66868d0dee6765) | 2026-11-21 11:53 |
 | Stable | Not available yet | — | — |
 
-Each channel keeps one current package at a fixed download URL. Ordinary successful builds update Latest; Stable is manually promoted from the verified Latest package without rebuilding.
+The app bundles LightX2V source, llama.cpp, and .NET. Model weights and a compatible Python environment are prepared separately in the app.
 
-[Latest release and SHA-256](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/latest)
+Each channel keeps one app package. Updating Stable replaces its previous package. Ordinary builds update Latest.
 
-[Usage](docs/getting-started.md) · [Testing](docs/testing.md) · [Release management](docs/releasing.md)
+[Promote Latest to Stable](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/promote-stable.yml)
+
+**First launch on Windows:** Download the ZIP, extract the whole folder, and run `LightX2V.exe`. The package is unsigned. If Windows flags it, verify its origin and SHA-256 on the [release page](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/latest). See [Getting started](docs/getting-started.md) for setup.
+
+### Supported models
+
+- [Qwen-Image-2.1-Turbo](https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo)
+- [Qwen-Image-2.1-PE-T2I-GGUF-Q8_0](https://huggingface.co/lightx2v/Qwen-Image-2.1-PE-T2I-GGUF-Q8_0)
+- [Qwen-Image-2.1-PE-I2I-GGUF-Q8_0](https://huggingface.co/lightx2v/Qwen-Image-2.1-PE-I2I-GGUF-Q8_0)
 
 ## Build from source
 
@@ -24,7 +32,6 @@ On Windows x64, install .NET SDK 10.0.403, Python 3.12, and Visual Studio C++ x6
 ```powershell
 git clone https://github.com/ModelTC/LightX2V-Windows-App.git
 cd LightX2V-Windows-App
-.\build.ps1
+.\build.ps1 -Destination .\dist\LightX2V
+.\dist\LightX2V\LightX2V.exe
 ```
-
-[Development](docs/development.md) · [Third-party notices](THIRD_PARTY_NOTICES.md)
