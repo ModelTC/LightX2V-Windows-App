@@ -28,7 +28,7 @@ for name, version in [('torch', '2.11.0'), ('torchvision', '0.26.0'), ('torchaud
     if f'Version: {version}+cu128' not in metadata: raise ValueError('Incorrect wheel version')
     artifact = dict(name=name, version=version+'+cu128', file=filename, url=url, sha256=digest, size=int(head.headers['Content-Length']), group='dependency')
     manifest['packages'] = [artifact if p['name']==name else p for p in manifest['packages']]
-manifest['provenance'] = {'torch':'https://pytorch.org/get-started/previous-versions/#v2110','index':'https://download.pytorch.org/whl/cu128','status':'RTX hardware acceptance pending'}
+manifest['provenance'] = {'torch':'https://pytorch.org/get-started/previous-versions/#v2110','index':'https://download.pytorch.org/whl/cu128'}
 (root/'manifest-cuda.json').write_text(json.dumps(manifest, indent=2)+'\n', encoding='utf-8')
 (root/'requirements-cuda.lock').write_text('\n'.join(p['name']+'=='+p['version'] for p in manifest['packages'])+'\n', encoding='utf-8')
 print('CUDA profile pinned:',len(manifest['packages']),'packages;',sum(p['size'] for p in manifest['packages']),'download bytes')

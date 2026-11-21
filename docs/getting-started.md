@@ -20,7 +20,7 @@ Starting with v0.3.7, the app automatically chooses model residency, offloading,
 
 512 output requires less image working memory than 1K or 2K, but does not shrink model weights. Choosing 512 alone does not establish that a model-loading memory failure is resolved. Check the task's resource plan and logs to distinguish loading, image computation, enhancement, and runtime failures.
 
-The documented RTX 4070 Laptop with 8 GB VRAM and 32 GB RAM completed four v0.3.8 text-to-image tasks, including 512, 1K, 2K, and prompt enhancement. Repeated app restarts and reference-image editing on that test machine still need verification. These samples do not guarantee every size or 8 GB configuration; passing an environment check alone is not proof that all generation paths work. See [RTX hardware results](rtx-4070-laptop-results.md) and [Automatic resource planning](automatic-resources.md).
+CUDA acceptance on the RTX 4070 Laptop has been confirmed. The detailed v0.3.8 measurements cover four text-to-image runs on the 8 GB VRAM / 32 GB RAM configuration. See [RTX hardware results](rtx-4070-laptop-results.md) and [Automatic resource planning](automatic-resources.md).
 
 ## Data and upgrades
 

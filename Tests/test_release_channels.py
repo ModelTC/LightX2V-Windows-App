@@ -1,4 +1,5 @@
 """Exercise rolling publication without making network requests."""
+import base64
 import hashlib
 import importlib.util
 from pathlib import Path
@@ -41,7 +42,7 @@ class GitHubFixture:
 
     def upload(self, release, name, data):
         self.calls.append(('UPLOAD', name, None))
-        return {'id': 2, 'state': 'uploaded', 'size': len(data), 'digest': 'sha256:' + ('0'*64 if self.bad_digest else hashlib.sha256(data).hexdigest())}
+        return {'id': 2, 'created_at': '2026-11-21T16:45:00Z', 'state': 'uploaded', 'size': len(data), 'digest': 'sha256:' + ('0'*64 if self.bad_digest else hashlib.sha256(data).hexdigest())}
 
 
 class PublicationTests(unittest.TestCase):
@@ -100,7 +101,7 @@ class PublicationTests(unittest.TestCase):
                 return {}
             def upload(self,release,name,data):
                 if self.fail_upload: self.fail_upload=False;raise RuntimeError('interrupted initial upload')
-                self.staged=dict(id=2,name=name,state='uploaded',size=len(data),digest='sha256:'+hashlib.sha256(data).hexdigest())
+                self.staged=dict(id=2,name=name,created_at='2026-11-21T16:45:00Z',state='uploaded',size=len(data),digest='sha256:'+hashlib.sha256(data).hexdigest())
                 self.release['assets']=[self.staged];return self.staged
         fixture=DraftFixture()
         with self.assertRaises(RuntimeError): self.publish(fixture)
@@ -120,4 +121,60 @@ class PublicationTests(unittest.TestCase):
         self.assertLess(methods.index('UPLOAD'), methods.index('DELETE'))
         update = next(payload for method, path, payload in fixture.calls if method == 'PATCH' and path == 'releases/20')
         self.assertIn('Windows 11', update['body'])
+        self.assertIn('2026-11-22 00:45', update['body'])
         self.assertEqual(update['target_commitish'], 'b'*40)
+
+
+class DownloadTableTests(unittest.TestCase):
+    def test_latest_and_stable_update_both_readmes_in_one_commit(self):
+        class Repository:
+            repository = 'fixture/LightX2V'
+
+            def __init__(self):
+                self.head = 'original-head'
+                self.files = {
+                    'README.md': '| Latest | [Latest](latest.zip) | — | — |\n| Stable | Not available yet | — | — |\n',
+                    'README.zh-CN.md': '| Latest | [下载](latest.zip) | — | — |\n| Stable | 尚未提供 | — | — |\n',
+                }
+                self.commits = []
+
+            def api(self, method, path, payload=None):
+                if path == 'git/ref/heads/main':
+                    return {'object': {'sha': self.head}}
+                if path.startswith('contents/'):
+                    name, ref = path.removeprefix('contents/').split('?ref=')
+                    if ref != self.head:
+                        raise AssertionError('Expected a consistent README snapshot')
+                    return {'content': base64.b64encode(self.files[name].encode()).decode()}
+                if path == f'git/commits/{self.head}':
+                    return {'tree': {'sha': 'old-tree'}}
+                if path == 'git/trees':
+                    self.new_files = {item['path']: item['content'] for item in payload['tree']}
+                    return {'sha': 'new-tree'}
+                if path == 'git/commits':
+                    self.commits.append(payload)
+                    return {'sha': 'update-' + str(len(self.commits))}
+                if path == 'git/refs/heads/main':
+                    if payload['force']:
+                        raise AssertionError('README update must preserve concurrent branch history')
+                    self.files.update(self.new_files)
+                    self.head = payload['sha']
+                    return {}
+                raise AssertionError((method, path))
+
+        repo = Repository()
+        sha = 'b' * 40
+        date = '2026-11-22 00:45'
+        publisher.record_download(repo, 'latest', sha, date)
+        publisher.record_download(repo, 'latest', sha, date)
+        self.assertEqual(len(repo.commits), 1)
+        self.assertEqual(set(repo.new_files), set(repo.files))
+        self.assertIn('| Stable | 尚未提供 | — | — |', repo.files['README.zh-CN.md'])
+        latest_rows = {path: value.splitlines()[0] for path, value in repo.files.items()}
+
+        publisher.record_download(repo, 'stable', sha, date)
+        self.assertEqual(len(repo.commits), 2)
+        for path, value in repo.files.items():
+            self.assertEqual(value.splitlines()[0], latest_rows[path])
+            self.assertIn('/releases/download/stable/' + publisher.ASSET_NAME, value.splitlines()[1])
+            self.assertIn(f'/commit/{sha}) | {date} |', value.splitlines()[1])

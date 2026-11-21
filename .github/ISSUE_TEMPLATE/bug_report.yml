@@ -5,7 +5,7 @@ body:
     id: version
     attributes:
       label: App version
-      placeholder: v0.3.12
+      placeholder: v0.4.2 or Latest commit
     validations:
       required: true
   - type: textarea
@@ -39,5 +39,5 @@ body:
     id: diagnostics
     attributes:
       label: Detection details or logs (optional)
-      description: For GPU detection issues, use Copy detection details in the app. Review usernames, personal paths, prompts, and reference images before sharing them publicly.
+      description: For GPU detection issues, attach setup/hardware-detection.json from your workspace. Review usernames, personal paths, prompts, and reference images before sharing them publicly.
       render: text

@@ -18,13 +18,13 @@ rtx_acceptance.py      Real RTX image-generation acceptance using the environmen
 
 ## Local Build
 
-Use Windows x64, .NET SDK 10.0.403 (`global.json` allows later patches in that feature band), and Python 3.12. Normal builds do not require a GPU inference environment.
+Use Windows x64, .NET SDK 10.0.403 (`global.json` allows later patches in that feature band), Python 3.12, and Visual Studio C++ x64 Build Tools with a Windows SDK. Normal builds do not require a GPU inference environment.
 
 ```powershell
 .\build.ps1 -Dotnet dotnet -Python python
 ```
 
-The build validates the pinned manifests for both backends, the source ZIP, and the graphics helper download manifest in `Resources/Setup`. It then validates and extracts the pinned llama.cpp archive and produces a self-contained win-x64 application and ZIP. Network access is mainly for NuGet and the official llama.cpp release; this process does not download tens of gigabytes of models.
+The build validates the pinned manifests for both backends, the source ZIP, and the graphics helper download manifest in `Resources/driver-assistants.json`. It then validates and extracts the pinned llama.cpp archive and produces a self-contained win-x64 application and ZIP. Network access is mainly for NuGet and the official llama.cpp release; this process does not download tens of gigabytes of models.
 
 Use `-Destination C:\Builds\LightX2V-Windows` to specify a fresh output directory. The directory must not exist or must be empty to avoid mixing in files from an older version. The build also copies user documentation, component notices, and the .NET license, and generates a per-file SHA-256 manifest. The version is read from the project file.
 
@@ -54,7 +54,7 @@ Do not commit models, environments, download caches, generated images, personal 
 Recovery, first-use guidance, and model compatibility now have separate boundaries:
 
 - `StateStore` owns versioned preferences and workspace indexes, last-valid backups, damaged-file preservation, and task-record recovery. A valid index reconciles newer known task records and tasks created after the index; older records removed from history remain removed. Unsupported schema versions are never rewritten.
-- `LegacyWorkspaceImporter` contains the historical baseline adapter. Invalid legacy configuration falls back to fresh setup with a diagnostic instead of escaping before startup error handling.
+- `LegacyWorkspaceImporter` contains the historical baseline adapter. It is exercised by recovery fixtures. Startup and the first-run wizard have no legacy import entry point.
 - `BridgeClient` owns subprocess and redirected-stream lifetime. `BackendEvent` validates the protocol envelope and event field types; ordinary JSON remains a text log. A callback failure terminates the child and cancels the peer reader. Failure to write a cancellation signal still reaches timed process termination.
 - `MainViewModel.Workspace`, `.Generation`, and `.Guidance` contain persistence coordination, generation events/cleanup, and actionable availability explanations. The main view model keeps the orchestration entry points.
 - `Resources/model-catalog.json` is shared by C# and Python. It defines supported repositories, required files, component layouts, and compatibility constraints. It deliberately documents the current compatible `main`/`master` policy rather than claiming immutable model revisions. Dependency/runtime pins remain reproducible; a future model revision change still needs explicit compatibility review.

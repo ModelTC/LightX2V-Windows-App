@@ -1,4 +1,4 @@
-"""Run the packaged backend on a future RTX host without UI automation.
+"""Run the packaged backend on an RTX host without UI automation.
 
 Use the environment and source prepared by the app. No environment is installed
 or system setting changed by this script. Start with --tiers 512.
@@ -12,14 +12,19 @@ import subprocess
 import sys
 import shutil
 
-p=argparse.ArgumentParser();p.add_argument('--app',type=Path,required=True);p.add_argument('--python',type=Path,required=True);p.add_argument('--repository',type=Path,required=True);p.add_argument('--model',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--tiers',default='512');p.add_argument('--edit',action='store_true');a=p.parse_args()
+p=argparse.ArgumentParser();p.add_argument('--app',type=Path,required=True,help='Extracted package root or directory containing Backend and Resources');p.add_argument('--python',type=Path,required=True);p.add_argument('--repository',type=Path,required=True);p.add_argument('--model',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--tiers',default='512');p.add_argument('--edit',action='store_true');a=p.parse_args()
+app = a.app / 'app' if (a.app / 'app/build-manifest.json').is_file() else a.app
+bridge = app / 'Backend/bridge.py'
+config = app / 'Resources/qwen_image_21_turbo.json'
+if not bridge.is_file() or not config.is_file():
+    p.error('--app must point to an extracted LightX2V package or its application directory.')
 if a.output.exists():p.error('Use a new output directory to preserve earlier evidence.')
 sizes={'512':512,'1K':1024,'2K':2048};tiers=a.tiers.split(',')
 if any(t not in sizes for t in tiers):p.error('--tiers accepts 512,1K,2K')
 a.output.mkdir(parents=True)
 def run(mode,request,folder):
     folder.mkdir(parents=True,exist_ok=True);path=folder/'request.json';path.write_text(json.dumps(request,ensure_ascii=False),encoding='utf-8')
-    command=[str(a.python.resolve()),'-X','utf8','-u',str((a.app/'Backend/bridge.py').resolve()),mode,str(path.resolve()),'--parent',str(os.getpid())]
+    command=[str(a.python.resolve()),'-X','utf8','-u',str(bridge.resolve()),mode,str(path.resolve()),'--parent',str(os.getpid())]
     with (folder/'protocol.ndjson').open('w',encoding='utf-8') as log:
         process=subprocess.Popen(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8')
         try:
@@ -33,7 +38,7 @@ results=[];reference=None
 for tier in tiers:
     for task in (['t2i','i2i'] if a.edit else ['t2i']):
         folder=(a.output/(tier+'-'+task)).resolve();folder.mkdir()
-        request=dict(protocol=1,backend='cuda',repository=str(a.repository.resolve()),model=str(a.model.resolve()),config=str((a.app/'Resources/qwen_image_21_turbo.json').resolve()),output=str(folder/'image.png'),prompt='A blue ceramic teapot on a wooden table beside a sunny window, warm natural light, realistic photography.',width=sizes[tier],height=sizes[tier],seed=42,task=task)
+        request=dict(protocol=1,backend='cuda',repository=str(a.repository.resolve()),model=str(a.model.resolve()),config=str(config.resolve()),output=str(folder/'image.png'),prompt='A blue ceramic teapot on a wooden table beside a sunny window, warm natural light, realistic photography.',width=sizes[tier],height=sizes[tier],seed=42,task=task)
         if task=='i2i':
             inputs=folder/'inputs';inputs.mkdir();source=inputs/'reference.png';shutil.copy2(reference,source)
             request.update(prompt='Add a red apple beside the blue teapot.',inputImages=[dict(path=str(source))],referenceResolution=512)

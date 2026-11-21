@@ -6,12 +6,14 @@
 
 ## Download
 
-| Channel | Windows 11 · x64 | Status |
-| --- | --- | --- |
-| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | Development build; see the release for its exact commit and SHA-256 |
-| Stable | Not available yet | First Stable requires completed AMD and RTX acceptance |
+| Channel | Windows 11 · x64 | Commit | Date (UTC+8) |
+| --- | --- | --- | --- |
+| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`a05b184`](https://github.com/ModelTC/LightX2V-Windows-App/commit/a05b184cb465238d546f6009e44d09f1bf06dc1e) | 2026-11-12 20:24 |
+| Stable | Not available yet | — | — |
 
 Each channel keeps one current package at a fixed download URL. Ordinary successful builds update Latest; Stable is manually promoted from the verified Latest package without rebuilding.
+
+[Latest release and SHA-256](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/latest)
 
 [Usage](docs/getting-started.md) · [Testing](docs/testing.md) · [Release management](docs/releasing.md)
 

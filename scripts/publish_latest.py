@@ -18,6 +18,10 @@ DISPLAY_TIMEZONE = timezone(timedelta(hours=8))
 DATE_FORMAT = "%Y-%m-%d %H:%M"
 
 
+def display_date(uploaded_at):
+    return datetime.fromisoformat(uploaded_at.replace("Z", "+00:00")).astimezone(DISPLAY_TIMEZONE).strftime(DATE_FORMAT)
+
+
 class GitHub:
     def __init__(self, repository, token):
         self.repository = repository
@@ -57,7 +61,7 @@ def list_all(client, path, key=None):
     raise RuntimeError("Too many results; refusing incomplete cleanup")
 
 
-def publish(client, archive, sha, run_number, run_id, attempt, tag="latest"):
+def publish(client, archive, sha, run_number, run_id, attempt, tag="latest", original_upload_time=None):
     if tag not in {"latest", "stable"}:
         raise ValueError("Unknown release channel")
     title = "Latest build" if tag == "latest" else "Stable"
@@ -76,7 +80,7 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest"):
         previous_run = re.search(r"lightx2v-run:(\d+)", (old or {}).get("label") or "")
         if tag == "latest" and previous_run and int(previous_run[1]) > run_number:
             print("A newer successful build is already published; leaving it unchanged.")
-            return False
+            return None
     else:
         release = client.api("POST", "releases", {
             "tag_name": tag, "target_commitish": sha, "draft": True,
@@ -88,6 +92,7 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest"):
             or staged.get("digest") != "sha256:" + digest):
         raise RuntimeError("Uploaded asset verification failed; previous download retained")
 
+    date = display_date(original_upload_time or staged["created_at"])
     old_path = f"releases/assets/{old['id']}" if old else None
     reference=client.api("GET",f"git/ref/tags/{tag}",missing_ok=True)
     renamed=False
@@ -109,7 +114,7 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest"):
         notes = (
             f"[Download {tag.title()} APP]({url}/releases/download/{tag}/{ASSET_NAME})\n\n"
             f"{retention} Downloads do not expire automatically.\n\n"
-            f"- Commit: `{sha}`\n- [Publication workflow]({url}/actions/runs/{run_id})\n"
+            f"- Commit: `{sha}`\n- Package date (UTC+8): {date}\n- [Publication workflow]({url}/actions/runs/{run_id})\n"
             "- Windows 11 / x64\n- Unsigned portable package\n"
             "- Includes .NET and pinned inference source; prepare models and Python in the app\n\n"
             f"SHA-256:\n```text\n{digest}  {ASSET_NAME}\n```\n")
@@ -141,8 +146,46 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest"):
         if asset["id"] != staged["id"] and asset["name"].startswith(PREFIX) and asset["name"].endswith(".zip"):
             client.api("DELETE", f"releases/assets/{asset['id']}")
     print(f"Published {url}/releases/download/{tag}/{ASSET_NAME}\nSHA-256: {digest}")
-    return True
+    return date
 
+
+def record_download(client, tag, sha, date):
+    """Update both download tables in one non-forced commit on main."""
+    channel = tag.title()
+    url = f"https://github.com/{client.repository}"
+    pattern = re.compile(rf"^\| {channel} \| ([^|]+) \| [^|]+ \| [^|]+ \|$", re.MULTILINE)
+    for _ in range(3):
+        head = client.api("GET", "git/ref/heads/main")["object"]["sha"]
+        entries = []
+        for path, stable_label in (("README.md", "Download Stable APP"), ("README.zh-CN.md", "下载 Stable APP")):
+            file = client.api("GET", f"contents/{path}?ref={head}")
+            content = base64.b64decode(file["content"]).decode("utf-8")
+
+            def row(match):
+                download = match[1] if tag == "latest" else f"[{stable_label}]({url}/releases/download/stable/{ASSET_NAME})"
+                return f"| {channel} | {download} | [`{sha[:7]}`]({url}/commit/{sha}) | {date} |"
+
+            updated, count = pattern.subn(row, content)
+            if count != 1:
+                raise ValueError(f"Expected one {channel} download row in {path}")
+            if updated != content:
+                entries.append({"path": path, "mode": "100644", "type": "blob", "content": updated})
+        if not entries:
+            return
+        base_tree = client.api("GET", f"git/commits/{head}")["tree"]["sha"]
+        tree = client.api("POST", "git/trees", {"base_tree": base_tree, "tree": entries})["sha"]
+        commit = client.api("POST", "git/commits", {
+            "message": f"docs: record {channel} APP commit {sha[:7]} and date",
+            "tree": tree,
+            "parents": [head],
+        })["sha"]
+        try:
+            client.api("PATCH", "git/refs/heads/main", {"sha": commit, "force": False})
+            return
+        except urllib.error.HTTPError as error:
+            if error.code not in (409, 422) or client.api("GET", "git/ref/heads/main")["object"]["sha"] == head:
+                raise
+    raise RuntimeError("main advanced while recording the download. Retry publication to update both READMEs.")
 
 
 if __name__ == "__main__":
@@ -153,5 +196,9 @@ if __name__ == "__main__":
         name=next(n for n in package.namelist() if n.endswith('/build-manifest.json'))
         version=json.loads(package.read(name))['version']
     verify(archive,version,os.environ['GITHUB_SHA'],True)
-    publish(GitHub(os.environ['GITHUB_REPOSITORY'],os.environ['GITHUB_TOKEN']),archive,
-            os.environ['GITHUB_SHA'],int(os.environ['GITHUB_RUN_NUMBER']),os.environ['GITHUB_RUN_ID'],os.environ['GITHUB_RUN_ATTEMPT'])
+    client = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
+    sha = os.environ["GITHUB_SHA"]
+    date = publish(client, archive, sha, int(os.environ["GITHUB_RUN_NUMBER"]),
+                   os.environ["GITHUB_RUN_ID"], os.environ["GITHUB_RUN_ATTEMPT"])
+    if date:
+        record_download(client, "latest", sha, date)

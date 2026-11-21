@@ -12,7 +12,17 @@ python -m unittest discover -s Tests -v
 
 The Python suite covers downloads with local HTTP servers, checkpoint reads, tensor lifetimes, resource planning, protocol handling, and enhancement parsing. Tests that need complete model files or GPU execution are opt-in.
 
-The `cpu-tests` local profile installs PyTorch 2.11.0 from the official CPU wheel index, with NumPy 2.5.4 and safetensors 0.8.0. Its selected CPU tensor/checkpoint cases must pass without skips. [PyTorch installation reference](https://pytorch.org/get-started/previous-versions/#v2110)
+For the required CPU tensor and checkpoint checks, create a separate Python 3.12 environment. Use a fresh directory outside the app workspace:
+
+```powershell
+py -3.12 -m venv C:\LightX2V-QA\cpu-tests
+$cpuPython = 'C:\LightX2V-QA\cpu-tests\Scripts\python.exe'
+& $cpuPython -m pip install torch==2.11.0 --index-url https://download.pytorch.org/whl/cpu
+& $cpuPython -m pip install numpy==2.5.4 safetensors==0.8.0
+& $cpuPython scripts/run_cpu_checks.py
+```
+
+The selected tests fail the check if any case is skipped. This suite exercises CPU tensors and small fixtures without downloading model weights. [PyTorch installation reference](https://pytorch.org/get-started/previous-versions/#v2110)
 
 `SetupUiChecks` is the maintained Windows regression suite. Local verification publishes and runs it with the `core` mode. It covers setup, discovery and driver decisions with injected services, model readiness, recovery, subprocess handling, environment downloads through a local server, shell dispatch, logs, and saved UI state. Views are rendered offscreen.
 
@@ -50,7 +60,7 @@ A CUDA host can exercise the packaged backend using the environment prepared by 
 python rtx_acceptance.py --app C:\Apps\LightX2V --python C:\LightX2V\environments\native-nvidia-cu128-v1\python.exe --repository C:\LightX2V\runtimes\lightx2v-native-HASH --model C:\LightX2V\models\Qwen\Qwen-Image-2.1-Turbo --output C:\LightX2V-RTX-acceptance --tiers 512
 ```
 
-Use the paths from the app's configuration. `--tiers 512,1K,2K --edit` also exercises multiple image sizes and reference editing. Test installation and prompt enhancement through the app.
+Pass the extracted package root to `--app`. The script also accepts the inner `app` directory and the flat layout of older packages. Use the Python, source and model paths from the app's configuration. `--tiers 512,1K,2K --edit` also exercises multiple image sizes and reference editing. Test installation and prompt enhancement through the app.
 
 ## Recorded results
 

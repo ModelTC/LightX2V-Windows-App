@@ -12,6 +12,8 @@ Before pushing, run relevant regressions and review the diff. After pushing, wai
 
 ## Promote Stable
 
-There is no Windows Stable yet. Complete the Standard-model AMD and RTX scenarios in `testing.md`, resolve blocking issues, then manually run **Promote Latest to Stable**. The workflow verifies Latest's asset label, rolling tag, archive digest and internal file manifest, and publishes those exact bytes as Stable. It does not rebuild or modify Latest. Do not run promotion before hardware acceptance. Update the README's Stable availability when publishing the first Stable.
+There is no Windows Stable yet. Complete the Standard-model AMD and RTX scenarios in `testing.md`, resolve blocking issues, then manually run **Promote Latest to Stable**. The workflow verifies Latest's asset label, rolling tag, archive digest and internal file manifest, and publishes those exact bytes as Stable. It does not rebuild or modify Latest. Do not run promotion before hardware acceptance. The first promotion enables the Stable download in both READMEs.
+
+After publishing a verified package, the publisher records the source commit and package upload time (UTC+8) in the Release notes and both README download tables. Stable retains the original Latest package date. The README rows are committed together on `main`; the ZIP includes the standalone documentation rather than a snapshot of the rolling download tables. If the README update fails, the verified package stays published and the workflow reports the error. Rerun publication to repair the tables.
 
 Each channel retains one package. Source history and old versioned beta releases remain intact during migration. The former version-tag publishing workflow is retired; ordinary version tags now build Latest. Public release text is English. In-app update checking remains deferred.

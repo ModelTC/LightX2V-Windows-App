@@ -70,9 +70,7 @@ def package(app):
             raise ValueError('Unexpected private/generated file in publish directory: ' + str(relative))
     docs = root / 'docs'
     shutil.copytree(ROOT / 'docs', docs, dirs_exist_ok=True)
-    for name in ['README.md', 'README.zh-CN.md', 'THIRD_PARTY_NOTICES.md']:
-        content = (ROOT / name).read_text(encoding='utf-8')
-        (docs / name).write_text(content.replace('(docs/', '('), encoding='utf-8')
+    shutil.copy2(ROOT / 'THIRD_PARTY_NOTICES.md', docs)
     shutil.copytree(ROOT / 'third_party', docs / 'third_party', dirs_exist_ok=True)
     for name in ['LICENSE.txt', 'ThirdPartyNotices.txt']:
         shutil.move(str(app / name), docs / name)
@@ -89,7 +87,7 @@ def package(app):
         layoutVersion=2, entryPoint='LightX2V.exe', appExecutable='app/LightX2V.Windows.exe',
         sourceCommit=commit, sourceDirty=dirty,
         inferenceSource=json.loads((app/'Resources/Setup/manifest.json').read_text(encoding='utf-8'))['source'],
-        backends=['amd_rocm', 'cuda'], cudaHardwareAcceptance='pending',
+        backends=['amd_rocm', 'cuda'],
         verification='Compilation and package integrity only. GPU acceptance scope is documented in docs/testing.md.',
         sha256={p.relative_to(root).as_posix(): sha(p) for p in payload},
     )

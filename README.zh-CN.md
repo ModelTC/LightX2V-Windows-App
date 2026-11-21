@@ -6,12 +6,14 @@
 
 ## 下载
 
-| 通道 | Windows 11 · x64 | 状态 |
-| --- | --- | --- |
-| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | 开发版；对应提交和 SHA-256 见发布页 |
-| Stable | 尚未提供 | 完成 AMD 与 RTX 验收后首次发布 |
+| 通道 | Windows 11 · x64 | 提交 | 日期 (UTC+8) |
+| --- | --- | --- | --- |
+| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`a05b184`](https://github.com/ModelTC/LightX2V-Windows-App/commit/a05b184cb465238d546f6009e44d09f1bf06dc1e) | 2026-11-12 20:24 |
+| Stable | 尚未提供 | — | — |
 
 每个通道保留一个当前安装包，下载地址固定。普通成功构建更新 Latest；Stable 手动晋升已验证的 Latest 安装包，不重新编译。
+
+[Latest 发布记录与 SHA-256](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/latest)
 
 [使用说明](docs/getting-started.md) · [验证范围](docs/testing.md) · [发布管理](docs/releasing.md)
 

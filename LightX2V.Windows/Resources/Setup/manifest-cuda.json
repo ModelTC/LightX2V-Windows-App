@@ -819,7 +819,6 @@
   },
   "provenance": {
     "torch": "https://pytorch.org/get-started/previous-versions/#v2110",
-    "index": "https://download.pytorch.org/whl/cu128",
-    "status": "RTX hardware acceptance pending"
+    "index": "https://download.pytorch.org/whl/cu128"
   }
 }

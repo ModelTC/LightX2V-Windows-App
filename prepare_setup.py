@@ -53,7 +53,7 @@ if len({p['name'] for p in cuda['packages']}) != len(cuda['packages']): raise Va
 if (root/'requirements-cuda.lock').read_text(encoding='utf-8').splitlines() != [p['name']+'=='+p['version'] for p in cuda['packages']]: raise ValueError('CUDA lock differs')
 for p in cuda['packages']:
     if len(p['sha256'])!=64 or p['size']<=0 or not p['url'].startswith('https://'): raise ValueError('Invalid CUDA artifact')
-print('CUDA payload verified:',len(cuda['packages']),'pinned packages; RTX image acceptance pending')
+print('CUDA payload verified:',len(cuda['packages']),'pinned packages')
 
 assistants = json.loads((root.parent/'driver-assistants.json').read_text(encoding='utf-8'))
 if {a['backend'] for a in assistants} != {'amd_rocm','cuda'}: raise ValueError('Missing official graphics assistant')
