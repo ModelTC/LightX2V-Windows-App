@@ -26,7 +26,7 @@ internal static class SetupUi
     public const string Globe="M22,12 A10,10 0 1 1 2,12 A10,10 0 1 1 22,12 M12,2 C5,8 5,16 12,22 C19,16 19,8 12,2 M2,12 H22 M4,6 H20 M4,18 H20 M12,2 V22";
     public const string Folder="M2,5 H9 L11,8 H22 V21 H2 Z M2,9 H22";
     public const string Search="M16,9 A7,7 0 1 1 2,9 A7,7 0 1 1 16,9 M14,14 L21,21";
-    public static Border Logo()=>new(){Width=36,Height=36,Background=Brushes.Black,CornerRadius=new CornerRadius(10),Child=new Image{Source=(ImageSource)Application.Current.FindResource("BrandBolt"),Width=17,Height=24}};
+    public static Image Logo()=>new(){Width=36,Height=36,Source=(ImageSource)Application.Current.FindResource("AppIcon")};
     public static Border Footer(UIElement child)=>new(){Background=Brushes.White,BorderBrush=Line,BorderThickness=new Thickness(0,1,0,0),Padding=new Thickness(24,14,24,16),Child=child};
     public static ComboBox BackendPicker(string path)
     {

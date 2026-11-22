@@ -2,7 +2,7 @@
 
   <SolidColorBrush x:Key="Ink" Color="#242424"/><SolidColorBrush x:Key="Muted" Color="#6B6B6B"/><SolidColorBrush x:Key="Line" Color="#E5E5E5"/>
   <local:HasItemsVisibility x:Key="HasItems"/><local:StepFill x:Key="StepFill"/><local:NonEmptyVisibility x:Key="NonEmpty"/><local:PreviewWidth x:Key="PreviewWidth"/>
-  <DrawingImage x:Key="BrandBolt"><DrawingImage.Drawing><GeometryDrawing Brush="#FAFAFA" Geometry="M288,0 L0,335 180,335 137,597 451,247 259,247 Z"/></DrawingImage.Drawing></DrawingImage>
+  <BitmapImage x:Key="AppIcon" UriSource="pack://application:,,,/LightX2V.Windows;component/Resources/AppIcon.png" DecodePixelWidth="128"/>
   <Geometry x:Key="CubeGeometry">M12,1 L22,6.5 V17.5 L12,23 2,17.5 V6.5 Z M2,6.5 L12,12 22,6.5 M12,1 V23 M2,17.5 L22,6.5 M2,6.5 L22,17.5</Geometry>
   <local:TierChoice x:Key="TierChoice"/><BooleanToVisibilityConverter x:Key="Bool"/><local:InverseVisibility x:Key="NotBool"/><local:InspectorWidth x:Key="InspectorWidth"/><local:ImageConverter x:Key="Image"/><local:EqualConverter x:Key="Equal"/><local:RatioIconConverter x:Key="RatioIcon"/><local:LocalizedConverter x:Key="Localized"/>
   <Style TargetType="TextBlock"><Setter Property="FontFamily" Value="Segoe UI, Microsoft YaHei UI"/><Setter Property="FontSize" Value="12"/><Setter Property="TextOptions.TextFormattingMode" Value="Display"/></Style>
