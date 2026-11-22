@@ -8,7 +8,7 @@ A native Windows app for local image generation and editing with [Qwen-Image-2.1
 
 | Channel | Windows 11 · x64 | Commit | Date (UTC+8) |
 | --- | --- | --- | --- |
-| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`edbb415`](https://github.com/ModelTC/LightX2V-Windows-App/commit/edbb4150585dedf6957f4569ba04d8990c200d91) | 2026-11-22 11:51 |
+| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`2abdff1`](https://github.com/ModelTC/LightX2V-Windows-App/commit/2abdff1c9dd90e7e701430b9c3ffc2ff0fd38d7c) | 2026-11-22 14:54 |
 | Stable | Not available yet | — | — |
 
 The app bundles LightX2V source, llama.cpp, and .NET. Model weights and a compatible Python environment are prepared separately in the app.
