@@ -12,7 +12,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-ASSET_NAME = "LightX2V-APP-Windows-x64.zip"
+from verify_package import ASSET_NAME, verify
+
 PREFIX = "LightX2V-APP-Windows-x64-"
 DISPLAY_TIMEZONE = timezone(timedelta(hours=8))
 DATE_FORMAT = "%Y-%m-%d %H:%M"
@@ -192,13 +193,8 @@ def record_download(client, tag, sha, date):
 
 
 if __name__ == "__main__":
-    from verify_package import verify
     archive=Path(sys.argv[1])
-    import zipfile
-    with zipfile.ZipFile(archive) as package:
-        name=next(n for n in package.namelist() if n.endswith('/build-manifest.json'))
-        version=json.loads(package.read(name))['version']
-    verify(archive,version,os.environ['GITHUB_SHA'],True)
+    verify(archive, source_commit=os.environ['GITHUB_SHA'], require_clean=True)
     client = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
     sha = os.environ["GITHUB_SHA"]
     date = publish(client, archive, sha, int(os.environ["GITHUB_RUN_NUMBER"]),

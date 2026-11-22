@@ -2,10 +2,10 @@ name: Bug report
 description: Report an issue with setup, GPU detection, model downloads, or image creation
 body:
   - type: input
-    id: version
+    id: build
     attributes:
-      label: App version
-      placeholder: v0.4.2 or Latest commit
+      label: App build
+      placeholder: Latest or Stable, with the source commit
     validations:
       required: true
   - type: textarea

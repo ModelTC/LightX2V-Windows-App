@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
 """Promote the existing Latest package without rebuilding or changing Latest."""
 import hashlib
-import json
 import os
 from pathlib import Path
 import re
 import tempfile
 import urllib.request
-import zipfile
 
 from publish_latest import ASSET_NAME, GitHub, publish, record_download
+from verify_package import verify
 
 
 def promote(client, run_number, run_id, attempt):
@@ -32,12 +31,8 @@ def promote(client, run_number, run_id, attempt):
     with tempfile.TemporaryDirectory(prefix="lightx2v-stable-") as directory:
         archive = Path(directory) / ASSET_NAME
         archive.write_bytes(data)
-        from verify_package import verify
-        with zipfile.ZipFile(archive) as package:
-            name=next(n for n in package.namelist() if n.endswith('/build-manifest.json'))
-            version=json.loads(package.read(name))['version']
         archive.with_suffix('.zip.sha256').write_text(hashlib.sha256(data).hexdigest()+'  '+ASSET_NAME+'\n',encoding='ascii')
-        verify(archive,version,sha,True)
+        verify(archive, source_commit=sha, require_clean=True)
         date = publish(client, archive, sha, run_number, run_id, attempt,
                        tag="stable", original_upload_time=asset["created_at"])
         record_download(client, "stable", sha, date)

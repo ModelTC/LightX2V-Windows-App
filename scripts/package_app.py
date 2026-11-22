@@ -3,15 +3,14 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
-import re
 import shutil
 import subprocess
-import xml.etree.ElementTree as ET
 import zipfile
 
-from verify_package import extraction_folder
+from verify_package import ASSET_NAME, extraction_folder
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_SPEC = json.loads((ROOT / 'scripts/llama-runtime.json').read_text(encoding='utf-8'))
 
 
 def sha(path):
@@ -27,17 +26,10 @@ def package(app):
     app = root / "app"
     if not (root / "LightX2V.exe").is_file():
         raise ValueError("Missing native launcher")
-    version = ET.parse(ROOT / 'LightX2V.Windows/LightX2V.Windows.csproj').findtext('./PropertyGroup/Version')
-    if not version or not re.fullmatch(r'\d+\.\d+\.\d+', version):
-        raise ValueError('Invalid project version')
     required = [
         'LightX2V.Windows.exe', 'LightX2V.Windows.dll', 'LightX2V.Windows.runtimeconfig.json',
         'coreclr.dll', 'PresentationFramework.dll', 'LICENSE.txt', 'ThirdPartyNotices.txt',
         'Resources/qwen_image_21_turbo.json', 'Resources/driver-assistants.json', 'Resources/model-catalog.json',
-        'Runtime/llama-b11564-vulkan/llama-completion.exe',
-        'Runtime/llama-b11564-vulkan/llama-mtmd-cli.exe',
-        'Runtime/llama-b11564-vulkan/LICENSE-llama.cpp.txt',
-        'Runtime/llama-b11564-vulkan/LICENSE-LLVM-OpenMP',
     ]
     for name in required:
         if not (app / name).is_file():
@@ -49,18 +41,26 @@ def package(app):
                 if not target.is_file() or sha(source) != sha(target):
                     raise ValueError('Published source/payload differs: ' + str(target.relative_to(app)))
     # Every shipped llama runtime binary must match the pinned official ZIP.
-    archive = ROOT / 'llama-b11564-bin-win-vulkan-x64.zip'
-    if not archive.is_file() or sha(archive) != '1a1b260a2240a12cac7a94590fa88d06ae25d349db9d556e9c2503f7d22e29a2':
+    runtime_version = RUNTIME_SPEC['version']
+    archive = ROOT / f'llama-{runtime_version}-bin-win-vulkan-x64.zip'
+    if not archive.is_file() or sha(archive) != RUNTIME_SPEC['archiveSha256']:
         raise ValueError('Run prepare_runtime.py to obtain the verified runtime archive')
-    runtime = app / 'Runtime/llama-b11564-vulkan'
+    runtime = app / 'Runtime' / f'llama-{runtime_version}-vulkan'
+    expected = set(RUNTIME_SPEC['files'])
     with zipfile.ZipFile(archive) as official:
-        expected = {n for n in official.namelist() if n.endswith('.dll') or n in (
-            'llama-completion.exe', 'llama-mtmd-cli.exe', 'LICENSE-LLVM-OpenMP')}
         for name in expected:
             if not (runtime / name).is_file() or sha(runtime / name) != hashlib.sha256(official.read(name)).hexdigest():
                 raise ValueError('Runtime component differs: ' + name)
-        if {p.name for p in runtime.iterdir()} != expected | {'LICENSE-llama.cpp.txt', 'runtime.json'}:
-            raise ValueError('Unexpected runtime contents')
+    license = 'LICENSE-llama.cpp.txt'
+    if not (runtime / license).is_file() or sha(runtime / license) != sha(ROOT / 'LightX2V.Windows/Resources' / license):
+        raise ValueError('Runtime license differs: ' + license)
+    metadata = runtime / 'runtime.json'
+    if not metadata.is_file() or json.loads(metadata.read_text(encoding='utf-8')) != dict(
+        version=runtime_version, backend='Vulkan', archiveSha256=RUNTIME_SPEC['archiveSha256']
+    ):
+        raise ValueError('Runtime metadata differs from the pinned archive')
+    if {p.name for p in runtime.iterdir()} != expected | {license, metadata.name}:
+        raise ValueError('Unexpected runtime contents')
     # Reject evidence, caches and settings; do not silently publish or discard them.
     for path in app.rglob('*'):
         relative = path.relative_to(app)
@@ -85,7 +85,7 @@ def package(app):
         commit, dirty = None, None
     payload = sorted(p for p in root.rglob('*') if p.is_file() and p != app / 'build-manifest.json')
     manifest = dict(
-        version=version, channel='latest', target='win-x64',
+        target='win-x64',
         layoutVersion=2, entryPoint='LightX2V.exe', appExecutable='app/LightX2V.Windows.exe',
         sourceCommit=commit, sourceDirty=dirty,
         inferenceSource=json.loads((app/'Resources/Setup/manifest.json').read_text(encoding='utf-8'))['source'],
@@ -94,8 +94,8 @@ def package(app):
         sha256={p.relative_to(root).as_posix(): sha(p) for p in payload},
     )
     (app / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
-    result = root.parent / 'LightX2V-APP-Windows-x64.zip'
-    prefix = extraction_folder(version, commit)
+    result = root.parent / ASSET_NAME
+    prefix = extraction_folder(commit)
     with zipfile.ZipFile(result, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
         for path in sorted(root.rglob('*')):
             if path.is_file():
@@ -104,7 +104,7 @@ def package(app):
     with zipfile.ZipFile(result) as output:
         if output.testzip():
             raise ValueError('ZIP integrity check failed')
-    print(json.dumps(dict(package=str(result), sha256=sha(result), files=len(manifest['sha256']), version=version)))
+    print(json.dumps(dict(package=str(result), sourceCommit=commit, sha256=sha(result), files=len(manifest['sha256']))))
 
 
 if __name__ == '__main__':

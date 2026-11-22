@@ -19,6 +19,20 @@ internal static partial class Program
         vm.EnhancementEnabled=true;var window=new MainWindow(vm){WindowState=WindowState.Maximized};window.Show();window.Activate();
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);actualDesktopScale=VisualTreeHelper.GetDpi(window).DpiScaleX;
         await CheckInspectorDisclosure(window);
+        await CheckModelPickerAndCaption(window);
+        var python = SetupInstaller.ManagedPython(fixture.Settings.Workspace, fixture.Settings.Backend);
+        Directory.CreateDirectory(Path.GetDirectoryName(python)!);
+        File.WriteAllText(Path.Combine(Path.GetDirectoryName(python)!, ".lightx2v-environment.json"), "{}");
+        var uninstall = new UninstallWindow(vm) { Owner = window };
+        uninstall.Show();
+        await Task.Delay(240);
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        var choices = Children<CheckBox>(uninstall).ToDictionary(AutomationProperties.GetAutomationId);
+        Check(choices["Uninstall-workspace"].IsChecked == true &&
+            choices["Uninstall-environment"].IsEnabled && choices["Uninstall-environment"].IsChecked == false,
+            "The live uninstall window defaults to keeping managed Python when it removes workspace data");
+        CaptureDesktopWindow(uninstall, "desktop-uninstall");
+        uninstall.Close();
         foreach(var language in new[]{"zh","en"})
         {
             vm.SetLanguage(language);var settings=new SettingsWindow(vm){Owner=window};settings.Show();await Task.Delay(500);
@@ -74,6 +88,53 @@ internal static partial class Program
         Check(vm.Toast.Length==0,"The real desktop shell accepts the Unicode-safe log file selection request");
         generation.Status="completed";
         window.Close();
+    }
+    static async Task CheckModelPickerAndCaption(MainWindow window)
+    {
+        Button Find(string id) => Children<Button>(window).Single(button => AutomationProperties.GetAutomationId(button) == id);
+        void Invoke(Button button) => ((IInvokeProvider)new ButtonAutomationPeer(button).GetPattern(PatternInterface.Invoke)).Invoke();
+        Button? PopupButton(string id) => PresentationSource.CurrentSources.OfType<PresentationSource>()
+            .SelectMany(source => source.RootVisual is {} visual ? Children<Button>(visual) : [])
+            .FirstOrDefault(button => button.IsVisible && AutomationProperties.GetAutomationId(button) == id);
+
+        var maximize = Find("MaximizeWindow");
+        var normalState = window.ViewModel.T["Maximize"];
+        var restoreState = window.ViewModel.T["Restore"];
+        Check(Equals(maximize.ToolTip, restoreState), "A maximized window shows the restore action");
+        Invoke(maximize);
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        Check(window.WindowState == WindowState.Normal && Equals(maximize.ToolTip, normalState),
+            "The caption button restores the window and changes to the maximize action");
+        Invoke(maximize);
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        var buttons = new[] { Find("MinimizeWindow"), maximize, Find("CloseWindow") };
+        var icons = buttons.Select(button => (System.Windows.Shapes.Path)button.Content).ToArray();
+        Check(window.WindowState == WindowState.Maximized && buttons.All(button => button.ActualWidth == buttons[0].ActualWidth) &&
+            icons.All(icon => icon.PointToScreen(new Point(0, 6)).Y == icons[0].PointToScreen(new Point(0, 6)).Y),
+            "The live caption buttons maximize the window and align all three glyphs");
+        CaptureDesktopWindow(window, "desktop-caption");
+        var model = Find("ModelSelector");
+        Invoke(model);
+        await Task.Delay(230);
+        var family = PopupButton("ModelFamily");
+        Check(family != null && family.PointToScreen(new Point()).Y < model.PointToScreen(new Point()).Y,
+            "The model selector opens the model family above its anchor");
+        Invoke(family!);
+        await Task.Delay(200);
+        var standard = PopupButton("ModelVariantStandard");
+        Check(standard != null && standard.PointToScreen(new Point()).X > family!.PointToScreen(new Point()).X,
+            "The Standard model choice opens to the right of the family");
+        CaptureDesktopWindow(window, "desktop-model-picker");
+        Invoke(standard!);
+        await Task.Delay(250);
+        Check(PopupButton("ModelFamily") == null && window.ViewModel.HasSelectedModel && model.IsKeyboardFocused,
+            "Selecting Standard closes both panes and restores focus to the selector");
+        Invoke(model);
+        await Task.Delay(230);
+        Check(PopupButton("ModelFamily") != null, "The model chooser reopens after selection");
+        DesktopNative.keybd_event(0x1B,0,0,UIntPtr.Zero);DesktopNative.keybd_event(0x1B,0,2,UIntPtr.Zero);
+        await Task.Delay(250);
+        Check(PopupButton("ModelFamily") == null && model.IsKeyboardFocused, "Escape dismisses the model chooser and restores keyboard focus");
     }
     static async Task CheckInspectorDisclosure(MainWindow window)
     {

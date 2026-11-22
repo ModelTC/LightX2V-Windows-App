@@ -29,11 +29,14 @@ internal static partial class Program
                 ["app/LightX2V.Windows.exe"] = Put(directory, "app/LightX2V.Windows.exe", commit),
                 [obsoleteOrNew] = Put(directory, obsoleteOrNew, commit)
             };
-            Files.Write(Path.Combine(directory, "app/build-manifest.json"), new
+            var manifest = new Dictionary<string, object>
             {
-                version = "0.4.3", layoutVersion = 2, target = "win-x64", entryPoint = "LightX2V.exe",
-                appExecutable = "app/LightX2V.Windows.exe", sourceCommit = commit, sourceDirty = false, sha256
-            });
+                ["layoutVersion"] = 2, ["target"] = "win-x64", ["entryPoint"] = "LightX2V.exe",
+                ["appExecutable"] = "app/LightX2V.Windows.exe", ["sourceCommit"] = commit,
+                ["sourceDirty"] = false, ["sha256"] = sha256
+            };
+            if (commit == before) manifest["version"] = "0.4.3";
+            Files.Write(Path.Combine(directory, "app/build-manifest.json"), manifest);
         }
         Manifest(app, before, "app/obsolete.dat");
         Manifest(source, after, "docs/new.md");
@@ -47,7 +50,7 @@ internal static partial class Program
         File.Delete(archive);
         using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create))
             foreach (var path in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-                zip.CreateEntryFromFile(path, "LightX2V-Windows-0.4.3-bbbbbbb/" + Path.GetRelativePath(source, path).Replace('\\', '/'));
+                zip.CreateEntryFromFile(path, "LightX2V-Windows-bbbbbbb/" + Path.GetRelativePath(source, path).Replace('\\', '/'));
         AppUpdater.StageArchive(archive, stage, after, CancellationToken.None);
         var plan = new UpdatePlan(app, before, after, "en", 0, 0);
         var launcher = Path.Combine(app, "LightX2V.exe");
@@ -62,7 +65,7 @@ internal static partial class Program
         AppUpdater.Install(stage, plan, () => started = true);
         Check(started && File.ReadAllText(launcher) == after &&
             !File.Exists(Path.Combine(app, "app/obsolete.dat")) && File.Exists(Path.Combine(app, "docs/new.md")),
-            "Updating installs the requested build and removes obsolete application files");
+            "Updating a numbered installation to a commit-named build removes obsolete application files");
         Check(File.ReadAllText(Path.Combine(app, "docs/user.txt")) == "preserve" &&
             AppUpdater.CurrentCommit(PackageLayout.Find(Path.Combine(app, "app"))) == after,
             "The update preserves unlisted files and records the new build");

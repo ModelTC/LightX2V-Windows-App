@@ -8,6 +8,7 @@ namespace LightX2V.Windows;
 public partial class MainWindow
 {
     bool composing;
+    ModelPicker? modelPicker;
     void InitializeComposer()
     {
         Composer.AllowDrop=true;
@@ -64,9 +65,7 @@ public partial class MainWindow
     }
     void ChooseModel(object sender,RoutedEventArgs e)
     {
-        if(sender is not Button button)return;
-        var menu=new ContextMenu();var family=new MenuItem{Header="Qwen-Image-2.1-Turbo"};
-        var standard=new MenuItem{Header=ViewModel.T["Standard"],IsCheckable=true,IsChecked=ViewModel.HasSelectedModel};
-        standard.Click+=(_,_)=>{ViewModel.SelectStandardModel();};family.Items.Add(standard);menu.Items.Add(family);button.ContextMenu=menu;menu.PlacementTarget=button;menu.IsOpen=true;
+        if (sender is not Button button || !ViewModel.CanSelectModel) return;
+        (modelPicker ??= new ModelPicker(this, button, ViewModel)).Toggle();
     }
 }

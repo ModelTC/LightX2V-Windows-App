@@ -26,9 +26,9 @@ Use Windows x64, .NET SDK 10.0.403 (`global.json` allows later patches in that f
 
 The build validates the pinned manifests for both backends, the source ZIP, and the graphics helper download manifest in `Resources/driver-assistants.json`. It then validates and extracts the pinned llama.cpp archive and produces a self-contained win-x64 application and ZIP. Network access is mainly for NuGet and the official llama.cpp release; this process does not download tens of gigabytes of models.
 
-Use `-Destination C:\Builds\LightX2V-Windows` to specify a fresh output directory. The directory must not exist or must be empty to avoid mixing in files from an older version. The build also copies user documentation, component notices, and the .NET license, and generates a per-file SHA-256 manifest. The version is read from the project file.
+Use `-Destination C:\Builds\LightX2V-Windows` to specify a fresh output directory. The directory must not exist or must be empty to avoid mixing builds. The build copies user documentation, component notices, and the .NET license, and generates a per-file SHA-256 manifest with the source commit.
 
-`scripts/package_app.py` can also package a complete, already-published application folder on its own. It validates the pinned payloads and actual llama.cpp files and checks for missing components and version mismatches. A successful build is not reported as successful hardware acceptance. Existing private acceptance data is excluded from public packages.
+`scripts/package_app.py` can also package a complete, already-published application folder on its own. It checks the published components against the pinned payloads and llama.cpp archive. A successful build is not reported as successful hardware acceptance. Existing private acceptance data is excluded from public packages.
 
 ## Testing
 
@@ -45,7 +45,9 @@ GitHub Actions compiles, verifies the package and publishes Latest. Behavioral t
 
 The two environment manifests pin the versions, sizes, and SHA-256 hashes of Python, PyTorch, and every wheel. Builds do not resolve the "latest version." `prepare_cuda_profile.py` changes the pinned manifests; run it only when deliberately updating dependencies, followed by renewed acceptance testing.
 
-`LightX2V.Windows/Resources/Setup/lightx2v-native.zip` contains the inference source required at runtime. It is the only large pinned source archive committed to the repository and does not use Git LFS. It is based on LightX2V 0.6.1 commit `43c6a11bb65b7357f06e9603fa92249bc16b484e`. Changes to the 11 common/Qwen native Windows compatibility files are in `third_party/windows-compat-0.6.1.patch`; the exact archive hash and changed files are recorded in `third_party/source-provenance.json`. The archive retains upstream licenses.
+`LightX2V.Windows/Resources/Setup/lightx2v-native.zip` contains the inference source required at runtime. It is the only large pinned source archive committed to the repository and does not use Git LFS. It is based on LightX2V 0.6.1 commit `43c6a11bb65b7357f06e9603fa92249bc16b484e`. The 11 common/Qwen compatibility changes are in `third_party/windows-compat-0.6.1.patch`. The provenance file records the archive hash and lists the upstream documentation, sample media and development files excluded from the runtime bundle. The archive retains upstream licenses.
+
+`scripts/llama-runtime.json` lists the files distributed from the pinned llama.cpp archive. Both runtime preparation and package verification use this list. It includes the two prompt-enhancement executables, their DLL dependencies and the dynamically loaded CPU and Vulkan backends.
 
 Do not commit models, environments, download caches, generated images, personal settings, QA logs, development SSH configuration, or historical packages. Raw development acceptance records remain outside the repository.
 

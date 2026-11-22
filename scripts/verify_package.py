@@ -7,17 +7,19 @@ import re
 import zipfile
 
 
-def extraction_folder(version, source_commit=None):
-    base = f'LightX2V-Windows-{version}'
-    if isinstance(source_commit, str) and re.fullmatch(r'[0-9a-f]{40}', source_commit):
-        return f'{base}-{source_commit[:7]}'
-    return base
+ASSET_NAME = 'LightX2V-APP-Windows-x64.zip'
+EXTRACTION_FOLDER = 'LightX2V-Windows'
 
 
-def verify(package, version, source_commit=None, require_clean=False):
-    expected_name = f'LightX2V-Windows-{version}-win-x64.zip'
-    if package.name not in (expected_name,"LightX2V-APP-Windows-x64.zip") or not re.fullmatch(r'\d+\.\d+\.\d+', version):
-        raise ValueError('Package filename and version differ')
+def valid_commit(value):
+    return isinstance(value, str) and re.fullmatch(r'[0-9a-f]{40}', value) is not None
+
+
+def extraction_folder(source_commit):
+    return f'{EXTRACTION_FOLDER}-{source_commit[:7]}' if valid_commit(source_commit) else EXTRACTION_FOLDER
+
+
+def verify(package, version=None, source_commit=None, require_clean=False):
     digest = hashlib.sha256(package.read_bytes()).hexdigest()
     checksum = package.with_suffix('.zip.sha256').read_text(encoding='ascii').strip().split()
     if checksum != [digest, package.name]:
@@ -35,20 +37,38 @@ def verify(package, version, source_commit=None, require_clean=False):
                 raise ValueError('Unexpected package entry')
         manifest_name = 'app/build-manifest.json' if prefix+'app/build-manifest.json' in names else 'build-manifest.json'
         manifest = json.loads(archive.read(prefix + manifest_name))
-        if folder not in (extraction_folder(version), extraction_folder(version, manifest.get('sourceCommit'))):
+        commit = manifest.get('sourceCommit')
+        layout = manifest.get('layoutVersion', 1)
+        legacy_version = manifest.get('version')
+        if 'version' in manifest:
+            if not isinstance(legacy_version, str) or not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', legacy_version):
+                raise ValueError('Invalid legacy package version')
+            if version is not None and version != legacy_version:
+                raise ValueError('Package version differs from the requested legacy version')
+            legacy_folder = f'{EXTRACTION_FOLDER}-{legacy_version}'
+            folders = {legacy_folder}
+            if valid_commit(commit):
+                folders.add(f'{legacy_folder}-{commit[:7]}')
+            if package.name not in (ASSET_NAME, f'{legacy_folder}-win-x64.zip') or manifest.get('channel') not in ('internal-beta', 'latest'):
+                raise ValueError('Invalid legacy package metadata')
+        else:
+            folders = {extraction_folder(commit)}
+            if version is not None or layout != 2 or package.name != ASSET_NAME or 'channel' in manifest:
+                raise ValueError('Invalid package metadata')
+        if folder not in folders:
             raise ValueError('Extraction folder does not match the package version or source commit')
-        if manifest.get('layoutVersion', 1) == 2:
+        if layout == 2:
             if manifest_name != 'app/build-manifest.json' or manifest.get('entryPoint') != 'LightX2V.exe' or manifest.get('appExecutable') != 'app/LightX2V.Windows.exe':
                 raise ValueError('Invalid package layout')
             if {n[len(prefix):].split('/')[0] for n in names} != {'LightX2V.exe', 'app', 'docs'}:
                 raise ValueError('Unexpected top-level package contents')
-        elif manifest.get('layoutVersion', 1) != 1:
+        elif layout != 1:
             raise ValueError('Unsupported package layout')
-        if manifest['version'] != version or manifest['target'] != 'win-x64' or manifest['channel'] not in ('internal-beta','latest'):
-            raise ValueError('Package metadata differs from the requested beta')
-        if source_commit and manifest.get('sourceCommit') != source_commit:
+        if manifest.get('target') != 'win-x64':
+            raise ValueError('Invalid package target')
+        if source_commit and commit != source_commit:
             raise ValueError('Package was built from a different source commit')
-        if require_clean and (manifest.get('sourceDirty') is not False or not re.fullmatch(r'[0-9a-f]{40}', manifest.get('sourceCommit') or '')):
+        if require_clean and (manifest.get('sourceDirty') is not False or not valid_commit(commit)):
             raise ValueError('Release requires a clean, committed source checkout')
         hashes = manifest['sha256']
         if set(names) != {prefix + name for name in hashes} | {prefix + manifest_name}:
@@ -64,13 +84,16 @@ def verify(package, version, source_commit=None, require_clean=False):
         for name, expected in hashes.items():
             if hashlib.sha256(archive.read(prefix + name)).hexdigest() != expected:
                 raise ValueError('Payload checksum mismatch: ' + name)
-    return dict(version=version, sourceCommit=manifest.get('sourceCommit'), sha256=digest, files=len(hashes))
+    result = dict(sourceCommit=commit, sha256=digest, files=len(hashes))
+    if legacy_version is not None:
+        result['version'] = legacy_version
+    return result
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('package', type=Path)
-    parser.add_argument('--version', required=True)
+    parser.add_argument('--version', help='Expected version for a legacy numbered package')
     parser.add_argument('--source-commit')
     parser.add_argument('--require-clean', action='store_true')
     args = parser.parse_args()

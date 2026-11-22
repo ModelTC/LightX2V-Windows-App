@@ -50,46 +50,165 @@ public sealed class UninstallWindow : Window
 
     public UninstallWindow(MainViewModel vm)
     {
-        DataContext=vm;Title=vm.T["Uninstall"];Width=640;Height=Math.Min(620,SystemParameters.WorkArea.Height);WindowStartupLocation=WindowStartupLocation.CenterOwner;Background=SetupUi.Subtle;SetupUi.Resources(this);
-        var root=new DockPanel{Margin=new Thickness(24)};Content=root;
-        var footer=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right};DockPanel.SetDock(footer,Dock.Bottom);root.Children.Add(footer);
-        var close=SetupUi.Button(this,"Close");close.Click+=(_,_)=>Close();footer.Children.Add(close);
-        var remove=SetupUi.Button(this,"Delete selected items…",true,"ConfirmUninstall");remove.Margin=new Thickness(10,0,0,0);footer.Children.Add(remove);
-        var scroll=new ScrollViewer{VerticalScrollBarVisibility=ScrollBarVisibility.Auto};root.Children.Add(scroll);var body=new StackPanel();scroll.Content=body;
-        body.Children.Add(SetupUi.Text("Choose what to remove",18,true));body.Children.Add(SetupUi.Text("Select the files to delete. Unchecked items will be kept.",12,false,true));
-        var error=SetupUi.Text("",11);body.Children.Add(error);var groups=new Dictionary<string,CheckBox>();UninstallPlan? plan=null;
+        DataContext = vm;
+        Title = vm.T["Uninstall"];
+        Width = Math.Min(640, SystemParameters.WorkArea.Width);
+        Height = Math.Min(560, SystemParameters.WorkArea.Height);
+        WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        ShowInTaskbar = false;
+        Background = System.Windows.Media.Brushes.White;
+        SetupUi.Resources(this);
+
+        var root = new DockPanel { Margin = new Thickness(24) };
+        Content = root;
+        var close = SetupUi.Button(this, "Close", id: "CloseUninstall");
+        close.HorizontalAlignment = HorizontalAlignment.Right;
+        close.IsCancel = true;
+        DockPanel.SetDock(close, Dock.Bottom);
+        root.Children.Add(close);
+        var header = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 18) };
+        var icon = SetupUi.Logo();
+        icon.Width = icon.Height = 28;
+        header.Children.Add(icon);
+        var title = SetupUi.Text("Uninstall", 18, true);
+        title.Margin = new Thickness(10, 0, 0, 0);
+        title.VerticalAlignment = VerticalAlignment.Center;
+        header.Children.Add(title);
+        DockPanel.SetDock(header, Dock.Top);
+        root.Children.Add(header);
+
+        var body = new StackPanel();
+        root.Children.Add(new ScrollViewer { Content = body, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+        body.Children.Add(SetupUi.Text("Choose what to remove", 15, true));
+        var instruction = SetupUi.Text("Select the files to delete. Unchecked items will be kept.", 12, muted: true);
+        instruction.Margin = new Thickness(0, 10, 0, 10);
+        body.Children.Add(instruction);
+        var groups = new Dictionary<string, CheckBox>();
+        var error = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = SetupUi.Muted };
+        var remove = SetupUi.Button(this, "Delete selected items…", id: "ConfirmUninstall");
+        remove.HorizontalAlignment = HorizontalAlignment.Left;
+        UninstallPlan? plan = null;
+        var working = false;
+        void Refresh()
+        {
+            remove.IsEnabled = plan != null && !working && groups.Values.Any(box => box.IsChecked == true);
+            close.IsEnabled = !working;
+            foreach (var pair in groups)
+                pair.Value.IsEnabled = !working && plan?.Items.Any(item => item.Group == pair.Key) == true;
+        }
+        CheckBox Choice(string group, FrameworkElement label, bool defaultSelected)
+        {
+            var items = plan!.Items.Where(item => item.Group == group).ToArray();
+            var box = new CheckBox
+            {
+                Content = label, Style = (Style)FindResource("UninstallChoice"),
+                IsChecked = defaultSelected && items.Length > 0 && items.All(item => !item.External)
+            };
+            System.Windows.Automation.AutomationProperties.SetAutomationId(box, "Uninstall-" + group);
+            groups.Add(group, box);
+            box.Checked += (_, _) => Refresh();
+            box.Unchecked += (_, _) => Refresh();
+            return box;
+        }
+
         try
         {
-            plan=AppMaintenance.Discover(vm.Settings,vm.PreferencesDirectory,AppContext.BaseDirectory);
-            foreach(var (group,title) in new[]{("models","Remove model weights"),("workspace","Remove workspace data"),("application","Remove app and settings")})
+            plan = AppMaintenance.Discover(vm.Settings, vm.PreferencesDirectory, AppContext.BaseDirectory);
+            foreach (var (group, label, detail) in new[]
             {
-                var items=plan.Items.Where(i=>i.Group==group).ToList();var box=new CheckBox{IsChecked=items.Count>0&&items.All(i=>!i.External),IsEnabled=items.Count>0,Margin=new Thickness(0,14,0,0)};groups[group]=box;
-                var content=new StackPanel();content.Children.Add(SetupUi.Text(title,13,true));
-                foreach(var item in items){content.Children.Add(new TextBlock{Text=item.Path,FontSize=10,TextWrapping=TextWrapping.Wrap,Foreground=SetupUi.Muted,Margin=new Thickness(0,5,0,0)});if(item.External)content.Children.Add(SetupUi.Text("Includes configured external folders.",10));
-                    if(item.Files is {} files)
-                    {
-                        content.Children.Add(SetupUi.Text("Only listed application files are removed. Other files in this folder are kept.",10));
-                        var included=new Expander{Margin=new Thickness(0,5,0,0),Content=new TextBox{Text=string.Join(Environment.NewLine,files.Select(file=>Path.Combine(item.Path,file))),IsReadOnly=true,TextWrapping=TextWrapping.NoWrap,MaxHeight=150,FontSize=10,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,HorizontalScrollBarVisibility=ScrollBarVisibility.Auto}};included.SetBinding(HeaderedContentControl.HeaderProperty,"T[Show included application files]");content.Children.Add(included);
-                    }}
-                box.Content=content;body.Children.Add(SetupUi.Card(box));
+                ("models", "Uninstall model weights", "Image generation and prompt enhancement model weights."),
+                ("workspace", "Uninstall workspace records", "Generated images, history, program files, caches and logs."),
+                ("application", "Uninstall app and configuration", "The app, preferences, workspace location records and its shortcuts.")
+            })
+            {
+                var text = new StackPanel { Margin = new Thickness(5, 0, 0, 0) };
+                text.Children.Add(SetupUi.Text(label, 13, true));
+                var subtitle = SetupUi.Text(detail, 11, muted: true);
+                subtitle.Margin = new Thickness(0, 5, 0, 0);
+                text.Children.Add(subtitle);
+                if (plan.Items.Any(item => item.Group == group && item.External))
+                    text.Children.Add(SetupUi.Text("Includes configured external folders.", 10, muted: true));
+                var card = new StackPanel();
+                card.Children.Add(Choice(group, text, defaultSelected: true));
+                if (group == "workspace" && plan.Items.Any(item => item.Group == AppMaintenance.ManagedEnvironmentGroup))
+                {
+                    var environmentBody = new Border { Margin = new Thickness(20, 8, 0, 0) };
+                    var environment = Choice(AppMaintenance.ManagedEnvironmentGroup,
+                        SetupUi.Text("Also remove managed Python environments", 11, muted: true),
+                        defaultSelected: false);
+                    environmentBody.Child = environment;
+                    card.Children.Add(environmentBody);
+                }
+                body.Children.Add(new Border
+                {
+                    Child = card, Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(242, 242, 242)),
+                    Padding = new Thickness(14), Margin = new Thickness(0, 0, 0, 10), CornerRadius = new CornerRadius(10)
+                });
             }
         }
-        catch(Exception ex){error.Text=vm.T[ex.Message];remove.IsEnabled=false;}
-        bool working=false;Closing+=(_,e)=>{if(working)e.Cancel=true;};
-        remove.Click+=async(_,_)=>
+        catch (Exception exception) { error.Text = vm.T[exception.Message]; }
+        body.Children.Add(remove);
+        error.Margin = new Thickness(0, 8, 0, 0);
+        body.Children.Add(error);
+        Closing += (_, e) => { if (working) e.Cancel = true; };
+        remove.Click += async (_, _) =>
         {
-            if(plan==null||working||vm.IsPreparingSetup||vm.IsGenerationBusy||vm.IsDownloading||vm.IsImporting||vm.IsChecking)return;
+            if (plan == null || working || vm.IsPreparingSetup || vm.IsGenerationBusy || vm.IsDownloading || vm.IsImporting || vm.IsChecking)
+                return;
             try
             {
-                var selected=AppMaintenance.Select(plan,groups.Where(g=>g.Value.IsChecked==true).Select(g=>g.Key).ToHashSet());
-                if(selected.Items.Count==0){error.Text=vm.T["Choose what to remove first."];return;}
-                var confirmation=vm.T["The selected files will be permanently deleted after LightX2V closes."]+"\n\n"+string.Join("\n",selected.Items.Select(i=>i.Path));
-                if(MessageBox.Show(this,confirmation,vm.T["Uninstall"],MessageBoxButton.OKCancel,MessageBoxImage.Warning)!=MessageBoxResult.OK)return;
-                working=true;remove.IsEnabled=close.IsEnabled=false;foreach(var box in groups.Values)box.IsEnabled=false;
-                error.Text=vm.T["Preparing"];
-                await AppMaintenance.LaunchAsync(selected);working=false;Application.Current.Shutdown();
+                var selected = AppMaintenance.Select(plan, groups.Where(group => group.Value.IsChecked == true)
+                    .Select(group => group.Key).ToHashSet());
+                if (selected.Items.Count == 0 || !Confirm(vm, selected)) return;
+                working = true;
+                error.Text = vm.T["Preparing"];
+                Refresh();
+                await AppMaintenance.LaunchAsync(selected);
+                working = false;
+                Application.Current.Shutdown();
             }
-            catch(Exception ex){working=false;error.Text=vm.T[ex.Message];remove.IsEnabled=close.IsEnabled=true;foreach(var box in groups.Values)box.IsEnabled=true;}
+            catch (Exception exception)
+            {
+                working = false;
+                error.Text = vm.T[exception.Message];
+                Refresh();
+            }
         };
+        Refresh();
+    }
+
+    bool Confirm(MainViewModel vm, UninstallPlan selected)
+    {
+        var dialog = new Window
+        {
+            Owner = this, Title = vm.T["Review selected files"], DataContext = vm, ShowInTaskbar = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize,
+            Width = Math.Min(570, Width), Height = Math.Min(390, Height), Background = System.Windows.Media.Brushes.White
+        };
+        SetupUi.Resources(dialog);
+        var content = new DockPanel { Margin = new Thickness(20) };
+        dialog.Content = content;
+        var note = SetupUi.Text("The selected files will be permanently deleted after LightX2V closes.");
+        DockPanel.SetDock(note, Dock.Top);
+        content.Children.Add(note);
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        DockPanel.SetDock(actions, Dock.Bottom);
+        content.Children.Add(actions);
+        var cancel = SetupUi.Button(dialog, "Cancel");
+        cancel.IsCancel = true;
+        actions.Children.Add(cancel);
+        var accept = SetupUi.Button(dialog, selected.RemoveApplication ? "Uninstall and quit" : "Delete and restart", true);
+        accept.Margin = new Thickness(8, 0, 0, 0);
+        accept.Click += (_, _) => dialog.DialogResult = true;
+        actions.Children.Add(accept);
+        content.Children.Add(new TextBox
+        {
+            Text = string.Join(Environment.NewLine, selected.Items.SelectMany(item => item.Files == null
+                ? new[] { item.Path }
+                : item.Files.Select(file => Path.Combine(item.Path, file)))),
+            IsReadOnly = true, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Margin = new Thickness(0, 12, 0, 12)
+        });
+        return dialog.ShowDialog() == true;
     }
 }

@@ -94,11 +94,31 @@ internal static partial class Program
         var allRoot=Path.Combine(root,"uninstall-all-groups");var allSettings=AppSettings.Fresh(Path.Combine(allRoot,"workspace"));var allPrefs=Path.Combine(allRoot,"preferences");var allApp=Path.Combine(allRoot,"app");
         Directory.CreateDirectory(Path.Combine(allSettings.Workspace,"models"));Directory.CreateDirectory(Path.Combine(allSettings.Workspace,"outputs"));Directory.CreateDirectory(allPrefs);Directory.CreateDirectory(allApp);
         Files.Write(Path.Combine(allApp,"build-manifest.json"),new{sha256=new Dictionary<string,string>{{"LightX2V.Windows.exe","fixture"}}});File.WriteAllText(Path.Combine(allApp,"user-note.txt"),"Keep unowned app-folder data");File.WriteAllText(Path.Combine(allApp,"LightX2V.Windows.exe"),"Non-executable uninstall fixture");
-        var managed=Path.Combine(allSettings.Workspace,"environments","owned");Directory.CreateDirectory(managed);File.WriteAllText(Path.Combine(managed,".lightx2v-environment.json"),"{}");
+        var managedPython=SetupInstaller.ManagedPython(allSettings.Workspace,"amd_rocm");
+        var managed=Path.GetDirectoryName(managedPython)!;Directory.CreateDirectory(managed);File.WriteAllText(Path.Combine(managed,".lightx2v-environment.json"),"{}");
+        File.WriteAllText(managedPython,"Managed Python discovery fixture");
         var unmanaged=Path.Combine(allSettings.Workspace,"environments","keep-unmanaged");Directory.CreateDirectory(unmanaged);File.WriteAllText(Path.Combine(unmanaged,"keep.txt"),"Keep this unmanaged environment");
-        var allPlan=AppMaintenance.Select(AppMaintenance.Discover(allSettings,allPrefs,allApp),new HashSet<string>{"models","workspace","application"});allPlan.ParentPid=int.MaxValue;
-        var allPlanFile=Path.Combine(allRoot,"plan.json");Files.Write(allPlanFile,allPlan);await AppMaintenance.ExecuteAsync(allPlanFile,Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(allPlanFile))));
-        Check(File.Exists(Path.Combine(allApp,"user-note.txt"))&&!File.Exists(Path.Combine(allApp,"LightX2V.Windows.exe"))&&!Directory.Exists(allPrefs)&&!Directory.Exists(Path.Combine(allSettings.Workspace,"models"))&&!Directory.Exists(managed)&&File.Exists(Path.Combine(unmanaged,"keep.txt")),"All uninstall groups remove owned fixtures while retaining unlisted app-folder files and unmanaged environments");
+        var groupedPlan = AppMaintenance.Discover(allSettings, allPrefs, allApp);
+        var allPlanFile = Path.Combine(allRoot, "plan.json");
+        async Task RemoveGroups(params string[] groups)
+        {
+            var plan = AppMaintenance.Select(groupedPlan, groups.ToHashSet());
+            plan.ParentPid = int.MaxValue;
+            Files.Write(allPlanFile, plan);
+            await AppMaintenance.ExecuteAsync(allPlanFile, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(allPlanFile))));
+        }
+        await RemoveGroups("workspace", "application");
+        Check(File.Exists(Path.Combine(allApp,"user-note.txt"))&&!File.Exists(Path.Combine(allApp,"LightX2V.Windows.exe"))&&
+            !Directory.Exists(allPrefs)&&!Directory.Exists(Path.Combine(allSettings.Workspace,"outputs"))&&
+            Directory.Exists(Path.Combine(allSettings.Workspace,"models"))&&File.Exists(managedPython),
+            "Keeping model weights while removing workspace and app data also preserves the managed Python");
+        var fresh = AppSettings.Fresh(allSettings.Workspace);
+        Check(SetupDiscovery.PythonPaths(fresh).Contains(managedPython, StringComparer.OrdinalIgnoreCase),
+            "First-use discovery finds the managed Python after preferences were removed");
+        await RemoveGroups(AppMaintenance.ManagedEnvironmentGroup);
+        Check(!Directory.Exists(managed)&&File.Exists(Path.Combine(unmanaged,"keep.txt"))&&
+            Directory.Exists(Path.Combine(allSettings.Workspace,"models")),
+            "Explicitly selecting managed environments removes only the owned Python environment");
         await UninstallShortcutChecks(maintenance);
         MaintenanceLaunchFailureChecks(maintenance);
         using(var recovered=new MainViewModel(fixture.Preferences,environmentCatalog:new ReadinessCatalog{Hold=false},driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))

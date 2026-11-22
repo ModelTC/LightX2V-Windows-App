@@ -17,7 +17,10 @@ internal static partial class Program
             Check(vm.NeedsInitialSetup&&!vm.Settings.ModelSelected,"An isolated real profile starts in first use without adopting existing settings");
             await vm.Setup.BeginWorkspaceAsync();
             for(var i=0;i<600&&vm.Setup.SearchingEnvironments;i++)await Task.Delay(100);
-            Check(vm.Setup.Selected is {Ready:true}&&vm.Setup.UseExisting&&!Directory.Exists(Path.Combine(workspace,"environments")),"First use automatically selects a compatible installed AMD environment without installing software");
+            if (vm.Setup.Selected is not {Ready:true} || !vm.Setup.UseExisting)
+                throw new InvalidOperationException($"Native environment search did not select a candidate. Backend: {vm.Setup.Backend}. Stage: {vm.Setup.Stage}. Error: {vm.Setup.Error}. " +
+                    $"Candidates: {string.Join(" | ", vm.Setup.Environments.Select(env => $"{env.Path}: {env.Detail}"))}");
+            Check(!Directory.Exists(Path.Combine(workspace,"environments")),"First use automatically selects a compatible installed AMD environment without installing software");
             await vm.Setup.PrepareEnvironmentAsync(false);
             for(var i=0;i<300&&(!vm.TurboCard.Ready||!vm.T2ICard.Ready||!vm.I2ICard.Ready);i++)await Task.Delay(100);
             Check(vm.Setup.Error==""&&vm.TurboCard.Path==expected.Model&&vm.T2ICard.Path==expected.T2IDirectory&&vm.I2ICard.Path==expected.I2IDirectory&&vm.Setup.CanContinue,"Entering model preparation automatically finds all three existing complete AMD models without a manual path");
@@ -36,7 +39,8 @@ internal static partial class Program
         vm.Prompt="A blue ceramic teapot on a wooden table beside a sunny window, warm natural light, realistic photography.";
         var window=new MainWindow(vm);await Render(window,1280,820,"native-app-before");
         Check(vm.CanGenerate,"The real Standard environment and image model are available through the app view model");
-        await vm.GenerateAsync();var text=vm.Turns.Last();
+        await vm.GenerateAsync();
+        var text=vm.Turns.LastOrDefault()??throw new InvalidOperationException("The first real generation did not start: "+vm.Toast);
         Check(text.Completed&&File.Exists(text.Request.Output),"The actual app generation entry completes a real 512 text-to-image task on "+text.Request.Backend);
         var png=new BitmapImage(new Uri(text.Request.Output));Check(png.PixelWidth==512&&png.PixelHeight==512,"The real app task writes a decodable 512-square PNG");
         await vm.AddImagePathsAsync(Enumerable.Repeat(text.Request.Output,8));

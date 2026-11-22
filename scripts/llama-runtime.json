@@ -1,0 +1,32 @@
+{
+  "version": "b11564",
+  "archiveSha256": "1a1b260a2240a12cac7a94590fa88d06ae25d349db9d556e9c2503f7d22e29a2",
+  "files": [
+    "LICENSE-LLVM-OpenMP",
+    "ggml-base.dll",
+    "ggml-cpu-alderlake.dll",
+    "ggml-cpu-cannonlake.dll",
+    "ggml-cpu-cascadelake.dll",
+    "ggml-cpu-cooperlake.dll",
+    "ggml-cpu-haswell.dll",
+    "ggml-cpu-icelake.dll",
+    "ggml-cpu-ivybridge.dll",
+    "ggml-cpu-piledriver.dll",
+    "ggml-cpu-sandybridge.dll",
+    "ggml-cpu-sapphirerapids.dll",
+    "ggml-cpu-skylakex.dll",
+    "ggml-cpu-sse42.dll",
+    "ggml-cpu-x64.dll",
+    "ggml-cpu-zen4.dll",
+    "ggml-rpc.dll",
+    "ggml-vulkan.dll",
+    "ggml.dll",
+    "libomp.dll",
+    "llama-common.dll",
+    "llama-completion-impl.dll",
+    "llama-completion.exe",
+    "llama-mtmd-cli.exe",
+    "llama.dll",
+    "mtmd.dll"
+  ]
+}

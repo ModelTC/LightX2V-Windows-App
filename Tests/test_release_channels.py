@@ -1,14 +1,17 @@
 """Exercise rolling publication without making network requests."""
 import base64
 import hashlib
-import importlib.util
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
-SOURCE = Path(__file__).resolve().parents[1] / 'scripts' / 'publish_latest.py'
-spec = importlib.util.spec_from_file_location('rolling_publisher', SOURCE)
-publisher = importlib.util.module_from_spec(spec); spec.loader.exec_module(publisher)
+scripts = str(Path(__file__).resolve().parents[1] / 'scripts')
+sys.path.insert(0, scripts)
+try:
+    import publish_latest as publisher
+finally:
+    sys.path.remove(scripts)
 
 
 class GitHubFixture:

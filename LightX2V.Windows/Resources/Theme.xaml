@@ -11,17 +11,23 @@
   </Style>
   <Style x:Key="KeyboardFocusCue" TargetType="Control"><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Control"><Rectangle Margin="3" Stroke="#9A9A9A" StrokeThickness="1" StrokeDashArray="2,2" RadiusX="5" RadiusY="5"/></ControlTemplate></Setter.Value></Setter></Style>
   <Style x:Key="CaptionButton" TargetType="Button">
-   <Setter Property="Width" Value="40"/><Setter Property="Height" Value="30"/><Setter Property="Padding" Value="0"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource Ink}"/><Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusCue}"/>
-   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border Background="{TemplateBinding Background}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border></ControlTemplate></Setter.Value></Setter>
+   <Setter Property="Width" Value="46"/><Setter Property="Height" Value="38"/><Setter Property="Padding" Value="0"/>
+   <Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource Ink}"/>
+   <Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusCue}"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+    <Border Background="{TemplateBinding Background}" CornerRadius="6" Margin="1,1,1,0">
+     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+    </Border>
+   </ControlTemplate></Setter.Value></Setter>
    <Style.Triggers>
-    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#333333"/><Setter Property="Foreground" Value="White"/></Trigger>
-    <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="#1F1F1F"/><Setter Property="Foreground" Value="White"/></Trigger>
+    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#10000000"/></Trigger>
+    <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="#20000000"/></Trigger>
    </Style.Triggers>
   </Style>
   <Style x:Key="CloseCaptionButton" TargetType="Button" BasedOn="{StaticResource CaptionButton}">
    <Style.Triggers>
-    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#E81123"/><Setter Property="Foreground" Value="White"/></Trigger>
-    <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="#C50F1F"/><Setter Property="Foreground" Value="White"/></Trigger>
+    <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#20C02020"/><Setter Property="Foreground" Value="#991D24"/></Trigger>
+    <Trigger Property="IsPressed" Value="True"><Setter Property="Background" Value="#36C02020"/><Setter Property="Foreground" Value="#991D24"/></Trigger>
    </Style.Triggers>
   </Style>
   <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="#151515"/><Setter Property="Foreground" Value="White"/><Setter Property="Padding" Value="16,10"/></Style>

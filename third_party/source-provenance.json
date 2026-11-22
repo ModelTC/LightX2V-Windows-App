@@ -3,11 +3,21 @@
   "version": "0.6.1",
   "revision": "43c6a11bb65b7357f06e9603fa92249bc16b484e",
   "archive": "LightX2V.Windows/Resources/Setup/lightx2v-native.zip",
-  "sha256": "cb93e4a3bf7fd5ee843eefda554325ab829f441dc535e2997bbb8717b4cc1e81",
+  "sha256": "124fc1b916bdd0656a25976754c4fe1579d591b0785380bfd3e416997dcd6f39",
   "upstreamArchiveSha256": "6f7f5e8f7b501aefa70bfab019f53ff07b1c216502ca2220f16009b5e10cc126",
   "patchSha256": "e5fbcaf9795165ae21af87d1de05ee5940a27a0eb29422c80524a82f96f47b83",
   "upstreamArchiveUrl": "https://codeload.github.com/ModelTC/LightX2V/zip/43c6a11bb65b7357f06e9603fa92249bc16b484e",
   "patch": "third_party/windows-compat-0.6.1.patch",
+  "excludedFromBundle": [
+    ".agents",
+    "assets/atlas-cloud-logo.png",
+    "assets/figs",
+    "assets/img_lightx2v.png",
+    "assets/inputs",
+    "dockerfiles",
+    "docs",
+    "tests"
+  ],
   "modified": [
     "lightx2v/common/offload/shared_weight_coordinator.py",
     "lightx2v/common/ops/mm/optimized_linear.py",

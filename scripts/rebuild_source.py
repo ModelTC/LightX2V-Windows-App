@@ -20,6 +20,7 @@ def rebuild(upstream, destination):
     with tempfile.TemporaryDirectory() as temporary, zipfile.ZipFile(upstream) as archive:
         root = Path(temporary)
         prefix = archive.namelist()[0].split('/')[0] + '/'
+        excluded = provenance.get('excludedFromBundle', [])
         names = []
         for entry in archive.infolist():
             name = entry.filename.removeprefix(prefix)
@@ -35,6 +36,8 @@ def rebuild(upstream, destination):
         subprocess.run(['git', 'apply', str(patch)], cwd=root, check=True)
         with zipfile.ZipFile(destination, 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as output:
             for name in sorted(names):
+                if any(name == path or name.startswith(path + '/') for path in excluded):
+                    continue
                 entry = zipfile.ZipInfo(name, (2026, 11, 9, 0, 0, 0))
                 entry.compress_type = zipfile.ZIP_DEFLATED
                 entry.external_attr = 0o100644 << 16

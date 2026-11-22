@@ -13,11 +13,13 @@ spec.loader.exec_module(module)
 
 
 class PackageLayoutTests(unittest.TestCase):
-    def fixture(self, root, layout=2, extra=None, corrupt=False, folder='LightX2V-Windows-0.4.1'):
+    def fixture(self, root, layout=2, extra=None, corrupt=False, folder='LightX2V-Windows-0.4.1', numbered=True):
         files = {'LightX2V.exe': b'launcher', 'app/LightX2V.Windows.exe': b'app', 'docs/README.md': b'help'} if layout == 2 else {'LightX2V.Windows.exe': b'legacy'}
         files.update(extra or {})
-        manifest = dict(version='0.4.1', target='win-x64', channel='latest', sourceCommit='a'*40, sourceDirty=False,
+        manifest = dict(target='win-x64', sourceCommit='a'*40, sourceDirty=False,
                         sha256={name: hashlib.sha256(data).hexdigest() for name, data in files.items()})
+        if numbered:
+            manifest.update(version='0.4.1', channel='latest')
         name = 'build-manifest.json'
         if layout == 2:
             manifest.update(layoutVersion=2, entryPoint='LightX2V.exe', appExecutable='app/LightX2V.Windows.exe')
@@ -42,8 +44,8 @@ class PackageLayoutTests(unittest.TestCase):
                 module.verify(self.fixture(Path(temporary), extra={'coreclr.dll': b'runtime'}), '0.4.1')
 
     def test_build_specific_folder_agrees_with_manifest_commit(self):
-        self.assertEqual(module.extraction_folder('0.4.1', 'a'*40), 'LightX2V-Windows-0.4.1-aaaaaaa')
-        self.assertNotEqual(module.extraction_folder('0.4.1', 'a'*40), module.extraction_folder('0.4.1', 'b'*40))
+        self.assertEqual(module.extraction_folder('a'*40), 'LightX2V-Windows-aaaaaaa')
+        self.assertNotEqual(module.extraction_folder('a'*40), module.extraction_folder('b'*40))
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             package = self.fixture(root, folder='LightX2V-Windows-0.4.1-aaaaaaa')
@@ -51,6 +53,17 @@ class PackageLayoutTests(unittest.TestCase):
             package = self.fixture(root, folder='LightX2V-Windows-0.4.1-bbbbbbb')
             with self.assertRaisesRegex(ValueError, 'Extraction folder'):
                 module.verify(package, '0.4.1')
+
+    def test_commit_named_package_has_no_channel_or_numeric_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = self.fixture(root, folder='LightX2V-Windows-aaaaaaa', numbered=False)
+            manifest = module.verify(package, source_commit='a'*40, require_clean=True)
+            self.assertEqual(manifest['sourceCommit'], 'a'*40)
+            self.assertNotIn('version', manifest)
+            package = self.fixture(root, folder='LightX2V-Windows-bbbbbbb', numbered=False)
+            with self.assertRaisesRegex(ValueError, 'Extraction folder'):
+                module.verify(package, source_commit='a'*40, require_clean=True)
 
     def test_payload_change_cannot_be_hidden_by_recomputing_download_checksum(self):
         with tempfile.TemporaryDirectory() as temporary:

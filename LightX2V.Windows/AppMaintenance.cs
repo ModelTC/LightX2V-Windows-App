@@ -18,6 +18,7 @@ public sealed class UninstallPlan
 
 public static class AppMaintenance
 {
+    internal const string ManagedEnvironmentGroup = "environment";
     public static string Normalize(string path)=>Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
     public static bool Contains(string parent,string child)=>Normalize(child).Equals(Normalize(parent),StringComparison.OrdinalIgnoreCase)||Normalize(child).StartsWith(Normalize(parent)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase);
     public static void ValidatePath(string path)
@@ -85,7 +86,8 @@ public static class AppMaintenance
             {
                 var directory=Path.Combine(root,folder);
                 if(Directory.Exists(directory))foreach(var child in Directory.EnumerateDirectories(directory))
-                    if(File.Exists(Path.Combine(child,marker)))Add(child,"workspace");
+                    if(File.Exists(Path.Combine(child,marker)))
+                        Add(child, folder == "environments" ? ManagedEnvironmentGroup : "workspace");
             }
             foreach(var file in new[]{"workspace.json","workspace.json.bak"})Add(Path.Combine(root,file),"workspace");
             foreach(var model in new[]{record.Model,record.T2IDirectory,record.I2IDirectory}.Where(p=>!string.IsNullOrWhiteSpace(p)))

@@ -9,8 +9,7 @@ try {
     & $Python -X utf8 "$PSScriptRoot\prepare_runtime.py"
     if ($LASTEXITCODE -ne 0) { throw 'Prompt enhancement runtime preparation failed.' }
 
-    $version = ([xml](Get-Content "$PSScriptRoot\LightX2V.Windows\LightX2V.Windows.csproj" -Raw)).SelectSingleNode('/Project/PropertyGroup/Version').InnerText
-    if ([string]::IsNullOrWhiteSpace($Destination)) { $Destination = "$PSScriptRoot\dist\LightX2V-Windows-$version" }
+    if ([string]::IsNullOrWhiteSpace($Destination)) { $Destination = "$PSScriptRoot\dist\LightX2V-Windows" }
     $Destination = [IO.Path]::GetFullPath($Destination)
     if ((Test-Path -LiteralPath $Destination) -and @(Get-ChildItem -LiteralPath $Destination -Force).Count -gt 0) {
         throw 'Use a new or empty output directory to avoid packaging stale files.'

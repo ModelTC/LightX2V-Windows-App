@@ -42,8 +42,7 @@ jobs:
         env:
           SOURCE_COMMIT: ${{ github.sha }}
         run: |
-          $version = ([xml](Get-Content LightX2V.Windows/LightX2V.Windows.csproj -Raw)).Project.PropertyGroup.Version
-          python scripts/verify_package.py dist/LightX2V-APP-Windows-x64.zip --version $version --source-commit $env:SOURCE_COMMIT --require-clean
+          python scripts/verify_package.py dist/LightX2V-APP-Windows-x64.zip --source-commit $env:SOURCE_COMMIT --require-clean
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Retain verified build for publisher
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

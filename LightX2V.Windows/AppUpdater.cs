@@ -175,9 +175,12 @@ internal static partial class AppUpdater
             throw new InvalidDataException("The update has an invalid package manifest.");
         using var manifest = entry.Open();
         var (version, hashes) = ReadManifest(JsonNode.Parse(manifest), commit, requireClean: true);
-        var root = $"LightX2V-Windows-{version}";
         var prefix = entry.FullName[..^ManifestPath.Length];
-        if (prefix != root + "/" && prefix != root + "-" + commit[..7] + "/" ||
+        var root = "LightX2V-Windows";
+        var expectedRoot = version == null
+            ? prefix == $"{root}-{commit[..7]}/"
+            : prefix == $"{root}-{version}/" || prefix == $"{root}-{version}-{commit[..7]}/";
+        if (!expectedRoot ||
             entries.Count != hashes.Count + 1 || hashes.Keys.Any(path => !entries.ContainsKey(prefix + path)))
             throw new InvalidDataException("The update contains unexpected package files.");
 
@@ -192,10 +195,11 @@ internal static partial class AppUpdater
         entry.ExtractToFile(Path.Combine(destination, ManifestPath));
     }
 
-    static (string Version, Dictionary<string, string> Hashes) ReadManifest(JsonNode? manifest, string commit, bool requireClean)
+    static (string? LegacyVersion, Dictionary<string, string> Hashes) ReadManifest(JsonNode? manifest, string commit, bool requireClean)
     {
-        var version = (string?)manifest?["version"] ?? "";
-        if (!VersionPattern().IsMatch(version) || !CommitPattern().IsMatch(commit) ||
+        var version = (string?)manifest?["version"];
+        if ((manifest is JsonObject metadata && metadata.ContainsKey("version") &&
+             (version == null || !VersionPattern().IsMatch(version))) || !CommitPattern().IsMatch(commit) ||
             (string?)manifest?["sourceCommit"] != commit || (requireClean && (bool?)manifest?["sourceDirty"] != false) ||
             (string?)manifest?["target"] != "win-x64" || (int?)manifest?["layoutVersion"] != 2 ||
             (string?)manifest?["entryPoint"] != "LightX2V.exe" || (string?)manifest?["appExecutable"] != "app/LightX2V.Windows.exe" ||
