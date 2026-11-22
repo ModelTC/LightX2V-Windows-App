@@ -93,13 +93,29 @@ public sealed class FirstRunWindow : Window
             statusCard.Visibility=busy&&!(setup.Page==2&&owner.IsDownloading)?Visibility.Visible:Visibility.Collapsed;detail.Visibility=busy?Visibility.Visible:Visibility.Collapsed;progress.Visibility=busy?Visibility.Visible:Visibility.Collapsed;progress.IsIndeterminate=owner.IsRunning||owner.IsDownloading||owner.IsChecking||setup.Busy&&setup.Percent<=0;
             close.Visibility=setup.Page==3?Visibility.Collapsed:Visibility.Visible;
             close.Content=owner.T[setup.Busy||setup.Driver.Busy||owner.IsRunning||owner.IsDownloading?"Stop":"Close"];
-            next.IsEnabled=!busy&&(setup.Page!=1||!setup.ComputerScanned||!setup.Driver.CanContinue||setup.ManagedSupported||setup.Selected?.Ready==true);
-            next.Content=owner.T[setup.Page==0?"Continue":setup.Page==1?(!setup.ComputerScanned?"Scan this computer":!setup.Driver.CanContinue?(setup.Driver.Pending?"I have finished installing · Check again":setup.Driver.CanDownload?"Download and open the official assistant":"Check this computer again"):"Prepare image-generation components"):setup.Page==2?(setup.CanContinue?"Continue":"Download required files automatically"):"Start creating"];
+            next.IsEnabled=!busy&&(setup.Page!=1||!setup.ComputerScanned||!setup.Driver.CanContinue||setup.CanReuseEnvironment||setup.CanDownloadEnvironment);
+            next.Content=owner.T[setup.Page==0?"Continue":setup.Page==1?(!setup.ComputerScanned?"Scan this computer":!setup.Driver.CanContinue?(setup.Driver.Pending?"I have finished installing · Check again":setup.Driver.CanDownload?"Download and open the official assistant":"Check this computer again"):setup.CanDownloadEnvironment?"Download required components automatically":"Continue"):setup.Page==2?(setup.CanContinue?"Continue":"Download required files automatically"):"Start creating"];
         }
         finally{refreshing=false;}
     }
     async Task Next()
     {
-        if(setup.Page==0)await setup.BeginWorkspaceAsync();else if(setup.Page==1){if(!setup.ComputerScanned){await setup.ScanComputerAsync();return;}if(!setup.Driver.Checked)await setup.Driver.CheckAsync();if(!setup.Driver.CanContinue){if(setup.Driver.CanDownload)await setup.Driver.DownloadAndOpenAsync();else await setup.Driver.CheckAsync(true);}else await setup.PrepareEnvironmentAsync(!setup.UseExisting);}else if(setup.Page==2){if(setup.CanContinue)setup.Page=3;else await setup.DownloadModelsAsync();}else{owner.SelectStandardModel();Completed=true;Close();}Refresh();
+        if(!next.IsEnabled)return;
+        if(setup.Page==0)await setup.BeginWorkspaceAsync();
+        else if(setup.Page==1)
+        {
+            if(!setup.ComputerScanned){await setup.ScanComputerAsync();return;}
+            if(!setup.Driver.Checked)await setup.Driver.CheckAsync();
+            if(!setup.Driver.CanContinue)
+            {
+                if(setup.Driver.CanDownload)await setup.Driver.DownloadAndOpenAsync();
+                else await setup.Driver.CheckAsync(true);
+            }
+            else if(setup.CanReuseEnvironment)await setup.PrepareEnvironmentAsync(false);
+            else if(setup.CanDownloadEnvironment)await setup.PrepareEnvironmentAsync(true);
+        }
+        else if(setup.Page==2){if(setup.CanContinue)setup.Page=3;else await setup.DownloadModelsAsync();}
+        else{owner.SelectStandardModel();Completed=true;Close();}
+        Refresh();
     }
 }

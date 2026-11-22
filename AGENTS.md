@@ -7,7 +7,7 @@
 - Keep README content to downloads, build status and source build instructions. Public release text is English.
 - Use localization resources consistently. Language preference is independent of the workspace; changing language preserves drafts, references and tasks.
 - App-authored log file text is English. Preserve user input, model output and third-party logs in their original form.
-- Mac parity is pinned to `65acaee0c063200651629cb21df7c46711687e65`. INT8 and in-app updates are deferred. Do not upgrade inference pins as part of UI work.
+- Mac parity is pinned to `65acaee0c063200651629cb21df7c46711687e65`. INT8 is deferred. Do not upgrade inference pins as part of UI work.
 
 - Retain the existing Windows four-step first-run wizard. The three compact settings cards and provided Mac desktop screenshots guide general settings and workspace visuals; do not replace the mature Windows preparation flow with the daily settings dialog.
 

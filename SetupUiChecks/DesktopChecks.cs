@@ -18,6 +18,7 @@ internal static partial class Program
         using var vm=new MainViewModel(fixture.Preferences,downloads,new ReadinessCatalog{Hold=false},fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));
         vm.EnhancementEnabled=true;var window=new MainWindow(vm){WindowState=WindowState.Maximized};window.Show();window.Activate();
         await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);actualDesktopScale=VisualTreeHelper.GetDpi(window).DpiScaleX;
+        await CheckInspectorDisclosure(window);
         foreach(var language in new[]{"zh","en"})
         {
             vm.SetLanguage(language);var settings=new SettingsWindow(vm){Owner=window};settings.Show();await Task.Delay(500);
@@ -73,6 +74,52 @@ internal static partial class Program
         Check(vm.Toast.Length==0,"The real desktop shell accepts the Unicode-safe log file selection request");
         generation.Status="completed";
         window.Close();
+    }
+    static async Task CheckInspectorDisclosure(MainWindow window)
+    {
+        foreach (var name in new[] { "ModelSection", "ParametersSection" })
+        {
+            var section = (Expander)window.FindName(name);
+            var header = (System.Windows.Controls.Primitives.ToggleButton)section.Template.FindName("SectionHeader", section);
+            var body = (InspectorReveal)section.Template.FindName("SectionBody", section);
+            var path = (System.Windows.Shapes.Path)header.Template.FindName("Chevron", header);
+            var toggle = (IToggleProvider)new ToggleButtonAutomationPeer(header).GetPattern(PatternInterface.Toggle);
+            Check(section.IsExpanded && body.ActualHeight > 0 && body.Opacity == 1, name + " starts fully expanded");
+            var fullHeight = body.ActualHeight;
+            toggle.Toggle();
+            if (SystemParameters.ClientAreaAnimation)
+            {
+                var observedFade = false;
+                var animationTime = System.Diagnostics.Stopwatch.StartNew();
+                while (animationTime.ElapsedMilliseconds < 500)
+                {
+                    if (body.Visibility == Visibility.Visible && body.Opacity is > 0 and < 1 &&
+                        body.ActualHeight > 0 && body.ActualHeight < fullHeight)
+                    {
+                        observedFade = true;
+                        break;
+                    }
+                    await Task.Delay(16);
+                }
+                Check(observedFade && ((RotateTransform)path.RenderTransform).Angle is > 0 and < 90, name + " fades, clips and rotates together while closing");
+                Check(!body.IsHitTestVisible && !body.IsEnabled, name + " disables interaction as soon as closing starts");
+                toggle.Toggle();
+                await Task.Delay(320);
+                Check(section.IsExpanded && body.Opacity == 1 && Math.Abs(body.ActualHeight - fullHeight) < 1,
+                    name + " reverses an in-progress closing animation cleanly");
+                toggle.Toggle();
+                await Task.Delay(320);
+            }
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Check(!section.IsExpanded && body.Visibility == Visibility.Collapsed && body.Opacity == 0
+                && ((RotateTransform)path.RenderTransform).Angle == 0, name + " is fully collapsed after the transition");
+            toggle.Toggle();
+            if (SystemParameters.ClientAreaAnimation)
+                await Task.Delay(320);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Check(section.IsExpanded && body.Visibility == Visibility.Visible && body.Opacity == 1
+                && ((RotateTransform)path.RenderTransform).Angle == 90, name + " returns to its full size and interactive state");
+        }
     }
     static void CaptureDesktopWindow(Window window,string name)
     {

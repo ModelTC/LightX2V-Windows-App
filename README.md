@@ -1,4 +1,4 @@
-# LightX2V
+# LightX2V <img src="docs/assets/AppIcon.png" alt="" width="36" height="36" align="absmiddle">
 
 [简体中文](README.zh-CN.md)
 

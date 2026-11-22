@@ -140,6 +140,7 @@ internal static partial class Program
         await FirstUseChecks();
         await DiscoveryChecks();
         await ParityChecks();
+        AppUpdateChecks();
         await VisualParityChecks();
         await SettingsDraftChecks();
         RecoveryChecks();

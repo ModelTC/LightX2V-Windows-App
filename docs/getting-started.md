@@ -1,4 +1,4 @@
-# Getting started
+# Getting started <img src="assets/AppIcon.png" alt="" width="36" height="36" align="absmiddle">
 
 ## Prepare the app
 
@@ -24,7 +24,7 @@ CUDA acceptance on the RTX 4070 Laptop has been confirmed. The detailed v0.3.8 m
 
 ## Data and upgrades
 
-Creations and parameters are saved under the workspace's `outputs` folder; `workspace.json` indexes the history. Preferences are normally stored at `%LOCALAPPDATA%\LightX2V\configuration\preferences.json`. To upgrade, close the old app, fully extract the new version into a new program folder, and continue using the existing workspace. Complete models and downloaded installation packages can be reused.
+Creations and parameters are saved under the workspace's `outputs` folder; `workspace.json` indexes the history. Preferences are normally stored at `%LOCALAPPDATA%\LightX2V\configuration\preferences.json`. To upgrade from a build with **Application updates**, open General settings and check for updates. After you confirm, the app verifies the new package, closes and installs it, then reopens. To upgrade manually, close the old app, fully extract the new build into its own program folder, and continue using the existing workspace. Complete models and downloaded installation packages can be reused.
 
 Stopped downloads can be retried. Model status buttons recheck local completeness; downloads verify file hashes. If enhancement files are missing, use the appropriate model card to download them or turn off prompt enhancement. The send button tooltip explains missing requirements.
 
@@ -42,8 +42,8 @@ Enter sends, Shift+Enter inserts a newline, and Ctrl+Enter remains available. An
 
 Each creation remembers its size, aspect ratio and enhancement preference. Reusing a task selects its original creation and prepares the input without submitting it. Generation uses a new random seed.
 
-General settings includes **Uninstall** with model weights, workspace data, and app/settings groups. Review the exact paths before confirming. External resources are unchecked by default; overlapping retained resources and directory links are rejected. Application removal follows the packaged file manifest and keeps other files placed in the application folder. A packaged application is needed to launch its maintenance helper. A failed maintenance job leaves a diagnostic under `%LOCALAPPDATA%\LightX2V-maintenance`. In-app updates and INT8 remain deferred.
+General settings includes **Uninstall** with model weights, workspace data, and app/settings groups. Review the exact paths before confirming. External resources are unchecked by default; overlapping retained resources and directory links are rejected. Application removal follows the packaged file manifest and keeps other files placed in the application folder. A packaged application is needed to launch its maintenance helper. A failed maintenance job leaves a diagnostic under `%LOCALAPPDATA%\LightX2V-maintenance`. A dedicated desktop shortcut to the selected application is included in the uninstall preview.
 
-With no saved current-user configuration, the four-step first-run assistant opens. Old development folders are never imported automatically. Entering the computer step automatically searches and selects a compatible checked environment; confirmation is required before reuse or installation. Entering the model step automatically searches existing locations and then local fixed disks. Folder buttons can select locations excluded from automatic search. Existing saved user preferences continue to restore across upgrades.
+With no saved current-user configuration, the four-step first-run assistant opens. Old development folders are never imported automatically. Entering the computer step automatically searches for compatible environments. You can reuse a verified environment as soon as it appears. Automatic download is offered when the search completes without a compatible environment. Entering the model step automatically searches existing locations and then local fixed disks. Folder buttons can select locations excluded from automatic search. Existing saved user preferences continue to restore across upgrades.
 
 The package keeps runtime files in `app` and documentation/licenses in `docs`. Keep both beside the public launcher. Models and workspaces are separate. Inference uses the verified bundled LightX2V 0.6.1 source; an external checkout is never silently used for generation or overwritten.

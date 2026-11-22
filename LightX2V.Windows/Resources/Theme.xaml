@@ -64,15 +64,17 @@
   <Geometry x:Key="ApertureGeometry">M22,12 A10,10 0 1 1 2,12 A10,10 0 1 1 22,12 M14.31,8 L20.05,17.94 M9.69,8 H21.17 M7.38,12 L13.12,2.06 M9.69,16 L3.95,6.06 M14.31,16 H2.83 M16.62,12 L10.88,21.94</Geometry>
   <Geometry x:Key="LeafGeometry">M3,2 C7,7 13,1 19,6 C25,12 21,20 16,20 C7,20 2,14 3,2 Z M5,7 C10,14 17,12 23,24</Geometry>
   <Style x:Key="ExampleCard" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="White"/><Setter Property="BorderBrush" Value="{StaticResource Line}"/><Setter Property="Padding" Value="15"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="CardFace" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="12" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="CardFace" Property="Background" Value="#F5F5F5"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter><Setter Property="FocusVisualStyle" Value="{StaticResource KeyboardFocusCue}"/></Style>
-  <Style x:Key="SidebarSection" TargetType="Expander">
+  <Style x:Key="SidebarSection" TargetType="local:InspectorExpander">
    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Expander"><StackPanel>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="local:InspectorExpander"><StackPanel>
     <ToggleButton x:Name="SectionHeader" IsChecked="{Binding IsExpanded,RelativeSource={RelativeSource TemplatedParent},Mode=TwoWay}" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}" Cursor="Hand" HorizontalContentAlignment="Stretch" FocusVisualStyle="{StaticResource KeyboardFocusCue}">
      <ToggleButton.Template><ControlTemplate TargetType="ToggleButton"><Border x:Name="HeaderFace" Margin="20,0" BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Background="Transparent"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/></Grid.ColumnDefinitions><ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
       <Path x:Name="Chevron" Grid.Column="1" Data="M1,1 L5,5 1,9" Stroke="{StaticResource Muted}" StrokeThickness="1.2" Width="5" Height="8" Stretch="Fill" HorizontalAlignment="Right" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5"><Path.RenderTransform><RotateTransform Angle="0"/></Path.RenderTransform></Path>
-     </Grid></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="Chevron" Property="RenderTransform"><Setter.Value><RotateTransform Angle="90"/></Setter.Value></Setter></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="HeaderFace" Property="Background" Value="#F0F0F0"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template>
+     </Grid></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="HeaderFace" Property="Background" Value="#F0F0F0"/></Trigger></ControlTemplate.Triggers></ControlTemplate></ToggleButton.Template>
     </ToggleButton>
-    <ContentPresenter x:Name="SectionBody" ContentSource="Content" HorizontalAlignment="Stretch" Visibility="Collapsed"/>
-   </StackPanel><ControlTemplate.Triggers><Trigger Property="IsExpanded" Value="True"><Setter TargetName="SectionBody" Property="Visibility" Value="Visible"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+    <local:InspectorReveal x:Name="SectionBody" Visibility="Collapsed" ClipToBounds="True">
+     <ContentPresenter ContentSource="Content" HorizontalAlignment="Stretch"/>
+    </local:InspectorReveal>
+   </StackPanel></ControlTemplate></Setter.Value></Setter>
   </Style>
 </ResourceDictionary>

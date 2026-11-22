@@ -5,6 +5,49 @@ namespace LightX2V.Windows;
 
 public sealed class UninstallWindow : Window
 {
+    internal static async Task RunHelperAsync(string planFile, string hash)
+    {
+        var application = Application.Current;
+        application.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        UninstallProgress? progress = null;
+        var exitCode = 1;
+        try
+        {
+            progress = new UninstallProgress(MaintenanceProcess.ValidatePlanFile(planFile));
+            var plan = await AppMaintenance.BeginAsync(planFile, hash);
+            while (true)
+            {
+                try
+                {
+                    await AppMaintenance.ExecuteAsync(plan, progress);
+                    exitCode = 0;
+                    break;
+                }
+                catch (Exception error)
+                {
+                    var details = progress.ReportFailure(error);
+                    var message = L10n.Current["Uninstall could not finish. Your remaining files were preserved."] + "\n\n" +
+                        details + "\n\n" + error.Message + "\n\n" +
+                        L10n.Current["Close any program using these files and resolve any access issues. Retry now?"];
+                    if (MessageBox.Show(message, "LightX2V", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) != MessageBoxResult.Yes)
+                        break;
+                }
+            }
+        }
+        catch (Exception error)
+        {
+            var details = progress?.ReportFailure(error);
+            MessageBox.Show(L10n.Current["Uninstall could not start."] + "\n\n" + error.Message + "\n\n" + details,
+                "LightX2V", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            try { if (progress != null) MaintenanceProcess.ScheduleCleanup(planFile); }
+            catch (Exception error) { System.Diagnostics.Trace.WriteLine(error); }
+            application.Shutdown(exitCode);
+        }
+    }
+
     public UninstallWindow(MainViewModel vm)
     {
         DataContext=vm;Title=vm.T["Uninstall"];Width=640;Height=Math.Min(620,SystemParameters.WorkArea.Height);WindowStartupLocation=WindowStartupLocation.CenterOwner;Background=SetupUi.Subtle;SetupUi.Resources(this);

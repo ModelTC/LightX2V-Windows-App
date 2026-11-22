@@ -14,6 +14,7 @@ public sealed record EnvironmentCandidate(string Path,bool Ready,string Detail)
     public string Device {get;init;}="";
     public long PythonLength {get;init;}
     public long PythonModifiedUtcTicks {get;init;}
+    internal bool CheckTimedOut {get;init;}
     public string BackendLabel=>Backends.Label(Backend);
     public string ResourceSummary=>GpuTotal>0?$"GPU {GpuTotal/1073741824.0:F1} GiB · {L10n.Current["Available"]} {GpuFree/1073741824.0:F1} GiB · RAM {RamTotal/1073741824.0:F1} GiB":"";
     public IReadOnlyDictionary<string,string> Packages {get;init;}=new Dictionary<string,string>();
@@ -23,6 +24,9 @@ public sealed record EnvironmentCandidate(string Path,bool Ready,string Detail)
     public override string ToString()=>(Ready?"✓ ":"○ ")+Path+"\n"+Detail;
 }
 public sealed record EnvironmentPackage(string Name,string Version);
+public enum EnvironmentSearchCompletion { Completed, TimedOut, Incomplete }
+public sealed record EnvironmentSearchResult(IReadOnlyList<EnvironmentCandidate> Candidates,EnvironmentSearchCompletion Completion=EnvironmentSearchCompletion.Completed);
+
 public static class SetupDiscovery
 {
     public static TimeSpan EnvironmentSearchTimeout {get;}=TimeSpan.FromSeconds(45);
@@ -70,7 +74,7 @@ public static class SetupDiscovery
             return (metadata??new EnvironmentCandidate(python,false,"")) with{Ready=ready&&code==0,Detail=detail.Length>0?detail:$"Python exited without a ready event (code {code}).",PythonLength=length,PythonModifiedUtcTicks=modified};
         }
         catch(OperationCanceledException) when(token.IsCancellationRequested){throw;}
-        catch(OperationCanceledException){return new(python,false,$"Environment check timed out after {timeoutSeconds} seconds.");}
+        catch(OperationCanceledException){return new(python,false,$"Environment check timed out after {timeoutSeconds} seconds."){CheckTimedOut=true};}
         catch(Exception e){return new(python,false,e.Message);}
     }
     public static bool CandidateIsCurrent(EnvironmentCandidate candidate,string backend)
@@ -91,7 +95,7 @@ public static class SetupDiscovery
         var packages=value.TryGetProperty("packages",out var items)?items.EnumerateObject().ToDictionary(p=>p.Name,p=>p.Value.GetString()??""):new Dictionary<string,string>();
         return new(python,true,Text("device")+" · "+Text("torch")){PythonVersion=Text("python"),TorchVersion=Text("torch"),HipVersion=Text("hip"),CudaVersion=Text("cuda"),Backend=Text("backend") is "cuda"?"cuda":"amd_rocm",GpuFree=Number("gpuFree"),GpuTotal=Number("gpuTotal"),RamAvailable=Number("ramAvailable"),RamTotal=Number("ramTotal"),Device=Text("device"),Packages=packages};
     }
-    public static Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)=>Task.Run(async()=>
+    public static Task<EnvironmentSearchResult> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)=>Task.Run(async()=>
     {
         using var budget=CancellationTokenSource.CreateLinkedTokenSource(token);
         budget.CancelAfter(EnvironmentSearchTimeout);
@@ -100,14 +104,10 @@ public static class SetupDiscovery
         var queued=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var paths=new Queue<string>();
         var pending=new List<Task<EnvironmentCandidate>>();
+        var completion=EnvironmentSearchCompletion.Completed;
         void Enqueue(IEnumerable<string> candidates)
         {
             foreach(var path in candidates)if(File.Exists(path)&&queued.Add(path))paths.Enqueue(path);
-        }
-        async Task<EnvironmentCandidate> CheckPath(string path)
-        {
-            try{return await Probe(path,settings.Workspace,searchToken,settings.Backend,30);}
-            catch(OperationCanceledException){return new(path,false,"Environment search stopped before this check finished. Choose this Python program to check it again.");}
         }
         Enqueue(PreferredPythonPaths(settings));
         Task<string[]>? discovery=Task.Run(()=>PythonPaths(settings,searchToken).ToArray(),searchToken);
@@ -116,7 +116,7 @@ public static class SetupDiscovery
             while(paths.Count>0||pending.Count>0||discovery!=null)
             {
                 searchToken.ThrowIfCancellationRequested();
-                while(paths.Count>0&&pending.Count<2)pending.Add(CheckPath(paths.Dequeue()));
+                while(paths.Count>0&&pending.Count<2)pending.Add(Probe(paths.Dequeue(),settings.Workspace,searchToken,settings.Backend,30));
                 var waiting=pending.Cast<Task>().ToList();
                 if(discovery!=null)waiting.Add(discovery);
                 var completed=await Task.WhenAny(waiting).WaitAsync(searchToken);
@@ -125,6 +125,7 @@ public static class SetupDiscovery
                     try{Enqueue(await discovery!);}
                     catch(Exception error) when(error is IOException or UnauthorizedAccessException or System.Security.SecurityException)
                     {
+                        completion=EnvironmentSearchCompletion.Incomplete;
                         progress.Report(new("Searching local environments",Log:"Additional environment discovery could not finish: "+error.Message));
                     }
                     discovery=null;
@@ -133,16 +134,19 @@ public static class SetupDiscovery
                 var probe=(Task<EnvironmentCandidate>)completed;
                 pending.Remove(probe);
                 var candidate=await probe;results.Add(candidate);
+                if(candidate.CheckTimedOut&&completion==EnvironmentSearchCompletion.Completed)
+                    completion=EnvironmentSearchCompletion.TimedOut;
                 progress.Report(new("Searching local environments",$"{results.Count} / {queued.Count}",Candidate:candidate));
             }
         }
         catch(OperationCanceledException) when(!token.IsCancellationRequested)
         {
+            completion=EnvironmentSearchCompletion.TimedOut;
             progress.Report(new("Environment search time limit reached"));
         }
         finally{budget.Cancel();}
         token.ThrowIfCancellationRequested();
-        return results.OrderByDescending(p=>p.Ready).ToList();
+        return new EnvironmentSearchResult(results.OrderByDescending(p=>p.Ready).ToArray(),completion);
     },token).WaitAsync(EnvironmentSearchTimeout+TimeSpan.FromSeconds(2),token);
     public static Dictionary<string,string> Models(AppSettings settings,CancellationToken token) =>
         new ModelDiscovery().Search(settings, null, token, includeFixedDisks:false).Candidates

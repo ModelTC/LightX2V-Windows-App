@@ -9,6 +9,8 @@ import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
 
+from verify_package import extraction_folder
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -93,7 +95,7 @@ def package(app):
     )
     (app / 'build-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     result = root.parent / 'LightX2V-APP-Windows-x64.zip'
-    prefix = f'LightX2V-Windows-{version}'
+    prefix = extraction_folder(version, commit)
     with zipfile.ZipFile(result, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as output:
         for path in sorted(root.rglob('*')):
             if path.is_file():

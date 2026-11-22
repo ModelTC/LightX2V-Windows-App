@@ -9,7 +9,7 @@ public sealed class L10n : Observable
         var key=Chinese.FirstOrDefault(pair=>pair.Value==message).Key;
         return this[key??message];
     }
-    public string this[string key] => Language == "zh" ? Chinese.GetValueOrDefault(key, DriverStrings.Chinese.GetValueOrDefault(key, SetupStrings.Chinese.GetValueOrDefault(key,key))) : English.GetValueOrDefault(key, key);
+    public string this[string key] => Language == "zh" ? Chinese.GetValueOrDefault(key, DriverStrings.Chinese.GetValueOrDefault(key, SetupStrings.Chinese.GetValueOrDefault(key, UpdateStrings.Chinese.GetValueOrDefault(key,key)))) : English.GetValueOrDefault(key, key);
     static readonly Dictionary<string, string> Chinese = new()
     {
         ["Graphics software is installed"]="显卡软件已安装",
@@ -27,6 +27,10 @@ public sealed class L10n : Observable
         ["Latest 90 KB · Full logs are saved in each task folder"]="最近 90 KB · 每轮完整日志保存在各自任务目录",
         ["Import existing settings"]="导入已有配置",["Imported paths are a preview. Save and continue to apply them."]="导入的路径仅供预览，保存并继续后生效。",["Save and continue"]="保存并继续",
         ["Uninstall could not finish. Your remaining files were preserved."]="卸载未能完成，尚未删除的文件已保留。",
+        ["Uninstall could not start."]="无法开始卸载。",
+        ["Removed {0} files and folders. {1} selected targets remain."]="已删除 {0} 个文件和文件夹，仍有 {1} 个所选目标待处理。",
+        ["Uninstall report is at {0}"]="卸载记录保存在 {0}",
+        ["Close any program using these files and resolve any access issues. Retry now?"]="请关闭正在使用这些文件的程序并处理访问权限问题。现在重试吗？",
         ["Show included application files"]="查看包含的应用文件",
         ["Only listed application files are removed. Other files in this folder are kept."]="只删除清单内的应用文件，此文件夹中的其他文件会保留。",
         ["The current image is unfinished. Quitting stops inference and releases model memory. Completed images are preserved."]="当前图片尚未生成完成。退出会停止推理并释放模型内存，已完成的图片会保留。",

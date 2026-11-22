@@ -1,10 +1,9 @@
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace LightX2V.Windows;
 
-public sealed record UninstallItem(string Path,string Group,bool External=false,List<string>? Files=null);
+public sealed record UninstallItem(string Path,string Group,bool External=false,List<string>? Files=null,string? ShortcutTarget=null);
 public sealed class UninstallPlan
 {
     public List<UninstallItem> Items {get;set;}=[];
@@ -59,7 +58,10 @@ public static class AppMaintenance
         var records=ReadRegistry(path);
         records.RemoveAll(s=>Normalize(s.Workspace).Equals(Normalize(settings.Workspace),StringComparison.OrdinalIgnoreCase));records.Add(settings.Clone());Files.Write(path,records);
     }
-    public static UninstallPlan Discover(AppSettings settings,string preferencesRoot,string application)
+    public static UninstallPlan Discover(AppSettings settings,string preferencesRoot,string application) =>
+        Discover(settings, preferencesRoot, application, Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory));
+
+    internal static UninstallPlan Discover(AppSettings settings,string preferencesRoot,string application,string desktop)
     {
         var registry=Path.Combine(preferencesRoot,"workspaces.json");
         var records=ReadRegistry(registry);
@@ -106,8 +108,20 @@ public static class AppMaintenance
             using var manifest=JsonDocument.Parse(File.ReadAllText(layout.Manifest));
             var files=manifest.RootElement.GetProperty("sha256").EnumerateObject().Select(entry=>entry.Name).Append(Path.GetRelativePath(layout.Root,layout.Manifest)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
             var item=new UninstallItem(Normalize(layout.Root),"application",Files:files);
-            foreach(var target in Targets(item))ValidatePath(target);
+            var owned = Targets(item).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach(var target in owned)ValidatePath(target);
             plan.Items.Add(item);
+            if (Directory.Exists(desktop) && (File.GetAttributes(desktop) & FileAttributes.ReparsePoint) == 0)
+            {
+                var applications = new[] { layout.EntryPoint, layout.Executable }.Select(file => Normalize(Path.Combine(layout.Root, file)))
+                    .Where(owned.Contains).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                foreach (var shortcut in Directory.EnumerateFiles(desktop, "*.lnk"))
+                {
+                    var target = DesktopShortcuts.ApplicationTarget(shortcut);
+                    if (target != null && applications.Contains(target))
+                        plan.Items.Add(new(Normalize(shortcut), "application", ShortcutTarget: target));
+                }
+            }
         }
         foreach(var item in plan.Items)foreach(var target in Targets(item))if(records.Any(s=>Contains(target,s.Workspace)))throw new InvalidDataException("An uninstall item contains a workspace root: "+target);
         return plan;
@@ -125,7 +139,7 @@ public static class AppMaintenance
             }
         }
         // Nested selected entries are represented by their exact selected ancestor once.
-        selected=selected.Where(i=>!selected.Any(other=>other!=i&&other.Files==null&&Contains(other.Path,i.Path))).ToList();
+        selected=selected.Where(i=>!selected.Any(other=>other!=i&&other.Files==null&&other.ShortcutTarget==null&&Contains(other.Path,i.Path))).ToList();
         return new(){Items=selected,Retained=retained,Application=discovered.Application,EntryPoint=discovered.EntryPoint,RemoveApplication=selected.Any(i=>Contains(i.Path,discovered.Application))};
     }
     public static async Task<string> LaunchAsync(UninstallPlan plan)
@@ -134,51 +148,65 @@ public static class AppMaintenance
         plan.Language=L10n.Current.Language;
         return await Task.Run(()=>
         {
-            var job=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"LightX2V-maintenance",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(job);
-            if(plan.Items.Any(i=>Contains(i.Path,job)))throw new InvalidDataException("The maintenance directory overlaps the uninstall plan.");
             var layout=PackageLayout.Find(AppContext.BaseDirectory)??throw new InvalidDataException("A packaged application is required for maintenance.");
-            var app=layout.Root;
-            using var manifest=JsonDocument.Parse(File.ReadAllText(layout.Manifest));
-            var helper=Path.Combine(job,"helper");Directory.CreateDirectory(helper);
-            foreach(var entry in manifest.RootElement.GetProperty("sha256").EnumerateObject())
+            var job = MaintenanceProcess.NewJobDirectory();
+            if (plan.Items.Any(item => Contains(item.Path, job)))
             {
-                var source=Normalize(Path.Combine(app,entry.Name));var target=Normalize(Path.Combine(helper,entry.Name));
-                if(!Contains(app,source)||!Contains(helper,target))throw new InvalidDataException("Invalid packaged file path.");
-                var bytes=File.ReadAllBytes(source);
-                if(!Convert.ToHexString(SHA256.HashData(bytes)).Equals(entry.Value.GetString(),StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Packaged application integrity check failed: "+entry.Name);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);File.WriteAllBytes(target,bytes);
+                MaintenanceProcess.DeleteJob(job);
+                throw new InvalidDataException("The maintenance directory overlaps the uninstall plan.");
             }
-            using var parent=Process.GetCurrentProcess();plan.ParentPid=parent.Id;plan.ParentStarted=parent.StartTime.ToUniversalTime().Ticks;
-            var file=Path.Combine(job,"plan.json");Files.Write(file,plan);var hash=Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)));
-            var start=new ProcessStartInfo(Path.Combine(helper,layout.Executable)){UseShellExecute=false,WorkingDirectory=job};
-            foreach(var arg in new[]{"--maintenance",file,hash})start.ArgumentList.Add(arg);
-            using var child=Process.Start(start)??throw new IOException("Could not start the maintenance helper.");
-            return job;
+            using var parent = Process.GetCurrentProcess();
+            plan.ParentPid = parent.Id;
+            plan.ParentStarted = parent.StartTime.ToUniversalTime().Ticks;
+            return MaintenanceProcess.Launch(job, layout, "--maintenance", plan);
         });
     }
     public static async Task ExecuteAsync(string file,string hash)
     {
-        if(!Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file))).Equals(hash,StringComparison.Ordinal))throw new InvalidDataException("The confirmed uninstall plan changed.");
-        var plan=Files.Read<UninstallPlan>(file)??throw new InvalidDataException("Uninstall plan is missing.");
+        var plan = await BeginAsync(file, hash);
+        await ExecuteAsync(plan, new UninstallProgress(Path.GetDirectoryName(file)!));
+    }
+
+    internal static async Task<UninstallPlan> BeginAsync(string file, string hash)
+    {
+        var plan = MaintenanceProcess.ReadPlan<UninstallPlan>(file, hash);
         L10n.Current.Use(plan.Language);
-        try
+        if (plan.EntryPoint is not ("LightX2V.exe" or "LightX2V.Windows.exe"))
+            throw new InvalidDataException("Invalid restart entry point.");
+        await MaintenanceProcess.WaitForParentAsync(plan.ParentPid, plan.ParentStarted);
+        return plan;
+    }
+
+    internal static async Task ExecuteAsync(UninstallPlan plan, UninstallProgress progress)
+    {
+        var entries = plan.Items.Select(item => (Item: item, Targets: Targets(item).ToList())).ToList();
+        progress.SetSelectedTargets(entries.SelectMany(entry => entry.Targets));
+        var applicationPaths = new[] { plan.EntryPoint, "LightX2V.Windows.exe", Path.Combine("app", "LightX2V.Windows.exe") }
+            .Select(entry => Normalize(Path.Combine(plan.Application, entry))).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (item, targets) in entries)
         {
-            using var parent=Process.GetProcessById(plan.ParentPid);
-            if(parent.StartTime.ToUniversalTime().Ticks!=plan.ParentStarted)throw new IOException("The application process identity changed.");
-            using var timeout=new CancellationTokenSource(TimeSpan.FromSeconds(45));await parent.WaitForExitAsync(timeout.Token);
-        }
-        catch(ArgumentException){} // The original application has already exited.
-        foreach(var item in plan.Items)
-        {
-            foreach(var target in Targets(item))
+            if (item.ShortcutTarget != null &&
+                (!plan.RemoveApplication || item.Group != "application" || item.Files != null ||
+                !applicationPaths.Contains(item.ShortcutTarget) ||
+                !entries.Any(entry => entry.Item.Files != null && entry.Item.Group == "application" && Normalize(entry.Item.Path).Equals(Normalize(plan.Application), StringComparison.OrdinalIgnoreCase) &&
+                    entry.Targets.Contains(item.ShortcutTarget, StringComparer.OrdinalIgnoreCase))))
+                throw new InvalidDataException("A shortcut target is outside the installed application's file list.");
+            foreach (var target in targets)
             {
                 if(plan.Retained.Any(p=>Contains(target,p)||Contains(p,target)))throw new InvalidDataException("The uninstall plan overlaps retained data.");
                 ValidateTree(target);
             }
         }
-        foreach(var item in plan.Items)DeleteItem(item);
-        File.WriteAllText(Path.Combine(Path.GetDirectoryName(file)!,"result.txt"),"Uninstall completed.\n");
-        if(plan.EntryPoint is not ("LightX2V.exe" or "LightX2V.Windows.exe"))throw new InvalidDataException("Invalid restart entry point.");
+
+        // A package lock should stop removal before touching settings and workspace data.
+        foreach (var (item, targets) in entries.OrderBy(entry => entry.Item.Files == null))
+        {
+            if (item.ShortcutTarget == null)
+                await DeleteItemAsync(item, targets, plan.EntryPoint, progress);
+            else
+                await DeleteFileAsync(item.Path, progress, item.ShortcutTarget);
+        }
+        progress.Complete();
         if(!plan.RemoveApplication&&File.Exists(Path.Combine(plan.Application,plan.EntryPoint)))Process.Start(new ProcessStartInfo(Path.Combine(plan.Application,plan.EntryPoint)){UseShellExecute=true});
     }
     static IEnumerable<string> Targets(UninstallItem item)
@@ -193,40 +221,74 @@ public static class AppMaintenance
             yield return target;
         }
     }
-    static void DeleteItem(UninstallItem item)
+    static async Task DeleteItemAsync(UninstallItem item, List<string> targets, string entryPoint, UninstallProgress progress)
     {
-        if(item.Files==null){DeleteTree(item.Path);return;}
-        var targets=Targets(item).ToList();
-        foreach(var target in targets)
+        if (item.Files == null)
         {
-            ValidatePath(target);
-            if(!File.Exists(target)&&!Directory.Exists(target))continue;
-            if((File.GetAttributes(target)&FileAttributes.ReparsePoint)!=0)throw new IOException("An application file became a link during uninstall: "+target);
-            // A manifest file replaced by a directory must fail rather than expand the deletion scope.
-            File.Delete(target);
+            await DeleteTreeAsync(item.Path, progress);
+            return;
         }
+        // Keep the launcher, payload entry point and manifest until payload deletion succeeds.
+        var launcher = Normalize(Path.Combine(item.Path, entryPoint));
+        foreach (var target in targets.OrderBy(target => Path.GetFileName(target).Equals("build-manifest.json", StringComparison.OrdinalIgnoreCase) ? 2 :
+            target.Equals(launcher, StringComparison.OrdinalIgnoreCase) || Path.GetFileName(target).Equals("LightX2V.Windows.exe", StringComparison.OrdinalIgnoreCase) ? 1 : 0))
+            await DeleteFileAsync(target, progress);
         var parents=new HashSet<string>(StringComparer.OrdinalIgnoreCase){Normalize(item.Path)};
         foreach(var target in targets)
             for(var parent=Path.GetDirectoryName(target);parent!=null&&Contains(item.Path,parent);parent=Path.GetDirectoryName(parent))parents.Add(parent);
         foreach(var parent in parents.OrderByDescending(path=>path.Length))
-            if(Directory.Exists(parent)&&!Directory.EnumerateFileSystemEntries(parent).Any()){ValidatePath(parent);Directory.Delete(parent);}
+            if(Directory.Exists(parent)&&!Directory.EnumerateFileSystemEntries(parent).Any())DeleteDirectory(parent, progress);
     }
-    public static void ScheduleHelperCleanup(string planFile)
+
+    static async Task DeleteFileAsync(string path, UninstallProgress progress, string? shortcutTarget = null)
     {
-        var helper=Path.Combine(Path.GetDirectoryName(Path.GetFullPath(planFile))!,"helper");
-        var encodedPath=Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(helper));
-        var script="$ErrorActionPreference='Stop'; $target=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('"+encodedPath+"')); "+
-            "Wait-Process -Id "+Environment.ProcessId+" -Timeout 60 -ErrorAction SilentlyContinue; if(Get-Process -Id "+Environment.ProcessId+" -ErrorAction SilentlyContinue){exit 1}; Remove-Item -LiteralPath $target -Recurse -Force";
-        var start=new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),"WindowsPowerShell","v1.0","powershell.exe")){UseShellExecute=false,CreateNoWindow=true};
-        foreach(var arg in new[]{"-NoProfile","-NonInteractive","-EncodedCommand",Convert.ToBase64String(System.Text.Encoding.Unicode.GetBytes(script))})start.ArgumentList.Add(arg);
-        using var cleanup=Process.Start(start);
+        int[] retryDelays = [150, 350, 700, 1400];
+        for (var attempt = 0; ; attempt++)
+        {
+            ValidatePath(path);
+            FileAttributes attributes;
+            try { attributes = File.GetAttributes(path); }
+            catch (FileNotFoundException) { return; }
+            catch (DirectoryNotFoundException) { return; }
+            if ((attributes & (FileAttributes.ReparsePoint | FileAttributes.Directory)) != 0)
+                throw new IOException("An uninstall file became a link or directory: " + path);
+            if (shortcutTarget != null && !shortcutTarget.Equals(DesktopShortcuts.ApplicationTarget(path), StringComparison.OrdinalIgnoreCase))
+            {
+                progress.PreserveShortcut(path);
+                return;
+            }
+            try
+            {
+                File.Delete(path);
+                progress.Removed(path);
+                return;
+            }
+            catch (Exception error) when (attempt < retryDelays.Length &&
+                (error is IOException or UnauthorizedAccessException) && (error.HResult & 0xFFFF) is 5 or 32 or 33)
+            {
+                await Task.Delay(retryDelays[attempt]);
+            }
+        }
     }
-    static void DeleteTree(string path)
+
+    static async Task DeleteTreeAsync(string path, UninstallProgress progress)
     {
         if(!File.Exists(path)&&!Directory.Exists(path))return;
         ValidatePath(path);
         if((File.GetAttributes(path)&FileAttributes.ReparsePoint)!=0)throw new IOException("A directory link appeared during uninstall: "+path);
-        if(Directory.Exists(path)){foreach(var child in Directory.EnumerateFileSystemEntries(path))DeleteTree(child);Directory.Delete(path);}
-        else File.Delete(path);
+        if (!Directory.Exists(path))
+        {
+            await DeleteFileAsync(path, progress);
+            return;
+        }
+        foreach (var child in Directory.EnumerateFileSystemEntries(path)) await DeleteTreeAsync(child, progress);
+        DeleteDirectory(path, progress);
+    }
+
+    static void DeleteDirectory(string path, UninstallProgress progress)
+    {
+        ValidatePath(path);
+        Directory.Delete(path);
+        progress.Removed(path);
     }
 }

@@ -4,14 +4,14 @@ namespace LightX2V.Windows;
 
 public interface IEnvironmentCatalog
 {
-    Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token);
+    Task<EnvironmentSearchResult> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token);
     Task<EnvironmentCandidate> Probe(string path,string workspace,CancellationToken token,string backend="auto");
     Task<string> Install(string workspace,bool mirror,IProgress<SetupProgress> progress,CancellationToken token,string backend="amd_rocm");
     Task<EnvironmentCandidate> ProbeInstalled(string python,string workspace,CancellationToken token,string backend="auto")=>Probe(python,workspace,token,backend);
 }
 public sealed class NativeEnvironmentCatalog : IEnvironmentCatalog
 {
-    public Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)=>SetupDiscovery.Search(settings,progress,token);
+    public Task<EnvironmentSearchResult> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)=>SetupDiscovery.Search(settings,progress,token);
     public Task<EnvironmentCandidate> Probe(string path,string workspace,CancellationToken token,string backend="auto")=>SetupDiscovery.Probe(path,workspace,token,backend);
     public Task<EnvironmentCandidate> ProbeInstalled(string path,string workspace,CancellationToken token,string backend="auto")=>SetupDiscovery.Probe(path,workspace,token,backend,180);
     public Task<string> Install(string workspace,bool mirror,IProgress<SetupProgress> progress,CancellationToken token,string backend="amd_rocm")
@@ -78,7 +78,7 @@ public sealed class EnvironmentSelectionModel : Observable,IDisposable
     }
     public Task SearchAsync()=>Start(false,async(token,progress)=>
     {
-        var found=await catalog.Search(settings,progress,token);token.ThrowIfCancellationRequested();Candidates.Clear();foreach(var item in found.OrderByDescending(e=>e.Ready))Upsert(item);searched=true;Changed(nameof(Searched));Changed(nameof(Summary));
+        var found=await catalog.Search(settings,progress,token);token.ThrowIfCancellationRequested();Candidates.Clear();foreach(var item in found.Candidates.OrderByDescending(e=>e.Ready))Upsert(item);searched=true;Changed(nameof(Searched));Changed(nameof(Summary));
     });
     public Task CheckPythonAsync(string path)=>Start(false,async(token,_)=>{var candidate=await catalog.Probe(path,settings.Workspace,token,Backend);token.ThrowIfCancellationRequested();Upsert(candidate);});
     public Task InstallAsync()

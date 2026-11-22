@@ -83,6 +83,14 @@ internal static partial class Program
             rejected=false;try{await AppMaintenance.ExecuteAsync(planFile,digest);}catch(IOException){rejected=true;}
             Check(rejected&&File.Exists(protectedFile),"An uninstall file-access failure preserves the locked file and reports failure");
         }
+        using (var held = new FileStream(protectedFile, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        {
+            var remove = AppMaintenance.ExecuteAsync(planFile, digest);
+            await Task.Delay(250);
+            held.Dispose();
+            await remove;
+        }
+        Check(!File.Exists(protectedFile), "A transient Windows file lock is retried and the selected file is removed");
         var allRoot=Path.Combine(root,"uninstall-all-groups");var allSettings=AppSettings.Fresh(Path.Combine(allRoot,"workspace"));var allPrefs=Path.Combine(allRoot,"preferences");var allApp=Path.Combine(allRoot,"app");
         Directory.CreateDirectory(Path.Combine(allSettings.Workspace,"models"));Directory.CreateDirectory(Path.Combine(allSettings.Workspace,"outputs"));Directory.CreateDirectory(allPrefs);Directory.CreateDirectory(allApp);
         Files.Write(Path.Combine(allApp,"build-manifest.json"),new{sha256=new Dictionary<string,string>{{"LightX2V.Windows.exe","fixture"}}});File.WriteAllText(Path.Combine(allApp,"user-note.txt"),"Keep unowned app-folder data");File.WriteAllText(Path.Combine(allApp,"LightX2V.Windows.exe"),"Non-executable uninstall fixture");
@@ -91,11 +99,75 @@ internal static partial class Program
         var allPlan=AppMaintenance.Select(AppMaintenance.Discover(allSettings,allPrefs,allApp),new HashSet<string>{"models","workspace","application"});allPlan.ParentPid=int.MaxValue;
         var allPlanFile=Path.Combine(allRoot,"plan.json");Files.Write(allPlanFile,allPlan);await AppMaintenance.ExecuteAsync(allPlanFile,Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(allPlanFile))));
         Check(File.Exists(Path.Combine(allApp,"user-note.txt"))&&!File.Exists(Path.Combine(allApp,"LightX2V.Windows.exe"))&&!Directory.Exists(allPrefs)&&!Directory.Exists(Path.Combine(allSettings.Workspace,"models"))&&!Directory.Exists(managed)&&File.Exists(Path.Combine(unmanaged,"keep.txt")),"All uninstall groups remove owned fixtures while retaining unlisted app-folder files and unmanaged environments");
+        await UninstallShortcutChecks(maintenance);
+        MaintenanceLaunchFailureChecks(maintenance);
         using(var recovered=new MainViewModel(fixture.Preferences,environmentCatalog:new ReadinessCatalog{Hold=false},driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             File.WriteAllText(Path.Combine(recovered.PreferencesDirectory,"workspaces.json"),"{broken registry");recovered.Prompt="Keep draft while recovering index";recovered.SetLanguage("en");
             Check(recovered.Prompt=="Keep draft while recovering index"&&Directory.GetFiles(recovered.PreferencesDirectory,"workspaces.json.corrupt-*").Length==1,"A damaged auxiliary workspace registry is preserved without interrupting language changes or drafts");
         }
         Check(InputImagePolicy.MaximumCount==8,"Desktop input limits read the shared eight-image policy");
+    }
+
+    static async Task UninstallShortcutChecks(string fixture)
+    {
+        var app = Path.Combine(fixture, "shortcut-app");
+        var desktop = Path.Combine(fixture, "shortcut-desktop");
+        Directory.CreateDirectory(app);
+        Directory.CreateDirectory(desktop);
+        var target = Path.Combine(app, "LightX2V.Windows.exe");
+        var other = Path.Combine(fixture, "unrelated.exe");
+        File.WriteAllText(target, "App fixture");
+        File.WriteAllText(other, "Unrelated fixture");
+        Files.Write(Path.Combine(app, "build-manifest.json"), new { sha256 = new Dictionary<string, string> { ["LightX2V.Windows.exe"] = "fixture" } });
+
+        var shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", true)!)!;
+        void CreateShortcut(string path, string executable, string arguments = "")
+        {
+            dynamic shortcut = ((dynamic)shell).CreateShortcut(path);
+            try
+            {
+                shortcut.TargetPath = executable;
+                shortcut.Arguments = arguments;
+                shortcut.Save();
+            }
+            finally { System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shortcut); }
+        }
+        var owned = Path.Combine(desktop, "Renamed lightx2v.lnk");
+        var retargeted = Path.Combine(desktop, "Changed link.lnk");
+        var arguments = Path.Combine(desktop, "Launch with arguments.lnk");
+        try
+        {
+            CreateShortcut(owned, target);
+            CreateShortcut(retargeted, target);
+            CreateShortcut(arguments, target, "--custom");
+            var settings = AppSettings.Fresh(Path.Combine(fixture, "shortcut-workspace"));
+            var plan = AppMaintenance.Select(AppMaintenance.Discover(settings, Path.Combine(fixture, "absent-preferences"), app, desktop), new HashSet<string> { "application" });
+            Check(plan.Items.Count(item => item.ShortcutTarget != null) == 2, "Uninstall discovers only desktop shortcuts dedicated to this executable");
+            CreateShortcut(retargeted, other);
+            plan.ParentPid = int.MaxValue;
+            var job = Path.Combine(fixture, "shortcut-job");
+            Directory.CreateDirectory(job);
+            var file = Path.Combine(job, "plan.json");
+            Files.Write(file, plan);
+            await AppMaintenance.ExecuteAsync(file, Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file))));
+        }
+        finally { System.Runtime.InteropServices.Marshal.FinalReleaseComObject(shell); }
+        Check(!File.Exists(owned) && !File.Exists(target) && File.Exists(retargeted) && File.Exists(arguments) && File.Exists(other),
+            "Uninstall removes the matching shortcut and preserves links modified after confirmation and links with arguments");
+    }
+
+    static void MaintenanceLaunchFailureChecks(string fixture)
+    {
+        var app = Path.Combine(fixture, "invalid-helper-package");
+        Directory.CreateDirectory(app);
+        var manifest = Path.Combine(app, "build-manifest.json");
+        File.WriteAllText(Path.Combine(app, "LightX2V.Windows.exe"), "Modified package fixture");
+        Files.Write(manifest, new { sha256 = new Dictionary<string, string> { ["LightX2V.Windows.exe"] = new string('0', 64) } });
+        var job = MaintenanceProcess.NewJobDirectory();
+        var rejected = false;
+        try { MaintenanceProcess.Launch(job, PackageLayout.Find(app)!, "--maintenance", new UninstallPlan()); }
+        catch (InvalidDataException) { rejected = true; }
+        Check(rejected && !Directory.Exists(job), "Failed helper package validation cleans up the abandoned maintenance directory");
     }
 }

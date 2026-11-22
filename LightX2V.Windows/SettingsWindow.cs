@@ -12,7 +12,7 @@ public sealed class SettingsWindow : Window
     readonly MainViewModel vm;readonly Grid contentRoot;
     readonly TextBox workspace,python;
     readonly Button save,close;
-    Button? uninstall;
+    Button? uninstall,updates;
     readonly TextBlock summary,error,workspaceState,pythonState;
 
     bool refreshing,closing,draftBusy;string draftBackend;CancellationTokenSource? draftCancellation;TaskCompletionSource? draftFinished;
@@ -45,6 +45,9 @@ public sealed class SettingsWindow : Window
         body.Children.Add(SettingsCard(environment));
         {
             var maintenance=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,8,0,0)};
+            updates=SetupUi.Button(this,"Application updates",false,"SettingsUpdates");
+            updates.MinHeight=26;updates.Height=26;updates.Padding=new Thickness(10,4,10,4);updates.Margin=new Thickness(0,0,8,0);
+            updates.Click+=(_,_)=>new AppUpdateWindow(vm){Owner=this}.ShowDialog();maintenance.Children.Add(updates);
             uninstall=SetupUi.Button(this,"Uninstall",false,"SettingsUninstall");uninstall.Click+=(_,_)=>new UninstallWindow(vm){Owner=this}.ShowDialog();uninstall.MinHeight=26;uninstall.Height=26;uninstall.Padding=new Thickness(10,4,10,4);maintenance.Children.Add(uninstall);maintenance.Margin=new Thickness(18,8,18,12);Grid.SetRow(maintenance,2);root.Children.Add(maintenance);
         }
         error=SetupUi.Text("",11);error.SetBinding(VisibilityProperty,new System.Windows.Data.Binding("Text"){Source=error,Converter=(System.Windows.Data.IValueConverter)Application.Current.FindResource("NonEmpty")});error.Margin=new Thickness(0,8,0,0);body.Children.Add(error);
@@ -139,6 +142,7 @@ public sealed class SettingsWindow : Window
             pythonState.Text=vm.T[vm.Ready&&python.Text==vm.Settings.Python?"Check passed":"Not checked"];
             pythonState.Foreground=vm.Ready&&python.Text==vm.Settings.Python?SetupUi.Green:SetupUi.Muted;
             if(uninstall!=null)uninstall.IsEnabled=!Busy;
+            if(updates!=null)updates.IsEnabled=!Busy;
             close.Content=vm.T[Busy?"Stop":"Close"];
             if(contentRoot.Width==624){contentRoot.Height=double.NaN;contentRoot.Measure(new Size(624,double.PositiveInfinity));contentRoot.Height=contentRoot.DesiredSize.Height;Height=Math.Min(contentRoot.Height+SystemParameters.CaptionHeight+16,SystemParameters.WorkArea.Height);}
         }

@@ -7,6 +7,13 @@ import re
 import zipfile
 
 
+def extraction_folder(version, source_commit=None):
+    base = f'LightX2V-Windows-{version}'
+    if isinstance(source_commit, str) and re.fullmatch(r'[0-9a-f]{40}', source_commit):
+        return f'{base}-{source_commit[:7]}'
+    return base
+
+
 def verify(package, version, source_commit=None, require_clean=False):
     expected_name = f'LightX2V-Windows-{version}-win-x64.zip'
     if package.name not in (expected_name,"LightX2V-APP-Windows-x64.zip") or not re.fullmatch(r'\d+\.\d+\.\d+', version):
@@ -15,16 +22,21 @@ def verify(package, version, source_commit=None, require_clean=False):
     checksum = package.with_suffix('.zip.sha256').read_text(encoding='ascii').strip().split()
     if checksum != [digest, package.name]:
         raise ValueError('Download checksum does not match the ZIP')
-    prefix = f'LightX2V-Windows-{version}/'
     with zipfile.ZipFile(package) as archive:
         names = archive.namelist()
         if len(names) != len(set(names)):
             raise ValueError('Duplicate package entries')
+        if not names or '/' not in names[0]:
+            raise ValueError('Missing extraction folder')
+        folder = names[0].split('/', 1)[0]
+        prefix = folder + '/'
         for name in names:
             if not name.startswith(prefix) or '..' in PurePosixPath(name).parts or '\\' in name:
                 raise ValueError('Unexpected package entry')
         manifest_name = 'app/build-manifest.json' if prefix+'app/build-manifest.json' in names else 'build-manifest.json'
         manifest = json.loads(archive.read(prefix + manifest_name))
+        if folder not in (extraction_folder(version), extraction_folder(version, manifest.get('sourceCommit'))):
+            raise ValueError('Extraction folder does not match the package version or source commit')
         if manifest.get('layoutVersion', 1) == 2:
             if manifest_name != 'app/build-manifest.json' or manifest.get('entryPoint') != 'LightX2V.exe' or manifest.get('appExecutable') != 'app/LightX2V.Windows.exe':
                 raise ValueError('Invalid package layout')

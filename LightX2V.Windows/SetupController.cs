@@ -1,29 +1,47 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 namespace LightX2V.Windows;
 
 public sealed class SetupController : Observable,IDisposable
 {
-    readonly MainViewModel owner;readonly IEnvironmentCatalog catalog;readonly IModelDiscovery modelDiscovery;bool computerScanned,environmentsSearched;CancellationTokenSource? cancel;Task? operation;bool busy,environmentReady;int page;string workspace,stage="",detail="",logs="",error="";double percent;EnvironmentCandidate? selected;bool mirror,useExisting;string backend;
-    CancellationTokenSource? searchCancellation;bool searchingEnvironments,environmentChoiceMade,disposed;readonly TimeSpan searchTimeout;
+    readonly MainViewModel owner;readonly IEnvironmentCatalog catalog;readonly IModelDiscovery modelDiscovery;bool computerScanned;CancellationTokenSource? cancel;Task? operation;bool busy,environmentReady;int page;string workspace,stage="",detail="",logs="",error="";double percent;EnvironmentCandidate? selected;bool mirror,useExisting;string backend;
+    enum SearchState { NotStarted, Searching, Completed, Cancelled, TimedOut, Failed }
+    CancellationTokenSource? searchCancellation;
+    SearchState environmentSearch;
+    bool environmentChoiceMade,disposed;
+    readonly TimeSpan searchTimeout;
     public MainViewModel Owner=>owner;
     public L10n T=>owner.T;
     public DriverSetupModel Driver {get;}
     public HardwareInfo Hardware=>Driver.Hardware;
-    public string Backend {get=>backend;set{if(Busy||Driver?.Busy==true||Driver?.Pending==true||Backend==value)return;StopEnvironmentSearch();ClearPrepared();backend=value;Driver!.Backend=value;Selected=null;UseExisting=false;EnvironmentReady=false;Environments.Clear();environmentsSearched=false;Changed();Changed(nameof(EnvironmentSummary));Changed(nameof(BackendRecommendation));Changed(nameof(Requirements));Changed(nameof(HardwareLabel));Changed(nameof(ManagedSupported));}}
+    public string Backend {get=>backend;set{if(Busy||Driver?.Busy==true||Driver?.Pending==true||Backend==value)return;ResetEnvironmentSearch();ClearPrepared();backend=value;Driver!.Backend=value;Selected=null;UseExisting=false;EnvironmentReady=false;Environments.Clear();Changed();Changed(nameof(EnvironmentSummary));Changed(nameof(BackendRecommendation));Changed(nameof(Requirements));Changed(nameof(HardwareLabel));Changed(nameof(ManagedSupported));}}
     public bool ComputerScanned {get=>computerScanned;private set=>Set(ref computerScanned,value);}
     public bool HasDetectedBackend=>Hardware.All.Any(d=>d.Backend==Backend);
     public string BackendRecommendation=>!ComputerScanned?T["Scanning your computer…"]:!HasDetectedBackend&&Hardware.DetectionFailed?T["Graphics detection could not finish. Your driver may already be installed. Scan again."]:!HasDetectedBackend?T["No supported graphics card was identified. Check the graphics software below, then scan again."]:string.Format(T[Driver.Pending?"Finish the pending {0} installation before changing the backend.":"Selected {0} for your graphics card. You can keep this choice."],Backends.Label(Backend));
-    public string EnvironmentSummary=>SearchingEnvironments?string.Format(T["Searching · {0} compatible environments available. You can choose one now."],Environments.Count(e=>e.Ready&&e.Backend==Backend)):!environmentsSearched?T["Compatible components will appear here after the computer check."]:string.Format(T["Found {0} compatible environments"],Environments.Count(e=>e.Ready&&e.Backend==Backend));
+    int CompatibleEnvironmentCount=>Environments.Count(e=>e.Ready&&e.Backend==Backend);
+    public bool SearchingEnvironments=>environmentSearch==SearchState.Searching;
+    public bool CanReuseEnvironment=>UseExisting&&Selected is { Ready:true } candidate&&candidate.Backend==Backend;
+    public bool CanDownloadEnvironment=>ComputerScanned&&ManagedSupported&&environmentSearch==SearchState.Completed&&CompatibleEnvironmentCount==0;
+    public bool CanRetryEnvironmentSearch=>environmentSearch is SearchState.Cancelled or SearchState.TimedOut or SearchState.Failed;
+    public string EnvironmentSummary=>environmentSearch switch
+    {
+        SearchState.Searching => string.Format(T["Searching · {0} compatible environments available. You can choose one now."],CompatibleEnvironmentCount),
+        SearchState.Cancelled => T["Environment search stopped. Search again to finish checking this computer."],
+        SearchState.TimedOut => T["Environment search timed out. Search again to finish checking this computer."],
+        SearchState.Failed => T["Environment search could not finish. Search again to finish checking this computer."],
+        SearchState.Completed when CompatibleEnvironmentCount==0 => T["No compatible environment found"],
+        SearchState.NotStarted when CompatibleEnvironmentCount==0 => T["Compatible components will appear here after the computer check."],
+        _ => string.Format(T["Found {0} compatible environments"],CompatibleEnvironmentCount)
+    };
     public string Requirements=>"Python "+SetupManifest.Read(Backend).Python.Version+" · "+string.Join(" · ",new[]{"torch","transformers","diffusers","safetensors"}.Select(name=>SetupManifest.Read(Backend).Packages.Single(p=>p.Name==name)).Select(p=>p.Name+" "+p.Version));
     public bool ManagedSupported=>Hardware.Supports(Backend);
     public string HardwareLabel=>string.Join("\n",Hardware.All.Where(d=>d.Backend.Length>0).Select(d=>d.Name+" · "+d.Driver));
     public string ResourceLabel {get{try{var r=ResourceSnapshot.Read(Workspace);return $"{T["System memory"]} {r.TotalRam/1073741824.0:F1} GiB · {T["Free"]} {r.AvailableRam/1073741824.0:F1} GiB · {T["Disk"]} {r.DiskFree/1073741824.0:F1} GiB {T["Free"]}";}catch(Exception e){return e.Message;}}}
     public int Page {get=>page;set{if(!Set(ref page,value))return;if(value!=1)StopEnvironmentSearch();if(value!=2)StopModelSearch();else if(!disposed)_=DiscoverModelsAsync();if(value==3)Error="";Changed(nameof(PageTitle));}}
     public string PageTitle=>T[Page==0?"Choose workspace":Page==1?"Prepare environment":Page==2?"Prepare models":"Setup complete"];
-    public string Workspace {get=>workspace;set{if(Driver?.Pending==true&&value!=workspace)return;if(value!=workspace){StopEnvironmentSearch();StopModelSearch();ClearPrepared();}Set(ref workspace,value);Changed(nameof(ResourceLabel));}}
+    public string Workspace {get=>workspace;set{if(Driver?.Pending==true&&value!=workspace)return;if(value!=workspace){ResetEnvironmentSearch();StopModelSearch();ClearPrepared();Selected=null;UseExisting=false;Environments.Clear();}Set(ref workspace,value);Changed(nameof(ResourceLabel));}}
     public bool Mirror {get=>mirror;set=>Set(ref mirror,value);}
     public bool UseExisting {get=>useExisting;set{Set(ref useExisting,value);}}
-    public bool SearchingEnvironments {get=>searchingEnvironments;private set{Set(ref searchingEnvironments,value);Changed(nameof(EnvironmentSummary));}}
     public bool Busy {get=>busy;private set{Set(ref busy,value);owner.SetupStateChanged();Changed(nameof(CanContinue));}}
     public bool EnvironmentReady {get=>environmentReady;private set{Set(ref environmentReady,value);Changed(nameof(CanContinue));}}
     public bool CanContinue=>!Busy&&(Page==0||Page==1&&EnvironmentReady||Page==2&&owner.TurboCard.Ready);
@@ -34,10 +52,10 @@ public sealed class SetupController : Observable,IDisposable
     public double Percent {get=>percent;private set=>Set(ref percent,value);}
     public ObservableCollection<EnvironmentCandidate> Environments {get;}=[];
     public EnvironmentCandidate? Selected {get=>selected;set{Set(ref selected,value);if(value?.Ready==true){UseExisting=true;Driver?.ConfirmComputeReady();}}}
-    public SetupController(MainViewModel owner,IEnvironmentCatalog? catalog=null,DriverSetupModel? driver=null,IDriverPlatform? driverPlatform=null,TimeSpan? searchTimeout=null,IModelDiscovery? modelDiscovery=null){this.modelDiscovery=modelDiscovery??new ModelDiscovery();this.catalog=catalog??new NativeEnvironmentCatalog();this.owner=owner;this.searchTimeout=searchTimeout??SetupDiscovery.EnvironmentSearchTimeout;workspace=owner.Settings.Workspace;backend=Backends.Resolve(owner.Settings.Backend,HardwareInfo.Read());Driver=driver??new(backend,()=>Workspace,T,driverPlatform,()=>owner.WorkspaceConfirmed);Driver.PropertyChanged+=DriverChanged;backend=Driver.Backend;if(Driver.Pending)page=1;Mirror=owner.T.Language=="zh";owner.T.PropertyChanged+=LanguageChanged;}
+    public SetupController(MainViewModel owner,IEnvironmentCatalog? catalog=null,DriverSetupModel? driver=null,IDriverPlatform? driverPlatform=null,TimeSpan? searchTimeout=null,IModelDiscovery? modelDiscovery=null){this.modelDiscovery=modelDiscovery??new ModelDiscovery();this.catalog=catalog??new NativeEnvironmentCatalog();this.owner=owner;this.searchTimeout=searchTimeout??SetupDiscovery.EnvironmentSearchTimeout+TimeSpan.FromSeconds(2);workspace=owner.Settings.Workspace;backend=Backends.Resolve(owner.Settings.Backend,HardwareInfo.Read());Driver=driver??new(backend,()=>Workspace,T,driverPlatform,()=>owner.WorkspaceConfirmed);Driver.PropertyChanged+=DriverChanged;backend=Driver.Backend;if(Driver.Pending)page=1;Mirror=owner.T.Language=="zh";owner.T.PropertyChanged+=LanguageChanged;}
     void DriverChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(HardwareLabel));Changed(nameof(ManagedSupported));Changed(nameof(BackendRecommendation));owner.SetupStateChanged();}
     void LanguageChanged(object? sender,System.ComponentModel.PropertyChangedEventArgs e){Changed(nameof(PageTitle));Changed(nameof(Stage));Changed(nameof(ResourceLabel));Changed(nameof(EnvironmentSummary));Changed(nameof(BackendRecommendation));}
-    public void Restart(){StopModelSearch();Backend=Backends.Resolve(owner.Settings.Backend,Hardware);Workspace=owner.Settings.Workspace;Page=0;Stage="";Detail="";Error="";Percent=0;EnvironmentReady=owner.Ready;ComputerScanned=false;environmentsSearched=false;Changed(nameof(EnvironmentSummary));}
+    public void Restart(){StopModelSearch();ResetEnvironmentSearch();Backend=Backends.Resolve(owner.Settings.Backend,Hardware);Workspace=owner.Settings.Workspace;Page=0;Stage="";Detail="";Error="";Percent=0;EnvironmentReady=owner.Ready;ComputerScanned=false;}
     void Progress(SetupProgress value){if(value.Stage.Length>0)Stage=value.Stage;Detail=DownloadDisplay.Detail(T,value);Percent=value.Percent;if(value.Log!=null){Logs+=value.Log+System.Environment.NewLine;if(Logs.Length>40000)Logs=Logs[^30000..];}}
     async Task Execute(Func<CancellationToken,IProgress<SetupProgress>,Task> action)
     {
@@ -97,20 +115,25 @@ public sealed class SetupController : Observable,IDisposable
     void Upsert(EnvironmentCandidate candidate)
     {
         var old=Environments.FirstOrDefault(e=>e.Path.Equals(candidate.Path,StringComparison.OrdinalIgnoreCase));if(old!=null)Environments.Remove(old);
-        Environments.Add(candidate);environmentsSearched=true;Changed(nameof(EnvironmentSummary));
+        Environments.Add(candidate);
+        Changed(nameof(EnvironmentSummary));
+        Changed(nameof(CanDownloadEnvironment));
     }
     async Task SearchEnvironmentsCore()
     {
         StopEnvironmentSearch();
         if(Busy||Driver.Busy||!ComputerScanned||disposed)return;
         var settings=EnvironmentSettings();
+        var searchWorkspace=Workspace;
 
         var source=new CancellationTokenSource(searchTimeout);
         searchCancellation=source;
+        SetEnvironmentSearch(SearchState.Searching);
         Environments.Clear();selected=null;useExisting=false;EnvironmentReady=false;
-        environmentChoiceMade=false;Changed(nameof(Selected));Changed(nameof(UseExisting));environmentsSearched=true;SearchingEnvironments=true;
+        environmentChoiceMade=false;Changed(nameof(Selected));Changed(nameof(UseExisting));Changed(nameof(EnvironmentSummary));
         Stage="Searching local environments";Detail="";Percent=0;Error="";
-        bool Current()=>!disposed&&ReferenceEquals(searchCancellation,source)&&Backend==settings.Backend&&Workspace==settings.Workspace;
+        var finalState=SearchState.Failed;
+        bool Current()=>!disposed&&ReferenceEquals(searchCancellation,source)&&Backend==settings.Backend&&Workspace==searchWorkspace;
         void Publish(EnvironmentCandidate candidate)
         {
             if(!Current())return;
@@ -124,31 +147,52 @@ public sealed class SetupController : Observable,IDisposable
             if(value.Candidate!=null)Publish(value.Candidate);
             if(value.Stage.Length>0)Stage=value.Stage;
             Detail=value.Detail;
+            if(value.Log!=null)Trace.WriteLine(value.Log);
         });
         try
         {
             var found=await catalog.Search(settings,progress,source.Token).WaitAsync(source.Token);
             if(!Current())return;
-            foreach(var candidate in found)Publish(candidate);
-            Stage="Choose an environment or install automatically";
+            foreach(var candidate in found.Candidates)Publish(candidate);
+            finalState=found.Completion switch
+            {
+                EnvironmentSearchCompletion.Completed => SearchState.Completed,
+                EnvironmentSearchCompletion.TimedOut => SearchState.TimedOut,
+                _ => SearchState.Failed
+            };
         }
         catch(OperationCanceledException) when(source.IsCancellationRequested)
         {
-            if(Current())Stage="Environment search time limit reached";
+            finalState=SearchState.TimedOut;
         }
-        catch(Exception error){if(Current())Error=error.Message;}
+        catch(TimeoutException){finalState=SearchState.TimedOut;}
+        catch(OperationCanceledException){finalState=SearchState.Cancelled;}
+        catch(Exception error){if(Current())Trace.WriteLine(error);}
         finally
         {
-            if(Current()){searchCancellation=null;SearchingEnvironments=false;Changed(nameof(EnvironmentSummary));}
+            if(Current()){searchCancellation=null;SetEnvironmentSearch(finalState);}
             source.Dispose();
         }
     }
-    public void ChooseAutomaticInstallation(){environmentChoiceMade=true;UseExisting=false;}
+    void SetEnvironmentSearch(SearchState value)
+    {
+        if(!Set(ref environmentSearch,value,nameof(SearchingEnvironments)))return;
+        Changed(nameof(EnvironmentSummary));
+        Changed(nameof(CanDownloadEnvironment));
+        Changed(nameof(CanRetryEnvironmentSearch));
+    }
+    void ResetEnvironmentSearch()
+    {
+        StopEnvironmentSearch();
+        SetEnvironmentSearch(SearchState.NotStarted);
+    }
     static int EnvironmentRank(EnvironmentCandidate candidate,AppSettings settings)=>candidate.Path.Equals(settings.Python,StringComparison.OrdinalIgnoreCase)?0:candidate.Path.Equals(SetupInstaller.ManagedPython(settings.Workspace,settings.Backend),StringComparison.OrdinalIgnoreCase)?1:2;
     public void StopEnvironmentSearch()
     {
         var source=searchCancellation;searchCancellation=null;
-        source?.Cancel();SearchingEnvironments=false;
+        if(source==null)return;
+        source.Cancel();
+        SetEnvironmentSearch(SearchState.Cancelled);
     }
     async Task ScanComputerCore(CancellationToken token,IProgress<SetupProgress> progress)
     {
@@ -166,7 +210,7 @@ public sealed class SetupController : Observable,IDisposable
     }
     public async Task ScanComputerAsync()
     {
-        StopEnvironmentSearch();
+        ResetEnvironmentSearch();
         await Execute(async(token,progress)=>{EnvironmentSettings().ValidateWorkspace();await ScanComputerCore(token,progress);});
         if(ComputerScanned&&!Busy)_=SearchEnvironmentsCore();
     }
@@ -194,6 +238,7 @@ public sealed class SetupController : Observable,IDisposable
     public EnvironmentCandidate? PreparedEnvironment {get;private set;}
     public async Task PrepareEnvironmentAsync(bool install,bool commit=true)
     {
+        if(install?!CanDownloadEnvironment:!CanReuseEnvironment)return;
         StopEnvironmentSearch();
         await Execute(async(token,progress)=>{
             var settings=EnvironmentSettings();settings.Workspace=Workspace.Trim();settings.ValidateWorkspace();

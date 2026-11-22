@@ -9,7 +9,7 @@ internal static partial class Program
     {
         public int Calls;public bool Hold=true;public bool IgnoreCancellation;public bool Succeed=true;
         public readonly TaskCompletionSource<bool> Release=new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)=>Task.FromResult(new List<EnvironmentCandidate>());
+        public Task<EnvironmentSearchResult> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)=>Task.FromResult(new EnvironmentSearchResult([]));
         public Task<string> Install(string workspace,bool mirror,IProgress<SetupProgress> progress,CancellationToken token,string backend="amd_rocm")=>throw new NotSupportedException();
         public async Task<EnvironmentCandidate> Probe(string path,string workspace,CancellationToken token,string backend="auto")
         {

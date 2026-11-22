@@ -13,13 +13,13 @@ internal static partial class Program
         public readonly TaskCompletionSource<bool> Searching=new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly TaskCompletionSource<bool> Release=new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int ProbeCalls;
-        public async Task<List<EnvironmentCandidate>> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)
+        public async Task<EnvironmentSearchResult> Search(AppSettings settings,IProgress<SetupProgress> progress,CancellationToken token)
         {
             progress.Report(new("Searching local environments",Candidate:first));Searching.TrySetResult(true);
             await Release.Task;
             var late=first with{Path=Path.Combine(settings.Workspace,"late-environment","python.exe")};
             progress.Report(new("Searching local environments",Candidate:late));
-            return [first,late];
+            return new([first,late]);
         }
         public Task<EnvironmentCandidate> Probe(string path,string workspace,CancellationToken token,string backend="auto")
         {
@@ -35,6 +35,7 @@ internal static partial class Program
     }
     static async Task PreparationGuidanceChecks()
     {
+        await WizardEnvironmentDownloadChecks();
         foreach(var changeExecutable in new[]{false,true})
         {
             var fixture=StartupFixture(changeExecutable?"incremental-environment-changed":"incremental-environment-selected");
@@ -44,7 +45,7 @@ internal static partial class Program
             await catalog.Searching.Task.WaitAsync(TimeSpan.FromSeconds(5));await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Check(vm.Setup.SearchingEnvironments&&!vm.Setup.Busy&&vm.Setup.Environments.Contains(first),"A compatible environment is published while other discovery checks are still running");
             vm.Setup.AcceptCandidate(first);
-            Check(vm.Setup.Selected==first&&vm.Setup.UseExisting,"An incremental compatible result is immediately selectable during discovery");
+            Check(vm.Setup.Selected==first&&vm.Setup.CanReuseEnvironment&&!vm.Setup.CanDownloadEnvironment,"An incremental compatible result is immediately selectable during discovery without enabling a download");
             if(changeExecutable)File.AppendAllText(first.Path,"changed executable fixture");
             await vm.Setup.PrepareEnvironmentAsync(false);
             Check(vm.Ready&&vm.Setup.Page==2&&!vm.Setup.SearchingEnvironments,"Preparing the selected result cancels outstanding discovery and advances without waiting for other environments");
@@ -62,6 +63,7 @@ internal static partial class Program
             var watch=Stopwatch.StartNew();await setup.SearchEnvironmentsAsync();
             Check(watch.Elapsed<TimeSpan.FromSeconds(5)&&!setup.Busy&&!setup.SearchingEnvironments&&setup.Environments.Count==1,
                 "The total search budget returns usable results even if a discovery service ignores cancellation");
+            Check(setup.CanRetryEnvironmentSearch&&setup.CanReuseEnvironment&&!setup.CanDownloadEnvironment,"A timed-out search leaves a verified environment reusable and offers only search retry");
             timedCatalog.Release.TrySetResult(true);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Check(setup.Environments.Count==1,"Results arriving after the total search budget cannot modify the completed candidate list");
         }
@@ -92,5 +94,62 @@ internal static partial class Program
             Check(hint.ToolTip?.ToString()==vm.CanGenerateReason&&hint.ToolTip.ToString()!.Contains("reference-image"),"Generation blocker text follows language changes in the actual composer");
             vm.SetLanguage("zh");window.Close();
         }
+    }
+
+    static async Task WizardEnvironmentDownloadChecks()
+    {
+        var fixture=StartupFixture("wizard-environment-download");
+        var catalog=fixture.Catalog;
+        catalog.Delayed=true;
+        using var vm=new MainViewModel(fixture.Preferences,environmentCatalog:catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[]));
+        var wizard=new FirstRunWindow(vm);
+        await vm.Setup.BeginWorkspaceAsync();
+        await Render(wizard,760,660,"wizard-environment-search-pending");
+        var next=CompletionAction(wizard);
+        var search=Children<Button>((DependencyObject)wizard.Content).Single(button=>AutomationProperties.GetAutomationId(button)=="SetupEnvironmentSearchAction");
+        string download=vm.T["Download required components automatically"];
+
+        Check(vm.Setup.SearchingEnvironments&&!next.IsEnabled&&!Equals(next.Content,download)&&search.Visibility==Visibility.Visible,
+            "While discovery is pending the wizard exposes Stop searching and no automatic download");
+        ClickOffscreen(next);
+        await vm.Setup.PrepareEnvironmentAsync(true);
+        Check(catalog.InstallCalls==0&&vm.Setup.SearchingEnvironments,"Both the wizard action and the controller refuse to download during discovery");
+        ClickOffscreen(search);
+        Check(!vm.Setup.SearchingEnvironments&&vm.Setup.CanRetryEnvironmentSearch&&!vm.Setup.CanDownloadEnvironment&&Equals(search.Content,vm.T["Search local environments"]),
+            "Stopping search preserves the retry action and does not make automatic download available");
+
+        catalog.Delayed=false;
+        catalog.SearchCompletion=EnvironmentSearchCompletion.TimedOut;
+        ClickOffscreen(search);
+        await WaitForSearch(vm.Setup);
+        Check(vm.Setup.CanRetryEnvironmentSearch&&!next.IsEnabled&&!Equals(next.Content,download),
+            "A search budget expiry with zero verified results does not permit a download");
+
+        catalog.SearchCompletion=EnvironmentSearchCompletion.Completed;
+        catalog.SearchFailure=new IOException("Fixture search error");
+        ClickOffscreen(search);
+        await WaitForSearch(vm.Setup);
+        Check(vm.Setup.CanRetryEnvironmentSearch&&!next.IsEnabled&&!Equals(next.Content,download),
+            "A failed search permits another search without offering automatic download");
+
+        catalog.SearchFailure=null;
+        catalog.Found=[catalog.ProbeResult!];
+        ClickOffscreen(search);
+        await WaitForSearch(vm.Setup);
+        Check(vm.Setup.CanReuseEnvironment&&next.IsEnabled&&!Equals(next.Content,download)&&search.Visibility==Visibility.Collapsed,
+            "A completed search with a verified environment offers Continue to reuse it");
+        await vm.Setup.PrepareEnvironmentAsync(true);
+        Check(catalog.InstallCalls==0,"The wizard controller refuses a redundant installation when it found a compatible environment");
+
+        catalog.Found=[catalog.ProbeResult! with{Backend="amd_rocm"}];
+        await vm.Setup.ScanComputerAsync();
+        await WaitForSearch(vm.Setup);
+        Check(vm.Setup.CanDownloadEnvironment&&next.IsEnabled&&Equals(next.Content,download),
+            "Only a completed search with zero compatible environments displays the explicit automatic download action");
+        ClickOffscreen(next);
+        for(var i=0;i<1000&&vm.Setup.Busy;i++)await Task.Delay(10);
+        Check(catalog.InstallCalls==1&&vm.Ready&&vm.Setup.Page==2,
+            "Clicking the explicit download action installs checks and selects the environment");
+        wizard.Close();
     }
 }

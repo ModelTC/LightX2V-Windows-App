@@ -142,8 +142,7 @@ internal static partial class Program
         vm.Setup.Page = 1;
         await Render(wizard, 760, 660, "wizard-environment");
         await Render(wizard, 620, 470, "wizard-environment-small");
-        vm.Setup.UseExisting = false;
-        Check(!vm.Setup.UseExisting, "Installation mode changes without losing the selected local environment");
+        Check(vm.Setup.CanReuseEnvironment&&!vm.Setup.CanDownloadEnvironment, "The wizard can reuse a verified environment and never offers a duplicate download");
         var bodyScroll = Children<ScrollViewer>((DependencyObject)wizard.Content).First(s => s.VerticalScrollBarVisibility == ScrollBarVisibility.Auto);
         bodyScroll.ScrollToBottom();
         await Render(wizard, 760, 660, "wizard-inline-components");
@@ -177,16 +176,19 @@ internal static partial class Program
         public string InstallResult = "";
         public int InstallCalls, SearchCalls, ProbeCalls, InstalledProbeCalls;
         public bool LastMirror, Delayed, DelayInstall, DelayProbe;
+        public EnvironmentSearchCompletion SearchCompletion;
+        public Exception? SearchFailure;
         public string LastBackend = "", SearchBackend = "";
         public List<string>? Events;
 
-        public async Task<List<EnvironmentCandidate>> Search(AppSettings settings, IProgress<SetupProgress> progress, CancellationToken token)
+        public async Task<EnvironmentSearchResult> Search(AppSettings settings, IProgress<SetupProgress> progress, CancellationToken token)
         {
             SearchCalls++;
             SearchBackend = settings.Backend;
             Events?.Add("search:" + SearchBackend);
             if (Delayed) await Task.Delay(Timeout.Infinite, token);
-            return Found;
+            if (SearchFailure != null) throw SearchFailure;
+            return new(Found, SearchCompletion);
         }
 
         public async Task<EnvironmentCandidate> Probe(string path, string workspace, CancellationToken token, string backend = "auto")

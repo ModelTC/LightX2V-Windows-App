@@ -8,16 +8,32 @@ public partial class App : Application
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        if(e.Args.Length==3&&e.Args[0]=="--maintenance")
+        if(e.Args.Length==3&&e.Args[0] is "--maintenance" or "--update")
         {
             ShutdownMode=ShutdownMode.OnExplicitShutdown;
-            try{await AppMaintenance.ExecuteAsync(e.Args[1],e.Args[2]);Shutdown();}
+            if(e.Args[0]=="--maintenance")
+            {
+                await UninstallWindow.RunHelperAsync(e.Args[1],e.Args[2]);
+                return;
+            }
+            var exitCode=0;
+            try
+            {
+                await AppUpdater.RunHelperAsync(e.Args[1],e.Args[2]);
+            }
             catch(Exception error)
             {
-                try{File.WriteAllText(Path.Combine(Path.GetDirectoryName(e.Args[1])!,"failure.txt"),error.ToString());}catch(Exception reportError){System.Diagnostics.Trace.WriteLine(reportError);}
-                MessageBox.Show(L10n.Current["Uninstall could not finish. Your remaining files were preserved."]+"\n"+error.Message,"LightX2V");Shutdown(1);
+                try
+                {
+                    MaintenanceProcess.ValidatePlanFile(e.Args[1]);
+                    File.WriteAllText(Path.Combine(Path.GetDirectoryName(e.Args[1])!,"failure.txt"),error.ToString());
+                }
+                catch(Exception reportError){System.Diagnostics.Trace.WriteLine(reportError);}
+                MessageBox.Show(L10n.Current["The app update could not finish."]+"\n"+L10n.Current[error.Message],"LightX2V");
+                exitCode=1;
             }
-            try{AppMaintenance.ScheduleHelperCleanup(e.Args[1]);}catch(Exception cleanupError){System.Diagnostics.Trace.WriteLine(cleanupError);}
+            try{MaintenanceProcess.ScheduleCleanup(e.Args[1]);}catch(Exception cleanupError){System.Diagnostics.Trace.WriteLine(cleanupError);}
+            Shutdown(exitCode);
             return;
         }
         instance = new Mutex(true, "Local\\LightX2V.Windows.App", out var first);

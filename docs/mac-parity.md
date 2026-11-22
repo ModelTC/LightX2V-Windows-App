@@ -23,7 +23,7 @@ Windows baseline: `88333e1` (v0.3.12). Mac source remains unchanged.
 Code comparison is not UI or GPU acceptance. Offscreen renders are not interactive desktop checks.
 Use isolated directories for regressions and uninstall fixtures. Preserve original models, environments and creations.
 AMD real generation and RTX user-assisted results must record version, commit, hardware and scenario.
-No INT8 support or in-app update UI is included. Existing inference pins and resource planning stay unchanged unless a reproduced defect requires a separately verified fix.
+INT8 remains deferred. Existing inference pins and resource planning stay unchanged unless a reproduced defect requires a separately verified fix.
 
 ## Visual references
 

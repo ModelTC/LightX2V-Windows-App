@@ -13,7 +13,7 @@ public sealed class ComputerPreparationPanel : StackPanel,IDisposable
 {
     readonly SetupController setup;readonly Style choiceStyle;readonly DriverSetupCard driver;
     readonly StackPanel candidates=new(),components=new();readonly List<(RadioButton Radio,EnvironmentCandidate Candidate)> choices=[];
-    readonly Button rescan;readonly RadioButton managed;
+    readonly Button rescan,searchAction;
     bool refreshing;
     public ComputerPreparationPanel(Window window,SetupController setup)
     {
@@ -30,9 +30,10 @@ public sealed class ComputerPreparationPanel : StackPanel,IDisposable
         var title=SetupUi.Text("3 · Prepare the image-generation components",15,true);title.Margin=new Thickness(0,4,0,0);components.Children.Add(title);
         components.Children.Add(Bound("EnvironmentSummary"));
         candidates.Margin=new Thickness(0,12,0,0);System.Windows.Automation.AutomationProperties.SetAutomationId(candidates,"SetupInlineEnvironments");components.Children.Add(candidates);
-        managed=new RadioButton{Style=(Style)window.FindResource("SetupChoice"),GroupName="SetupEnvironment",Margin=new Thickness(0,0,0,12)};
-        var managedBody=new StackPanel();managedBody.Children.Add(SetupUi.Text("Prepare automatically (recommended)",13,true));Hint(managedBody,"LightX2V will download and set up what is needed. Keep this window open and wait for it to finish.");managed.Content=managedBody;
-        managed.Checked+=(_,e)=>{if(!refreshing&&e.OriginalSource==managed)setup.ChooseAutomaticInstallation();};components.Children.Add(managed);
+        searchAction=SetupUi.Button(window,"Search local environments",false,"SetupEnvironmentSearchAction");
+        searchAction.HorizontalAlignment=HorizontalAlignment.Left;
+        searchAction.Click+=async(_,_)=>await setup.SearchEnvironmentsAsync();
+        components.Children.Add(searchAction);
         var unsupported=SetupUi.Text(Backends.Unsupported,11,false,true);unsupported.SetBinding(VisibilityProperty,new Binding("ManagedSupported"){Converter=(IValueConverter)Application.Current.FindResource("NotBool")});components.Children.Add(unsupported);
         Children.Add(SetupUi.Card(components));
         setup.PropertyChanged+=Changed;setup.Driver.PropertyChanged+=Changed;setup.Owner.PropertyChanged+=Changed;setup.T.PropertyChanged+=Changed;setup.Environments.CollectionChanged+=CandidatesChanged;Rebuild();Refresh();
@@ -41,7 +42,6 @@ public sealed class ComputerPreparationPanel : StackPanel,IDisposable
     {
         var text=new TextBlock{FontSize=size,FontWeight=bold?FontWeights.SemiBold:FontWeights.Normal,Foreground=SetupUi.Muted,TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,9,0,0)};text.SetBinding(TextBlock.TextProperty,property);return text;
     }
-    static void Hint(Panel parent,string key){var text=SetupUi.Text(key,11,false,true);text.Margin=new Thickness(0,8,0,0);parent.Children.Add(text);}
     void CandidatesChanged(object? sender,NotifyCollectionChangedEventArgs e){Rebuild();Refresh();}
     void Rebuild()
     {
@@ -68,7 +68,9 @@ public sealed class ComputerPreparationPanel : StackPanel,IDisposable
             rescan.IsEnabled=!busy;
             driver.Visibility=components.Visibility=setup.ComputerScanned?Visibility.Visible:Visibility.Collapsed;
             driver.IsEnabled=!setup.Busy;
-            managed.IsEnabled=!busy&&setup.ManagedSupported;managed.IsChecked=!setup.UseExisting;
+            searchAction.Visibility=setup.SearchingEnvironments||setup.CanRetryEnvironmentSearch?Visibility.Visible:Visibility.Collapsed;
+            searchAction.Content=setup.T[setup.SearchingEnvironments?"Stop searching":"Search local environments"];
+            searchAction.IsEnabled=!busy;
             foreach(var (radio,item) in choices){radio.IsEnabled=!busy&&item.Ready&&item.Backend==setup.Backend;radio.IsChecked=setup.UseExisting&&setup.Selected==item;}
 
         }
