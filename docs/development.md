@@ -7,7 +7,7 @@ LightX2V.Windows/       WPF app, Python bridge backend, styles, and pinned setup
 SetupUiChecks/         Maintained Windows regression suite executed locally
 Tests/                 Python backend regressions and opt-in model/GPU checks
 scripts/               Build/release integrity checks and manual package startup check
-third_party/           Pinned inference source provenance, compatibility patches, and licenses
+third_party/           Pinned inference source provenance and licenses
 docs/                  Usage, testing, and release notes
 build.ps1              Windows build and ZIP entry point
 prepare_setup.py       Offline validation of pinned setup manifests and source archives
@@ -45,7 +45,7 @@ GitHub Actions compiles, verifies the package and publishes Latest. Behavioral t
 
 The two environment manifests pin the versions, sizes, and SHA-256 hashes of Python, PyTorch, and every wheel. Builds do not resolve the "latest version." `prepare_cuda_profile.py` changes the pinned manifests; run it only when deliberately updating dependencies, followed by renewed acceptance testing.
 
-`LightX2V.Windows/Resources/Setup/lightx2v-native.zip` contains the inference source required at runtime. It is the only large pinned source archive committed to the repository and does not use Git LFS. It is based on LightX2V 0.6.1 commit `43c6a11bb65b7357f06e9603fa92249bc16b484e`. The 11 common/Qwen compatibility changes are in `third_party/windows-compat-0.6.1.patch`. The provenance file records the archive hash and lists the upstream documentation, sample media and development files excluded from the runtime bundle. The archive retains upstream licenses.
+`LightX2V.Windows/Resources/Setup/lightx2v-native.zip` contains the inference source required at runtime. It is the only large pinned source archive committed to the repository and does not use Git LFS. It is based on LightX2V 0.6.1 commit `43c6a11bb65b7357f06e9603fa92249bc16b484e`. The provenance file records the archive hash and lists the excluded documentation, examples, tests, training packages, and sample media. The contents of the retained files come directly from the official archive. The archive retains upstream licenses.
 
 `scripts/llama-runtime.json` lists the files distributed from the pinned llama.cpp archive. Both runtime preparation and package verification use this list. It includes the two prompt-enhancement executables, their DLL dependencies and the dynamically loaded CPU and Vulkan backends.
 
@@ -73,7 +73,7 @@ Reference limits live in `Resources/image-input.json`, consumed by both C# and P
 
 The native launcher is built with Visual Studio C++ x64 Build Tools (MSVC and Windows SDK), using a static CRT. The public ZIP contains only `LightX2V.exe`, `app`, and `docs` at its top level. The layout-v2 manifest is `app/build-manifest.json`, with paths relative to the package root. Runtime asset paths remain relative to the WPF executable inside `app`. Layout-v1 manifests remain readable for verification and uninstall.
 
-To reproduce the pinned source ZIP, download the exact `upstreamArchiveUrl` in `third_party/source-provenance.json`, then run `python scripts/rebuild_source.py <official-zip> <output-zip>`. The script verifies the upstream and patch hashes, applies the reviewed patch and requires the deterministic output hash to match the committed payload. Builds only verify these committed pins; they never resolve a moving tag or branch.
+To reproduce the pinned source ZIP, download the exact `upstreamArchiveUrl` in `third_party/source-provenance.json`, then run `python scripts/rebuild_source.py <official-zip> <output-zip>`. The script verifies the upstream hash, copies the retained files into a deterministic ZIP and checks the result against the committed hash. Builds only verify these committed pins; they never resolve a moving tag or branch.
 
 
 ## v0.4.2 discovery and progress ownership

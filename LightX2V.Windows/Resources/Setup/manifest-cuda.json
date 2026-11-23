@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "profile": "native-nvidia-cu128-v1",
+  "profile": "native-nvidia-cu128-v2",
   "python": {
     "name": "python",
     "version": "3.12.10",
@@ -807,15 +807,23 @@
       "sha256": "8c0d1c4fbb2c9a4d5d41d0aaa87da20e525bcb2a154ce405725b0be59456804b",
       "size": 9585013,
       "group": "dependency"
+    },
+    {
+      "name": "triton-windows",
+      "version": "3.6.0.post26",
+      "file": "triton_windows-3.6.0.post26-cp312-cp312-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/62/1e/8d9814e67ba3f20094cf3c69e7815a491f20beb86469a647550ba86728b0/triton_windows-3.6.0.post26-cp312-cp312-win_amd64.whl",
+      "sha256": "189d8c57911aa9d2ff983a715e5c967b325f576307db60924cab22b501a36515",
+      "size": 47402104,
+      "group": "dependency"
     }
   ],
   "source": {
     "version": "0.6.1",
     "revision": "43c6a11bb65b7357f06e9603fa92249bc16b484e",
     "archive": "lightx2v-native.zip",
-    "sha256": "124fc1b916bdd0656a25976754c4fe1579d591b0785380bfd3e416997dcd6f39",
-    "upstreamArchiveSha256": "6f7f5e8f7b501aefa70bfab019f53ff07b1c216502ca2220f16009b5e10cc126",
-    "patchSha256": "e5fbcaf9795165ae21af87d1de05ee5940a27a0eb29422c80524a82f96f47b83"
+    "sha256": "565e15221063a169729c3924708f35f6ec8a0d1b4700ceb525aaa7ddc421f811",
+    "upstreamArchiveSha256": "6f7f5e8f7b501aefa70bfab019f53ff07b1c216502ca2220f16009b5e10cc126"
   },
   "provenance": {
     "torch": "https://pytorch.org/get-started/previous-versions/#v2110",

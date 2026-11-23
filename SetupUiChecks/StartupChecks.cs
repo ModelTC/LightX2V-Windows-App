@@ -24,7 +24,7 @@ internal static partial class Program
         var settings=AppSettings.Fresh(Path.Combine(root,name));settings.Backend=backend;
         var preferences=Path.Combine(root,name+"-preferences");Files.Write(Path.Combine(preferences,"preferences.json"),new Preferences{Settings=settings});
         var python=Path.Combine(settings.Workspace,"environments",backend,"python.exe");Directory.CreateDirectory(Path.GetDirectoryName(python)!);File.WriteAllText(python,"Non-executable fixture; the injected catalog performs all install/probe operations.");
-        var probe=Valid(python) with{Backend=backend,Device=backend=="cuda"?"NVIDIA GeForce RTX 4070 Laptop GPU":"AMD Radeon 8060S",TorchVersion=backend=="cuda"?"2.11.0+cu128":"2.11.0+rocm7.13.0",CudaVersion=backend=="cuda"?"12.8":"",HipVersion=backend=="cuda"?"":"7.13.0"};
+        var probe=Valid(python) with{Backend=backend,Device=backend=="cuda"?"NVIDIA GeForce RTX 4070 Laptop GPU":"AMD Radeon 8060S",TorchVersion=backend=="cuda"?"2.11.0+cu128":"2.11.0+rocm7.14.1",CudaVersion=backend=="cuda"?"12.8":"",HipVersion=backend=="cuda"?"":"7.14.1"};
         var catalog=new FakeCatalog{InstallResult=python,ProbeResult=probe};
         var platform=new FakeDriverPlatform{Computer=HardwareInfo.FromAdapters([new(backend=="cuda"?"NVIDIA GeForce RTX 4070 Laptop GPU":"AMD Radeon 8060S","32.0.16.2101")])};
         return(settings,preferences,catalog,platform);

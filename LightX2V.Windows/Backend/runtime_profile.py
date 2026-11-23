@@ -15,8 +15,8 @@ def detect_backend(torch, expected='auto'):
         raise RuntimeError(f'This Python environment uses {backend}, but {expected} was selected. Choose the matching environment.')
     name = torch.cuda.get_device_name(0)
     if backend == 'amd_rocm':
-        if not str(torch.__version__).startswith('2.11.0+rocm7.13.0') or not any(n in name.lower() for n in ('amd', 'radeon')):
-            raise RuntimeError('Use the AMD PyTorch 2.11.0 / ROCm 7.13.0 Windows environment and a compatible AMD GPU.')
+        if not str(torch.__version__).startswith('2.11.0+rocm7.14.1') or not any(n in name.lower() for n in ('amd', 'radeon')):
+            raise RuntimeError('Use the AMD PyTorch 2.11.0 / ROCm 7.14.1 Windows environment and a compatible AMD GPU.')
     else:
         if str(torch.__version__) != '2.11.0+cu128':
             raise RuntimeError('Use the pinned NVIDIA PyTorch 2.11.0+cu128 environment (CUDA 12.8).')
@@ -29,6 +29,15 @@ def detect_backend(torch, expected='auto'):
     return backend
 
 
+def configure_attention(torch, backend):
+    if backend == 'amd_rocm':
+        # ROCm 7.14.1 can select a fused SDPA kernel that fails on Qwen's
+        # causal attention on gfx1151. Use the PyTorch math implementation.
+        torch.backends.cuda.enable_flash_sdp(False)
+        torch.backends.cuda.enable_mem_efficient_sdp(False)
+        torch.backends.cuda.enable_cudnn_sdp(False)
+
+
 def inference_profile(backend, config, width, height, free_vram=None, plan=None):
     """Apply a model/task resource plan; hardware tiers are never UI modes."""
     if backend not in BACKENDS:
@@ -39,7 +48,7 @@ def inference_profile(backend, config, width, height, free_vram=None, plan=None)
     return apply_resource_plan(config, plan), plan['strategy']
 
 
-def inference_environment(backend, parent, repository, large, plan=None):
+def inference_environment(backend, parent, repository):
     env = dict(parent)
     env.update(PLATFORM=backend, DTYPE='BF16', SENSITIVE_LAYER_DTYPE='None', PYTHONUTF8='1',
                PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1', PYTHONDONTWRITEBYTECODE='1',
@@ -48,9 +57,6 @@ def inference_environment(backend, parent, repository, large, plan=None):
     for key in ('PYTORCH_NO_HIP_MEMORY_CACHING', 'TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL',
                 'WORLD_SIZE', 'RANK', 'LOCAL_RANK', 'MASTER_ADDR', 'MASTER_PORT'):
         env.pop(key, None)
-    if backend == 'amd_rocm' and large:
-        env['TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL'] = '1'
-    env['LIGHTX2V_PIN_HOST_WEIGHTS'] = '1' if plan is None or plan.get('pin_host_weights', True) else '0'
     return env
 
 

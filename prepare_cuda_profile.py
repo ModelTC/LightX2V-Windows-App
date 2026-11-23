@@ -13,8 +13,8 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parent/'LightX2V.Windows/Resources/Setup'
 manifest = copy.deepcopy(json.loads((root/'manifest.json').read_text(encoding='utf-8')))
-manifest['profile'] = 'native-nvidia-cu128-v1'
-manifest['packages'] = [p for p in manifest['packages'] if not p['name'].startswith('rocm')]
+manifest['profile'] = 'native-nvidia-cu128-v2'
+manifest['packages'] = [p for p in manifest['packages'] if not p['name'].startswith(('rocm', 'amd-torch-device-'))]
 for name, version in [('torch', '2.11.0'), ('torchvision', '0.26.0'), ('torchaudio', '2.11.0')]:
     index = f'https://download.pytorch.org/whl/cu128/{name}/'
     text = urllib.request.urlopen(index, timeout=30).read().decode()

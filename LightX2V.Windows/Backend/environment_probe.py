@@ -28,8 +28,12 @@ def probe(request, emit):
         importlib.import_module(module)
     import torch
     import torch.nn.functional as F
-    from runtime_profile import detect_backend
+    from runtime_profile import configure_attention, detect_backend
     backend = detect_backend(torch, request.get('backend', 'auto'))
+    if not torch.distributed.is_available():
+        raise RuntimeError('The official LightX2V runtime requires a PyTorch build with distributed support.')
+    importlib.import_module('triton')
+    configure_attention(torch, backend)
     device = torch.cuda.get_device_name(0)
     emit('log', message='Checking GPU BF16 matrix multiplication and attention')
     torch.manual_seed(42)

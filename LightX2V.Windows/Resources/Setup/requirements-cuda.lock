@@ -78,3 +78,4 @@ pip==26.3
 torch==2.11.0+cu128
 torchaudio==2.11.0+cu128
 torchvision==0.26.0+cu128
+triton-windows==3.6.0.post26

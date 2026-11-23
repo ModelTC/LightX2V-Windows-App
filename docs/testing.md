@@ -57,7 +57,7 @@ Complete setup in the app and record the app version, GPU model, driver, VRAM, s
 A CUDA host can exercise the packaged backend using the environment prepared by the app:
 
 ```powershell
-python rtx_acceptance.py --app C:\Apps\LightX2V --python C:\LightX2V\environments\native-nvidia-cu128-v1\python.exe --repository C:\LightX2V\runtimes\lightx2v-native-HASH --model C:\LightX2V\models\Qwen\Qwen-Image-2.1-Turbo --output C:\LightX2V-RTX-acceptance --tiers 512
+python rtx_acceptance.py --app C:\Apps\LightX2V --python C:\LightX2V\environments\native-nvidia-cu128-v2\python.exe --repository C:\LightX2V\runtimes\lightx2v-native-HASH --model C:\LightX2V\models\Qwen\Qwen-Image-2.1-Turbo --output C:\LightX2V-RTX-acceptance --tiers 512
 ```
 
 Pass the extracted package root to `--app`. The script also accepts the inner `app` directory and the flat layout of older packages. Use the Python, source and model paths from the app's configuration. `--tiers 512,1K,2K --edit` also exercises multiple image sizes and reference editing. Test installation and prompt enhancement through the app.
