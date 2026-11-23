@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import types
 import unittest
+from unittest.mock import Mock
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('runtime_profile',ROOT/'LightX2V.Windows/Backend/runtime_profile.py')
@@ -17,6 +18,25 @@ class RuntimeProfileTests(unittest.TestCase):
         self.assertEqual(runtime.detect_backend(torch()),'cuda')
         self.assertEqual(runtime.detect_backend(torch('amd_rocm','2.11.0+rocm7.14.1')),'amd_rocm')
         with self.assertRaisesRegex(RuntimeError,'selected'):runtime.detect_backend(torch(),'amd_rocm')
+
+    def test_rejects_amd_version_with_shared_prefix(self):
+        with self.assertRaisesRegex(RuntimeError, 'ROCm 7.14.1'):
+            runtime.detect_backend(torch('amd_rocm', '2.11.0+rocm7.14.10'))
+
+    def test_amd_selects_math_attention(self):
+        backend = Mock()
+        runtime.configure_attention(backend, 'amd_rocm')
+        cuda = backend.backends.cuda
+        cuda.enable_math_sdp.assert_called_once_with(True)
+        cuda.enable_flash_sdp.assert_called_once_with(False)
+        cuda.enable_mem_efficient_sdp.assert_called_once_with(False)
+        cuda.enable_cudnn_sdp.assert_called_once_with(False)
+
+    def test_cuda_preserves_attention_defaults(self):
+        backend = Mock()
+        runtime.configure_attention(backend, 'cuda')
+        self.assertEqual(backend.mock_calls, [])
+
     def test_driver_cpu_wrong_wheel_and_unsupported_bf16(self):
         for value in [torch(available=False),torch('cpu'),torch(version='2.11.0+cpu'),torch(capability=(7,5)),torch(bf16=False),torch(capability=(13,0),archs=['sm_80'])]:
             with self.subTest(value=value),self.assertRaises(RuntimeError):runtime.detect_backend(value)

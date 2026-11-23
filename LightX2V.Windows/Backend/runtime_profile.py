@@ -15,7 +15,7 @@ def detect_backend(torch, expected='auto'):
         raise RuntimeError(f'This Python environment uses {backend}, but {expected} was selected. Choose the matching environment.')
     name = torch.cuda.get_device_name(0)
     if backend == 'amd_rocm':
-        if not str(torch.__version__).startswith('2.11.0+rocm7.14.1') or not any(n in name.lower() for n in ('amd', 'radeon')):
+        if str(torch.__version__) != '2.11.0+rocm7.14.1' or not any(n in name.lower() for n in ('amd', 'radeon')):
             raise RuntimeError('Use the AMD PyTorch 2.11.0 / ROCm 7.14.1 Windows environment and a compatible AMD GPU.')
     else:
         if str(torch.__version__) != '2.11.0+cu128':
@@ -33,6 +33,7 @@ def configure_attention(torch, backend):
     if backend == 'amd_rocm':
         # ROCm 7.14.1 can select a fused SDPA kernel that fails on Qwen's
         # causal attention on gfx1151. Use the PyTorch math implementation.
+        torch.backends.cuda.enable_math_sdp(True)
         torch.backends.cuda.enable_flash_sdp(False)
         torch.backends.cuda.enable_mem_efficient_sdp(False)
         torch.backends.cuda.enable_cudnn_sdp(False)
