@@ -53,6 +53,18 @@ class RuntimeProfileTests(unittest.TestCase):
             self.assertIs(actual['_app_resource_plan'],plan)
             self.assertEqual(actual['sigmas'],base['sigmas'])
         self.assertFalse(base['cpu_offload'])
+    def test_large_rocm_images_use_chunked_sdpa(self):
+        base = {'attn_type': 'torch_sdpa'}
+        plan = {'strategy': 'full_resident', 'config_changes': {}}
+        for backend, size, chunked in [('amd_rocm', 2048, True),
+                                       ('amd_rocm', 1024, False),
+                                       ('cuda', 2048, False)]:
+            with self.subTest(backend=backend, size=size):
+                config, _ = runtime.inference_profile(backend, base, size, size, plan=plan)
+                self.assertEqual(config['attn_type'], 'torch_sdpa_mps' if chunked else 'torch_sdpa')
+                self.assertEqual(config.get('mps_sdpa_query_chunk_size'), 512 if chunked else None)
+        self.assertEqual(base, {'attn_type': 'torch_sdpa'})
+
     def test_model_plan_is_required_instead_of_fixed_gpu_thresholds(self):
         with self.assertRaisesRegex(ValueError,'resource plan'):
             runtime.inference_profile('cuda',{},512,512,8*runtime.GIB)

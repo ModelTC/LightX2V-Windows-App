@@ -46,7 +46,12 @@ def inference_profile(backend, config, width, height, free_vram=None, plan=None)
     if plan is None:
         raise ValueError('Automatic inference requires a model resource plan.')
     from resource_plan import apply_resource_plan
-    return apply_resource_plan(config, plan), plan['strategy']
+    effective = apply_resource_plan(config, plan)
+    if backend == 'amd_rocm' and width * height > 1024 ** 2:
+        # In 0.6.1 this registry entry slices queries using ordinary torch ops
+        # on the input device. Each slice still attends to every key.
+        effective.update(attn_type='torch_sdpa_mps', mps_sdpa_query_chunk_size=512)
+    return effective, plan['strategy']
 
 
 def inference_environment(backend, parent, repository):
