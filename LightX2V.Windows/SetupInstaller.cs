@@ -50,7 +50,10 @@ public static class SetupInstaller
         var partial=target+".partial";
         var urls=automaticSource?await SetupDownloadSources.Order(artifact,token):new[]{mirror&&artifact.Mirror!=null?artifact.Mirror:artifact.Url,artifact.Url}.Distinct().ToArray();
         long transferred=0;var rate=new DownloadRate();rate.Observe(0);
-        for(int attempt=0;attempt<3;attempt++)
+        long bestOffset = System.IO.File.Exists(partial) ? new FileInfo(partial).Length : 0;
+        int stalledAttempts = 0;
+        int invalidDigests = 0;
+        for(int attempt=0;;attempt++)
         {
             token.ThrowIfCancellationRequested();
             var url=urls[attempt%urls.Length];
@@ -83,13 +86,26 @@ public static class SetupInstaller
                     await output.FlushAsync(token);
                 }
                 progress.Report(new("Checking downloads",artifact.File,CompletedBytes:offset,TotalBytes:artifact.Size,TransferredBytes:transferred));
-                if(!await Matches(partial,artifact,token)){System.IO.File.Delete(partial);throw new IOException("Downloaded file checksum does not match the setup manifest.");}
+                if(offset < artifact.Size) throw new EndOfStreamException("The download ended before the file was complete.");
+                if(!await Matches(partial,artifact,token))
+                {
+                    System.IO.File.Delete(partial);
+                    invalidDigests++;
+                    throw new IOException("Downloaded file checksum does not match the manifest.");
+                }
                 System.IO.File.Move(partial,target,true);return target;
             }
             catch(OperationCanceledException) when(token.IsCancellationRequested){throw;}
-            catch when(attempt<2){await Task.Delay(500,token);}
+            catch(Exception error) when(error is IOException or HttpRequestException or OperationCanceledException)
+            {
+                long saved = System.IO.File.Exists(partial) ? new FileInfo(partial).Length : 0;
+                stalledAttempts = saved > bestOffset ? 0 : stalledAttempts + 1;
+                bestOffset = Math.Max(bestOffset, saved);
+                if(invalidDigests >= 2 || stalledAttempts >= 6 || attempt >= 63)
+                    throw new IOException($"Download failed for {artifact.File}. Retry to resume from the saved data. {error.Message}", error);
+                await Task.Delay(TimeSpan.FromMilliseconds(500 * (1 << Math.Min(stalledAttempts, 4))),token);
+            }
         }
-        throw new IOException("Unable to download "+artifact.File);
     }
     static void Extract(string archive,string target,CancellationToken token)
     {

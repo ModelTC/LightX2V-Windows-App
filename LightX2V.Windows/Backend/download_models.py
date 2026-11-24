@@ -292,19 +292,21 @@ def parallel_download(spec, part, check, progress, transferred):
             raise Cancelled()
     def fetch(index):
         first=index*chunk_size;last=min(size-1,first+chunk_size-1)
+        received = 0
         for attempt in range(3):
             check_transfer()
             try:
-                headers={'Range':f'bytes={first}-{last}','User-Agent':'LightX2V-Windows'}
+                start = first + received
+                headers={'Range':f'bytes={start}-{last}','User-Agent':'LightX2V-Windows'}
                 with DownloadResponse(urllib.request.Request(spec['url'], headers=headers), check_transfer) as response:
-                    if response.status!=206 or response.headers.get('Content-Range','')!=f'bytes {first}-{last}/{size}': raise ValueError('Invalid model byte range.')
+                    if response.status!=206 or response.headers.get('Content-Range','')!=f'bytes {start}-{last}/{size}': raise ValueError('Invalid model byte range.')
                     with part.open('r+b',buffering=0) as output:
-                        output.seek(first);received=0
+                        output.seek(start)
                         while block:=response.read():
                             check_transfer()
-                            received+=len(block)
-                            if received>last-first+1: raise ValueError('Model byte range is too large.')
+                            if received + len(block)>last-first+1: raise ValueError('Model byte range is too large.')
                             output.write(block)
+                            received += len(block)
                             with lock: inflight[index]=received;transferred[0]+=len(block)
                         if received!=last-first+1: raise ValueError('Incomplete model byte range.')
                         os.fsync(output.fileno())
@@ -313,7 +315,7 @@ def parallel_download(spec, part, check, progress, transferred):
                 return
             except Cancelled: raise
             except Exception:
-                with lock: inflight[index]=0
+                if first + received > last: raise
                 if attempt==2: raise
                 if stopped.wait(.5):
                     raise Cancelled()
