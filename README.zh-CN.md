@@ -8,7 +8,7 @@
 
 | 通道 | Windows 11 · x64 | 提交 | 日期 (UTC+8) |
 | --- | --- | --- | --- |
-| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`2cf64b2`](https://github.com/ModelTC/LightX2V-Windows-App/commit/2cf64b22960d5efbf1c30335be6a4de2b649c98e) | 2026-11-24 17:11 |
+| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`371654e`](https://github.com/ModelTC/LightX2V-Windows-App/commit/371654e865fadd6bd2e80d20dfdcb05fba174931) | 2026-11-24 23:10 |
 | Stable | 尚未提供 | — | — |
 
 应用内置 LightX2V 源码、llama.cpp 和 .NET。模型权重与兼容的 Python 环境可在应用中单独准备。
