@@ -235,7 +235,6 @@ def run(request, config, parent):
     if pressure['severe']:
         raise RuntimeError('System memory is critically low before loading the model. Close other applications and retry.')
     free_vram=runtime['free']
-    large_image=width*height > 1100000
     plan=plan_resources(request['model'],runtime,width,height,task=task,prompt=prompt,reference_count=len(references),reference_resolution=512)
     config,profile=inference_profile(backend,config,width,height,free_vram,plan=plan)
     atomic_json(folder/'resource-plan.json',plan)
@@ -244,14 +243,17 @@ def run(request, config, parent):
     emit('log',message='Automatic resource plan: '+profile)
     config['_app_one_shot_worker']=True
     frozen=folder/'config.json'; atomic_json(frozen,config)
-    env=inference_environment(backend,os.environ,request['repository'],large_image,plan=plan)
+    env=inference_environment(backend,os.environ,request['repository'])
     env['LIGHTX2V_TASK_RUN_ID']=uuid.uuid4().hex
     env['LIGHTX2V_TASK_ID']=folder.name
-    cmd=[sys.executable,'-X','utf8','-u',str(Path(__file__).with_name('worker.py')),request['repository'],'--model_cls','qwen_image_21','--task',task,'--model_path',request['model'],'--config_json',str(frozen),'--prompt',prompt,'--size',str(height),str(width),'--seed',str(seed),'--save_result_path',str(output)]
+    # OpenCV in official 0.6.1 takes a narrow Windows path. The worker's
+    # current directory is the task folder, so give it an ASCII relative name.
+    worker_output = folder / ('generation-' + env['LIGHTX2V_TASK_RUN_ID'] + '.png')
+    cmd=[sys.executable,'-X','utf8','-u',str(Path(__file__).with_name('worker.py')),request['repository'],'--model_cls','qwen_image_21','--task',task,'--model_path',request['model'],'--config_json',str(frozen),'--prompt',prompt,'--size',str(height),str(width),'--seed',str(seed),'--save_result_path',worker_output.name]
     if references: cmd+=['--image_path',','.join(references),'--resolution','512']
     atomic_json(folder/'invocation.json',{'argv':cmd,'cwd':str(folder),'platform':sys.platform,
         'backend':backend,'profile':profile,
-        'environment':{k:env[k] for k in ('PLATFORM','DTYPE','SENSITIVE_LAYER_DTYPE','LIGHTX2V_PIN_HOST_WEIGHTS','TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL') if k in env}})
+        'environment':{k:env[k] for k in ('PLATFORM','DTYPE','SENSITIVE_LAYER_DTYPE') if k in env}})
     cancel=folder/'cancel.signal'; cancelled=False; memory_error=False; tail=[]; lines=queue.Queue()
     if cancel.exists() or not parent_alive(parent):
         emit('done',status='cancelled',seconds=time.monotonic()-started);return 130
@@ -304,9 +306,10 @@ def run(request, config, parent):
             emit('done',status='cancelled',seconds=time.monotonic()-started); return 130
         if code: raise RuntimeError(worker_failure_message(exit_details,tail))
         from PIL import Image
-        with Image.open(output) as im:
+        with Image.open(worker_output) as im:
             im.load()
             if im.format!='PNG' or im.size!=(width,height): raise RuntimeError('Generated image has an unexpected format or dimensions.')
+        worker_output.rename(output)
         emit('done',status='completed',output=str(output),width=width,height=height,seconds=time.monotonic()-started)
         return 0
     finally:
@@ -320,6 +323,10 @@ def run(request, config, parent):
         if child is not None:
             if child.poll() is None: child.kill()
             child.wait()
+        try:
+            worker_output.unlink(missing_ok=True)
+        except OSError as error:
+            print(f'Could not remove temporary image {worker_output}: {error}', file=sys.stderr)
 
 
 def main():

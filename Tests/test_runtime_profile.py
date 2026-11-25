@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import types
 import unittest
+from unittest.mock import Mock
 
 ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('runtime_profile',ROOT/'LightX2V.Windows/Backend/runtime_profile.py')
@@ -10,13 +11,32 @@ runtime=importlib.util.module_from_spec(spec);spec.loader.exec_module(runtime)
 
 
 def torch(backend='cuda', version='2.11.0+cu128', capability=(8,9), available=True, bf16=True, archs=None):
-    return types.SimpleNamespace(__version__=version,version=types.SimpleNamespace(hip='7.13.0' if backend=='amd_rocm' else None,cuda='12.8' if backend=='cuda' else None),cuda=types.SimpleNamespace(is_available=lambda:available,get_device_name=lambda i:'AMD Radeon 8060S' if backend=='amd_rocm' else 'NVIDIA GeForce RTX',get_device_capability=lambda i:capability,is_bf16_supported=lambda **kw:bf16,get_arch_list=lambda:archs or ['sm_80','sm_86','sm_90','sm_120','compute_120']))
+    return types.SimpleNamespace(__version__=version,version=types.SimpleNamespace(hip='7.14.1' if backend=='amd_rocm' else None,cuda='12.8' if backend=='cuda' else None),cuda=types.SimpleNamespace(is_available=lambda:available,get_device_name=lambda i:'AMD Radeon 8060S' if backend=='amd_rocm' else 'NVIDIA GeForce RTX',get_device_capability=lambda i:capability,is_bf16_supported=lambda **kw:bf16,get_arch_list=lambda:archs or ['sm_80','sm_86','sm_90','sm_120','compute_120']))
 
 class RuntimeProfileTests(unittest.TestCase):
     def test_auto_and_explicit_backend(self):
         self.assertEqual(runtime.detect_backend(torch()),'cuda')
-        self.assertEqual(runtime.detect_backend(torch('amd_rocm','2.11.0+rocm7.13.0')),'amd_rocm')
+        self.assertEqual(runtime.detect_backend(torch('amd_rocm','2.11.0+rocm7.14.1')),'amd_rocm')
         with self.assertRaisesRegex(RuntimeError,'selected'):runtime.detect_backend(torch(),'amd_rocm')
+
+    def test_rejects_amd_version_with_shared_prefix(self):
+        with self.assertRaisesRegex(RuntimeError, 'ROCm 7.14.1'):
+            runtime.detect_backend(torch('amd_rocm', '2.11.0+rocm7.14.10'))
+
+    def test_amd_selects_math_attention(self):
+        backend = Mock()
+        runtime.configure_attention(backend, 'amd_rocm')
+        cuda = backend.backends.cuda
+        cuda.enable_math_sdp.assert_called_once_with(True)
+        cuda.enable_flash_sdp.assert_called_once_with(False)
+        cuda.enable_mem_efficient_sdp.assert_called_once_with(False)
+        cuda.enable_cudnn_sdp.assert_called_once_with(False)
+
+    def test_cuda_preserves_attention_defaults(self):
+        backend = Mock()
+        runtime.configure_attention(backend, 'cuda')
+        self.assertEqual(backend.mock_calls, [])
+
     def test_driver_cpu_wrong_wheel_and_unsupported_bf16(self):
         for value in [torch(available=False),torch('cpu'),torch(version='2.11.0+cpu'),torch(capability=(7,5)),torch(bf16=False),torch(capability=(13,0),archs=['sm_80'])]:
             with self.subTest(value=value),self.assertRaises(RuntimeError):runtime.detect_backend(value)
@@ -33,6 +53,18 @@ class RuntimeProfileTests(unittest.TestCase):
             self.assertIs(actual['_app_resource_plan'],plan)
             self.assertEqual(actual['sigmas'],base['sigmas'])
         self.assertFalse(base['cpu_offload'])
+    def test_large_rocm_images_use_chunked_sdpa(self):
+        base = {'attn_type': 'torch_sdpa'}
+        plan = {'strategy': 'full_resident', 'config_changes': {}}
+        for backend, size, chunked in [('amd_rocm', 2048, True),
+                                       ('amd_rocm', 1024, False),
+                                       ('cuda', 2048, False)]:
+            with self.subTest(backend=backend, size=size):
+                config, _ = runtime.inference_profile(backend, base, size, size, plan=plan)
+                self.assertEqual(config['attn_type'], 'torch_sdpa_mps' if chunked else 'torch_sdpa')
+                self.assertEqual(config.get('mps_sdpa_query_chunk_size'), 512 if chunked else None)
+        self.assertEqual(base, {'attn_type': 'torch_sdpa'})
+
     def test_model_plan_is_required_instead_of_fixed_gpu_thresholds(self):
         with self.assertRaisesRegex(ValueError,'resource plan'):
             runtime.inference_profile('cuda',{},512,512,8*runtime.GIB)
@@ -42,19 +74,13 @@ class RuntimeProfileTests(unittest.TestCase):
         self.assertEqual(runtime.parse_runtime_output('#define native_diagnostic 1\n'+json.dumps(expected)+'\n'),expected)
         with self.assertRaisesRegex(RuntimeError,'resource result'):
             runtime.parse_runtime_output('not a result')
-    def test_plan_controls_pinning_in_both_directions(self):
-        for backend in runtime.BACKENDS:
-            for pin in (False,True):
-                actual=runtime.inference_environment(backend,{'LIGHTX2V_PIN_HOST_WEIGHTS':'1' if not pin else '0'},'repo',False,{'pin_host_weights':pin})
-                self.assertEqual(actual['LIGHTX2V_PIN_HOST_WEIGHTS'],'1' if pin else '0')
     def test_backend_environment_isolation(self):
         parent={'PLATFORM':'amd_rocm','TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL':'1','RANK':'1','PYTORCH_NO_HIP_MEMORY_CACHING':'1','WORLD_SIZE':'2'}
         for backend in runtime.BACKENDS:
-            for large in [False,True]:
-                actual=runtime.inference_environment(backend,parent,r'C:\path with spaces\中文',large)
-                self.assertEqual(actual['PLATFORM'],backend);self.assertNotIn('RANK',actual);self.assertNotIn('WORLD_SIZE',actual)
-                self.assertEqual('TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL' in actual,backend=='amd_rocm' and large)
-                self.assertNotIn('PYTORCH_NO_HIP_MEMORY_CACHING',actual)
+            actual=runtime.inference_environment(backend,parent,r'C:\path with spaces\中文')
+            self.assertEqual(actual['PLATFORM'],backend);self.assertNotIn('RANK',actual);self.assertNotIn('WORLD_SIZE',actual)
+            self.assertNotIn('TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL',actual)
+            self.assertNotIn('PYTORCH_NO_HIP_MEMORY_CACHING',actual)
         self.assertEqual(parent['RANK'],'1')
 
 if __name__=='__main__':unittest.main()

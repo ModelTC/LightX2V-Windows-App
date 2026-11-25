@@ -86,7 +86,6 @@ class ResourcePlanTests(unittest.TestCase):
         self.assertEqual(plan['strategy'],'ssd_streaming')
         self.assertTrue(plan['dit_streaming'])
         self.assertTrue(plan['text_encoder_streaming'])
-        self.assertFalse(plan['pin_host_weights'])
         self.assertTrue(plan['feasible'])
         result=planner.apply_resource_plan({'infer_steps':8,'attn_type':'torch_sdpa'},plan)
         self.assertEqual(result['infer_steps'],8)
@@ -138,7 +137,6 @@ class ResourcePlanTests(unittest.TestCase):
         self.assertTrue(pressure['text_encoder_streaming'])
         self.assertLess(pressure['gpu_budget_bytes'],20*G)
         self.assertEqual(pressure['host_budget_bytes'],pressure['gpu_budget_bytes'])
-        self.assertFalse(pressure['pin_host_weights'])
     def test_backend_name_does_not_imply_shared_memory(self):
         amd=self.plan(runtime(gpu=24,free=22,ram=64,available=48,backend='amd_rocm'))
         cuda=self.plan(runtime(gpu=24,free=22,ram=64,available=48))

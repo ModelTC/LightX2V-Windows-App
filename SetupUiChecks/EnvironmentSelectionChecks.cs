@@ -8,11 +8,11 @@ using LightX2V.Windows;
 
 internal static partial class Program
 {
-    static EnvironmentCandidate Valid(string path) => new(path, true, "AMD Radeon 8060S · 2.11.0+rocm7.13.0")
+    static EnvironmentCandidate Valid(string path) => new(path, true, "AMD Radeon 8060S · 2.11.0+rocm7.14.1")
     {
         PythonVersion = "3.12.10",
-        TorchVersion = "2.11.0+rocm7.13.0",
-        HipVersion = "7.13.0",
+        TorchVersion = "2.11.0+rocm7.14.1",
+        HipVersion = "7.14.1",
         Device = "AMD Radeon 8060S",
         Packages = new Dictionary<string, string>
         {
@@ -51,7 +51,7 @@ internal static partial class Program
             new DriverSetupModel("amd_rocm", () => settings.Workspace, L10n.Current, new FakeDriverPlatform()));
         await model.SearchAsync();
         Check(model.Candidates.Count == 2 && model.Candidates[0].Ready && model.Summary.Contains("1"), "Search shows every result with compatible candidates first and the correct count");
-        Check(model.Candidates[0].VersionRows.Count == 4 && model.Requirements.Contains("2.11.0+rocm7.13.0") && !model.Requirements.Contains("MPS"), "Dependency cards show the pinned AMD profile and package versions");
+        Check(model.Candidates[0].VersionRows.Count == 4 && model.Requirements.Contains("2.11.0+rocm7.14.1") && !model.Requirements.Contains("MPS"), "Dependency cards show the pinned AMD profile and package versions");
         model.SelectCommand.Execute(invalid);
         Check(model.Selected == null, "An incompatible result cannot be selected");
         model.SelectCommand.Execute(valid);

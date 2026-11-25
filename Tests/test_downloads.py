@@ -679,7 +679,7 @@ class RangeTests(unittest.TestCase):
             block=bytes(range(256))*4096
             with source.open('wb') as output:
                 for _ in range(70):output.write(block)
-            requests=[];bad=[False]
+            requests=[];bad=[False]; interrupted=threading.Event()
             class Handler(BaseHTTPRequestHandler):
                 def do_GET(self):
                     first,last=map(int,self.headers['Range'].split('=')[1].split('-'))
@@ -689,6 +689,11 @@ class RangeTests(unittest.TestCase):
                     self.end_headers()
                     with source.open('rb') as stream:
                         stream.seek(first);remaining=last-first+1
+                        if first == 32*1024**2 and not interrupted.is_set():
+                            interrupted.set()
+                            self.wfile.write(stream.read(2*1024**2))
+                            self.wfile.flush()
+                            return
                         while remaining:
                             data=stream.read(min(1024**2,remaining));self.wfile.write(data);remaining-=len(data)
                 def log_message(self,*args):pass
@@ -702,6 +707,8 @@ class RangeTests(unittest.TestCase):
                 transferred=[0]
                 self.assertTrue(parallel_download(spec,target,lambda:None,lambda *a:None,transferred))
                 self.assertEqual(hashlib.sha256(target.read_bytes()).digest(),hashlib.sha256(source.read_bytes()).digest())
+                self.assertTrue(interrupted.is_set())
+                self.assertIn((34*1024**2,64*1024**2-1),requests)
                 self.assertNotIn((0,32*1024**2-1),requests)
                 self.assertEqual(transferred[0],38*1024**2)
                 # A second invocation uses the persisted coverage bitmap.

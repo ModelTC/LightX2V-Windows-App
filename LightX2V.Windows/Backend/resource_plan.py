@@ -369,7 +369,6 @@ def plan_resources(model_path, runtime, width, height, task='t2i', policy=None, 
     strategy, dit_stream, text_stream, tile, vae_work, host_peak, gpu_peak, shared_peak, feasible = chosen
     cpu_offload = strategy != 'full_resident'
     granularity = 'block' if strategy in ('block_offload', 'ssd_streaming') else 'model'
-    pin = bool(cpu_offload and not shared and not dit_stream and not text_stream and host_peak + largest_load <= host_budget * .7)
     reasons = ['Shared accelerator memory uses one physical pool, bounded by the smaller available view.' if shared else
                'Separate host and accelerator budgets use their current available memory.']
     reasons.append({'full_resident': 'All effective weights and estimated workspaces fit on the accelerator.',
@@ -398,7 +397,7 @@ def plan_resources(model_path, runtime, width, height, task='t2i', policy=None, 
         'dit_streaming': dit_stream, 'text_encoder_streaming': text_stream,
         'dit_storage': 'ssd' if dit_stream else 'cpu' if cpu_offload else 'resident',
         'text_encoder_storage': 'ssd' if text_stream else 'cpu' if cpu_offload else 'resident',
-        'pin_host_weights': pin, 'config_changes': config_changes,
+        'config_changes': config_changes,
         'gpu_budget_bytes': gpu_budget, 'host_budget_bytes': host_budget,
         'shared_budget_bytes': shared_budget, 'stream_cache_bytes': 0,
         'runtime': dict(runtime), 'policy': p, 'model': inventory, 'reasons': reasons,

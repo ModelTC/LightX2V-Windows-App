@@ -70,6 +70,10 @@ def main():
         from checkpoint_io import install_windows_checkpoint_io
         startup["checkpoint_io"] = install_windows_checkpoint_io()
         _write_json(folder / "worker-start.json", startup)
+        if os.environ.get("PLATFORM") == "amd_rocm":
+            import torch
+            from runtime_profile import configure_attention
+            configure_attention(torch, "amd_rocm")
         config = json.loads(config_path.read_text(encoding="utf-8-sig"))
         from adaptive_streaming import install as install_streaming, install_request_lifecycle
         install_streaming(config)

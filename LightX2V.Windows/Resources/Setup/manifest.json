@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "profile": "native-amd-gfx1151-v1",
+  "profile": "native-amd-gfx1151-v2",
   "python": {
     "name": "python",
     "version": "3.12.10",
@@ -783,56 +783,101 @@
     },
     {
       "name": "rocm",
-      "version": "7.13.0",
-      "file": "rocm-7.13.0.tar.gz",
-      "url": "https://repo.amd.com/rocm/whl/gfx1151/rocm-7.13.0.tar.gz",
-      "sha256": "cd1d876484f90094973e18ba02a9d06170677279f701aa32e6f5dcb13f01e25d",
-      "size": 18082,
+      "version": "7.14.1",
+      "file": "rocm-7.14.1.tar.gz",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/rocm-7.14.1.tar.gz",
+      "sha256": "ffea97f6a9da9987a9260f9e635995b27a44dd6985d1b2b1663431356aaf669b",
+      "size": 24350,
       "group": "dependency"
     },
     {
       "name": "rocm-sdk-core",
-      "version": "7.13.0",
-      "file": "rocm_sdk_core-7.13.0-py3-none-win_amd64.whl",
-      "url": "https://repo.amd.com/rocm/whl/gfx1151/rocm_sdk_core-7.13.0-py3-none-win_amd64.whl",
-      "sha256": "92156a2c29bc038ab89aea80dfc1bb2081b5e1d66f18dc89f487acc9e991cd40",
-      "size": 722813969,
+      "version": "7.14.1",
+      "file": "rocm_sdk_core-7.14.1-py3-none-win_amd64.whl",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/rocm_sdk_core-7.14.1-py3-none-win_amd64.whl",
+      "sha256": "49eb83cb89d50562944a1f0eaf65f4e21f4557813de53e78d022fee81bbfb6e7",
+      "size": 758745858,
       "group": "dependency"
     },
     {
-      "name": "rocm-sdk-libraries-gfx1151",
-      "version": "7.13.0",
-      "file": "rocm_sdk_libraries_gfx1151-7.13.0-py3-none-win_amd64.whl",
-      "url": "https://repo.amd.com/rocm/whl/gfx1151/rocm_sdk_libraries_gfx1151-7.13.0-py3-none-win_amd64.whl",
-      "sha256": "616cfdfe1d33653fdf90ce357b78f362d055ca38219e88a8a6ba85295a0d29bd",
-      "size": 234460689,
+      "name": "rocm-sdk-libraries",
+      "version": "7.14.1",
+      "file": "rocm_sdk_libraries-7.14.1-py3-none-win_amd64.whl",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/rocm_sdk_libraries-7.14.1-py3-none-win_amd64.whl",
+      "sha256": "f5f639b488e3e78a44bebba786e917a98c4386001a3fa2a27393a9ce97e2a32d",
+      "size": 115912267,
+      "group": "dependency"
+    },
+    {
+      "name": "rocm-sdk-device-gfx1151",
+      "version": "7.14.1",
+      "file": "rocm_sdk_device_gfx1151-7.14.1-py3-none-win_amd64.whl",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/rocm_sdk_device_gfx1151-7.14.1-py3-none-win_amd64.whl",
+      "sha256": "8ea906238b6247ce8230bc7a02ab99d410fbae524e3c1ce57e6457c9229ff79a",
+      "size": 138414354,
+      "group": "dependency"
+    },
+    {
+      "name": "amd-torch-device-gfx1151",
+      "version": "2.11.0+rocm7.14.1",
+      "file": "amd_torch_device_gfx1151-2.11.0+rocm7.14.1-cp312-cp312-win_amd64.whl",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/amd_torch_device_gfx1151-2.11.0%2Brocm7.14.1-cp312-cp312-win_amd64.whl",
+      "sha256": "67a517cd86cc00e053ded7b4824e8b0c475b4f0e5ee295dd66187924e099b7bd",
+      "size": 49737987,
+      "group": "dependency"
+    },
+    {
+      "name": "amd-torch-device-gfx115x",
+      "version": "2.11.0+rocm7.14.1",
+      "file": "amd_torch_device_gfx115x-2.11.0+rocm7.14.1-cp312-cp312-win_amd64.whl",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/amd_torch_device_gfx115x-2.11.0%2Brocm7.14.1-cp312-cp312-win_amd64.whl",
+      "sha256": "c662762bc67ad33a828be476ca6371a012fd3f4b356f3a82e0921eae54c6dbfe",
+      "size": 187800926,
       "group": "dependency"
     },
     {
       "name": "torch",
-      "version": "2.11.0+rocm7.13.0",
-      "file": "torch-2.11.0+rocm7.13.0-cp312-cp312-win_amd64.whl",
-      "url": "https://repo.amd.com/rocm/whl/gfx1151/torch-2.11.0%2Brocm7.13.0-cp312-cp312-win_amd64.whl",
-      "sha256": "29e5468c7d1016a6d4cda5eca1fc26cbf9be1b220fc1d2f17189b41f8c10b8e1",
-      "size": 631515586,
+      "version": "2.11.0+rocm7.14.1",
+      "file": "torch-2.11.0+rocm7.14.1-cp312-cp312-win_amd64.whl",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/torch-2.11.0%2Brocm7.14.1-cp312-cp312-win_amd64.whl",
+      "sha256": "a82e9ac627d5735c9c17db257a2a1683e579d90a48dc192ca5ed9e9cd7932df0",
+      "size": 114353306,
       "group": "dependency"
     },
     {
       "name": "torchaudio",
-      "version": "2.11.0+rocm7.13.0",
-      "file": "torchaudio-2.11.0+rocm7.13.0-cp312-cp312-win_amd64.whl",
-      "url": "https://repo.amd.com/rocm/whl/gfx1151/torchaudio-2.11.0%2Brocm7.13.0-cp312-cp312-win_amd64.whl",
-      "sha256": "dc58ba7c7f714f0a57c4d2ed77b448f75cc58c30cadc4710424b01df0b820a1d",
-      "size": 336715,
+      "version": "2.11.0+rocm7.14.1",
+      "file": "torchaudio-2.11.0+rocm7.14.1-cp312-cp312-win_amd64.whl",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/torchaudio-2.11.0%2Brocm7.14.1-cp312-cp312-win_amd64.whl",
+      "sha256": "d9e34c1af65bb877d392ec3d3b1f1a1e6e6d563bad02d7bc79fada0b99ec1380",
+      "size": 336647,
       "group": "dependency"
     },
     {
       "name": "torchvision",
-      "version": "0.26.0+rocm7.13.0",
-      "file": "torchvision-0.26.0+rocm7.13.0-cp312-cp312-win_amd64.whl",
-      "url": "https://repo.amd.com/rocm/whl/gfx1151/torchvision-0.26.0%2Brocm7.13.0-cp312-cp312-win_amd64.whl",
-      "sha256": "62d7f35b32a1423df16e0d1fbd9a6d9bc7e9f5588481dd974a6a830ec3a2cdec",
-      "size": 1169096,
+      "version": "0.26.0+rocm7.14.1",
+      "file": "torchvision-0.26.0+rocm7.14.1-cp312-cp312-win_amd64.whl",
+      "url": "https://repo.amd.com/rocm/whl-multi-arch/torchvision-0.26.0%2Brocm7.14.1-cp312-cp312-win_amd64.whl",
+      "sha256": "6b0729c322b01330d374c0dfd8e1685e453d6780e333e2b5326c970a75824290",
+      "size": 1043373,
+      "group": "dependency"
+    },
+    {
+      "name": "rocm-bootstrap",
+      "version": "0.3.0",
+      "file": "rocm_bootstrap-0.3.0-py3-none-any.whl",
+      "url": "https://files.pythonhosted.org/packages/0c/b6/30144880b8e2bad4e9991b08352c7cec17931b5d26b1f9108192f4f17d91/rocm_bootstrap-0.3.0-py3-none-any.whl",
+      "sha256": "62d0160ecdd86f7132dbab9aec257cb2c96327df2592b0633aa6bb56399cc095",
+      "size": 30532,
+      "group": "dependency"
+    },
+    {
+      "name": "triton-windows",
+      "version": "3.6.0.post26",
+      "file": "triton_windows-3.6.0.post26-cp312-cp312-win_amd64.whl",
+      "url": "https://files.pythonhosted.org/packages/62/1e/8d9814e67ba3f20094cf3c69e7815a491f20beb86469a647550ba86728b0/triton_windows-3.6.0.post26-cp312-cp312-win_amd64.whl",
+      "sha256": "189d8c57911aa9d2ff983a715e5c967b325f576307db60924cab22b501a36515",
+      "size": 47402104,
       "group": "dependency"
     }
   ],
@@ -840,8 +885,7 @@
     "version": "0.6.1",
     "revision": "43c6a11bb65b7357f06e9603fa92249bc16b484e",
     "archive": "lightx2v-native.zip",
-    "sha256": "124fc1b916bdd0656a25976754c4fe1579d591b0785380bfd3e416997dcd6f39",
-    "upstreamArchiveSha256": "6f7f5e8f7b501aefa70bfab019f53ff07b1c216502ca2220f16009b5e10cc126",
-    "patchSha256": "e5fbcaf9795165ae21af87d1de05ee5940a27a0eb29422c80524a82f96f47b83"
+    "sha256": "565e15221063a169729c3924708f35f6ec8a0d1b4700ceb525aaa7ddc421f811",
+    "upstreamArchiveSha256": "6f7f5e8f7b501aefa70bfab019f53ff07b1c216502ca2220f16009b5e10cc126"
   }
 }

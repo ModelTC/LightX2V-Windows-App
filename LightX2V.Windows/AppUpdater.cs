@@ -138,31 +138,24 @@ internal static partial class AppUpdater
 
     static async Task DownloadAsync(string path, UpdateRelease release, IProgress<double> progress, CancellationToken token)
     {
-        using var response = await http.GetAsync(release.Download, HttpCompletionOption.ResponseHeadersRead, token);
-        response.EnsureSuccessStatusCode();
-        if (response.Content.Headers.ContentLength is long length && length != release.Size)
-            throw new InvalidDataException("The downloaded update does not match the release checksum.");
-        await using var input = await response.Content.ReadAsStreamAsync(token);
-        await using var output = File.Create(path);
-        using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        var buffer = new byte[128 * 1024];
-        long received = 0;
-        var clock = Stopwatch.StartNew();
-        int read;
-        while ((read = await input.ReadAsync(buffer, token)) > 0)
+        var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "LightX2V-update-cache", release.Digest);
+        Directory.CreateDirectory(cache);
+        using var gate = new FileStream(Path.Combine(cache, "download.lock"), FileMode.OpenOrCreate,
+            FileAccess.ReadWrite, FileShare.None, 1, FileOptions.DeleteOnClose);
+        var artifact = new SetupArtifact { File = AssetName, Size = release.Size, Sha256 = release.Digest,
+            Url = release.Download.AbsoluteUri };
+        var archive = await SetupInstaller.Download(artifact, cache, [], false, new UpdateProgress(progress), token);
+        File.Move(archive, path);
+    }
+
+    sealed class UpdateProgress(IProgress<double> target) : IProgress<SetupProgress>
+    {
+        public void Report(SetupProgress value)
         {
-            received += read;
-            if (received > release.Size) throw new InvalidDataException("The downloaded update does not match the release checksum.");
-            digest.AppendData(buffer.AsSpan(0, read));
-            await output.WriteAsync(buffer.AsMemory(0, read), token);
-            if (clock.ElapsedMilliseconds >= 100)
-            {
-                progress.Report((double)received / release.Size * 100);
-                clock.Restart();
-            }
+            if (value.TotalBytes > 0)
+                target.Report(100.0 * value.CompletedBytes / value.TotalBytes);
         }
-        if (received != release.Size || !DigestMatches(digest.GetHashAndReset(), release.Digest))
-            throw new InvalidDataException("The downloaded update does not match the release checksum.");
     }
 
     internal static void StageArchive(string archive, string destination, string commit, CancellationToken token)
