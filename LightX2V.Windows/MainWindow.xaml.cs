@@ -51,7 +51,6 @@ public partial class MainWindow : Window
             // validates its environment, with cancellation and visible progress.
             Action setup=requestStartupSetup??(()=>vm.RequestSetup?.Invoke());
             if(vm.NeedsInitialSetup)_ = Dispatcher.BeginInvoke(setup);
-            else if(!vm.RequiredModelsReady){vm.Setup.ResumeModels();_ = Dispatcher.BeginInvoke(setup);}
         };
         Closing += async (_, e) =>
         {

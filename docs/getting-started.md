@@ -8,7 +8,7 @@ This is an unsigned preview build. The release page provides the package SHA-256
 
 ## Complete first-time setup
 
-The Windows four-step assistant is retained: choose a workspace, prepare the computer, download required image files, then start creating. Hardware scanning, official driver guidance, checked environment selection and automatic installation keep their existing flow. Only the base image model is required; no sample generation is required. Finishing preparation selects Standard.
+The Windows four-step assistant is retained: choose a workspace, prepare the computer, download required image files, then start creating. Hardware scanning, official driver guidance, checked environment selection and automatic installation keep their existing flow. Choose **Skip for now** to enter the workspace without downloading a model. When you want to generate images, download the base image model from the right sidebar. Finishing preparation selects Standard.
 
 For later changes, **General settings** uses three compact cards: language, workspace and PyTorch environment. Environment search and preview preparation do not switch your active workspace until you save. Environment search and installation open in a separate dialog. WSL and a system CUDA Toolkit are not required; the portable package includes .NET.
 

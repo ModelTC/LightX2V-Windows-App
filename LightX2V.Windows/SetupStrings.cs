@@ -4,15 +4,16 @@ internal static class SetupStrings
     public static readonly IReadOnlyDictionary<string,string> Chinese=new Dictionary<string,string>
     {
         ["Graphics detection could not finish. Your driver may already be installed. Scan again."]="显卡检测暂未完成，这不代表驱动没有安装。请重新扫描。",
+        ["Skip for now"]="暂时跳过",
         ["Setup complete"]="配置完成",
         ["Start creating"]="开始创作",
         ["You're all set. Let your ideas take shape!"]="准备就绪，开始创作吧！",
-        ["Congratulations! Your local environment and model files are ready."]="恭喜你，已完成全部配置！本机运行环境和所需模型都已准备好。",
+        ["Your workspace and local environment are ready."]="工作区和本机运行环境已准备好。",
         ["Your next creation starts with a spark of imagination."]="下一张好作品，就从你的第一个灵感开始。",
         ["Choose Start creating to enter the workspace and describe the image you imagine."]="点击「开始创作」进入工作区，自由描述你想生成的画面。",
         ["Download automatically"]="自动下载",
         ["Automatic (recommended)"]="自动（推荐）",
-        ["The base model is all you need to start creating. Download optional prompt enhancement models later from the right sidebar in the workspace."]="基础模型准备好即可开始生图。之后可在主界面右侧栏按需下载提示词增强模型。",
+        ["You can skip this download. When you want to create images, download the model from the right sidebar in the workspace."]="可以跳过此步。想生成图片时，再到工作区右侧栏下载所需模型。",
         ["Download required files automatically"]="一键下载所需模型",
         ["Retry automatic download"]="重试自动下载",
         ["Retry download"]="重试下载",

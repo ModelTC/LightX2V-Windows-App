@@ -86,8 +86,14 @@ internal static partial class Program
         fixture=StartupFixture("startup-install-amd","amd_rocm");
         using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
+            var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();var wizard=host.Wizard!;
             await vm.Setup.BeginWorkspaceAsync();await vm.Setup.PrepareEnvironmentAsync(true);
             Check(vm.Ready&&vm.Setup.Page==2&&vm.Setup.Selected?.Backend=="amd_rocm"&&fixture.Catalog.SearchCalls==1&&fixture.Catalog.InstalledProbeCalls==1,"AMD preparation also publishes and selects its verified environment without another search");
+            var skip=Children<Button>((DependencyObject)wizard.Content).Single(b=>AutomationProperties.GetAutomationId(b)=="SetupSkipModels");
+            Check(skip.Visibility==Visibility.Visible&&skip.IsEnabled,"Model download can be deferred");
+            ClickOffscreen(skip);Check(vm.Setup.Page==3,"Skipping advances to the completion page");
+            ClickOffscreen(CompletionAction(wizard));await startup;
+            Check(host.WorkspaceShows==1&&!vm.RequiredModelsReady&&!vm.CanGenerate&&vm.TurboCard.DownloadCommand.CanExecute(null),"The workspace opens with on-demand download available and image generation gated");
         }
         fixture=StartupFixture("startup-cancel-probe");fixture.Catalog.DelayProbe=true;
         using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
@@ -117,7 +123,7 @@ internal static partial class Program
         fixture=StartupFixture("startup-resume-models");fixture.Settings.Python=fixture.Catalog.InstallResult;Files.Write(Path.Combine(fixture.Preferences,"preferences.json"),new Preferences{Settings=fixture.Settings});
         using(var vm=new MainViewModel(fixture.Preferences,modelDiscovery:new ModelDiscovery([],[])))
         {
-            var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();Check(!vm.NeedsInitialSetup&&!vm.RequiredModelsReady&&host.SetupShows==1&&host.WorkspaceShows==0,"Restarting after environment installation still shows only setup while model files are missing");host.Wizard!.Close();await startup;
+            var host=new StartupHost();await new StartupCoordinator(vm,host).StartAsync();Check(!vm.NeedsInitialSetup&&!vm.RequiredModelsReady&&host.SetupShows==0&&host.WorkspaceShows==1,"A configured workspace reopens without requiring a model download");
         }
         TinyTurbo(fixture.Settings.Model);fixture.Settings.EnhancementEnabled=true;Files.Write(Path.Combine(fixture.Preferences,"preferences.json"),new Preferences{Settings=fixture.Settings});
         using(var vm=new MainViewModel(fixture.Preferences,modelDiscovery:new ModelDiscovery([],[])))

@@ -13,7 +13,7 @@ public sealed class StartupCoordinator(MainViewModel model,IStartupHost host)
 {
     public async Task StartAsync()
     {
-        if((model.NeedsInitialSetup||!model.RequiredModelsReady)&&!await host.ShowSetupAsync(model))
+        if(model.NeedsInitialSetup&&!await host.ShowSetupAsync(model))
         {
             model.Dispose();host.Exit();return;
         }

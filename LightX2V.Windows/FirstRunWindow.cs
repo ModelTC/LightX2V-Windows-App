@@ -10,7 +10,7 @@ namespace LightX2V.Windows;
 public sealed class FirstRunWindow : Window
 {
     readonly ComputerPreparationPanel computer;readonly MainViewModel owner;readonly SetupController setup;readonly StackPanel[] pages=new StackPanel[4];
-    readonly Button next,back,close;readonly ProgressBar progress;readonly List<Control> locked=[];
+    readonly Button next,back,close,skip;readonly ProgressBar progress;readonly List<Control> locked=[];
     readonly Border[] stepFaces=new Border[4],stepDots=new Border[4];readonly TextBlock[] steps=new TextBlock[4],numbers=new TextBlock[4];
     readonly TextBlock counter;readonly Border statusCard;readonly TextBlock detail;bool closing,refreshing;
     public bool Completed {get;private set;}
@@ -58,12 +58,12 @@ public sealed class FirstRunWindow : Window
         var downloadBox=new StackPanel();var automatic=SetupUi.Button(this,"Download required files automatically",true,"SetupDownloadModels");automatic.Command=owner.RequiredModelsDownloadCommand;automatic.SetBinding(ContentControl.ContentProperty,"RequiredDownloadLabel");automatic.HorizontalAlignment=HorizontalAlignment.Left;automatic.MinWidth=190;downloadBox.Children.Add(automatic);
         var downloadSummary=new TextBlock{FontSize=12,TextWrapping=TextWrapping.Wrap,Foreground=SetupUi.Muted,Margin=new Thickness(0,10,0,0)};downloadSummary.SetBinding(TextBlock.TextProperty,"ModelDownloadSummary");System.Windows.Automation.AutomationProperties.SetAutomationId(downloadSummary,"SetupDownloadSummary");downloadBox.Children.Add(downloadSummary);pages[2].Children.Add(SetupUi.Card(downloadBox));
         var template=(DataTemplate)FindResource("ModelCardTemplate");pages[2].Children.Add(new ContentControl{Content=owner.TurboCard,ContentTemplate=template});
-        AddHint(pages[2],"The base model is all you need to start creating. Download optional prompt enhancement models later from the right sidebar in the workspace.");
+        AddHint(pages[2],"You can skip this download. When you want to create images, download the model from the right sidebar in the workspace.");
         var celebration=new StackPanel{Margin=new Thickness(8,24,8,24)};System.Windows.Automation.AutomationProperties.SetAutomationId(celebration,"SetupCompletion");
         var emblem=new Grid{Width=76,Height=76,HorizontalAlignment=HorizontalAlignment.Center};emblem.Children.Add(new Border{Width=64,Height=64,CornerRadius=new CornerRadius(19),Background=SetupUi.Subtle,Child=new Image{Source=(ImageSource)Application.Current.FindResource("Sparkles"),Width=32,Height=38}});
         emblem.Children.Add(new Border{Width=24,Height=24,CornerRadius=new CornerRadius(12),Background=SetupUi.Green,BorderBrush=Brushes.White,BorderThickness=new Thickness(2),HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Child=new TextBlock{Text="✓",FontSize=14,Foreground=Brushes.White,TextAlignment=TextAlignment.Center,VerticalAlignment=VerticalAlignment.Center}});celebration.Children.Add(emblem);
         var congratulations=SetupUi.Text("You're all set. Let your ideas take shape!",21,true);congratulations.TextAlignment=TextAlignment.Center;congratulations.Margin=new Thickness(0,22,0,0);System.Windows.Automation.AutomationProperties.SetAutomationId(congratulations,"SetupCongratulations");celebration.Children.Add(congratulations);
-        var ready=SetupUi.Text("Congratulations! Your local environment and model files are ready.",12,false,true);ready.TextAlignment=TextAlignment.Center;ready.Margin=new Thickness(0,14,0,0);celebration.Children.Add(ready);
+        var ready=SetupUi.Text("Your workspace and local environment are ready.",12,false,true);ready.TextAlignment=TextAlignment.Center;ready.Margin=new Thickness(0,14,0,0);celebration.Children.Add(ready);
         var inspiration=SetupUi.Text("Your next creation starts with a spark of imagination.",13);inspiration.TextAlignment=TextAlignment.Center;inspiration.Margin=new Thickness(0,16,0,0);celebration.Children.Add(inspiration);
         var startHint=SetupUi.Text("Choose Start creating to enter the workspace and describe the image you imagine.",11,false,true);startHint.TextAlignment=TextAlignment.Center;startHint.Margin=new Thickness(0,20,0,0);celebration.Children.Add(startHint);pages[3].Children.Add(celebration);
         var statusBody=new StackPanel();var status=new TextBlock{FontSize=12,FontWeight=FontWeights.SemiBold};status.SetBinding(TextBlock.TextProperty,"Setup.Stage");statusBody.Children.Add(status);
@@ -71,7 +71,12 @@ public sealed class FirstRunWindow : Window
         progress=new ProgressBar{Height=3,Maximum=100,Foreground=SetupUi.Ink,Background=SetupUi.Line,Margin=new Thickness(0,10,0,0)};progress.SetBinding(System.Windows.Controls.Primitives.RangeBase.ValueProperty,new Binding("Setup.Percent"){Mode=BindingMode.OneWay});statusBody.Children.Add(progress);statusCard=SetupUi.Card(statusBody);body.Children.Add(statusCard);
         var error=new TextBlock{Foreground=new SolidColorBrush(Color.FromRgb(164,81,69)),TextWrapping=TextWrapping.Wrap,Margin=new Thickness(0,0,0,12)};error.SetBinding(TextBlock.TextProperty,"Setup.Error");error.SetBinding(VisibilityProperty,new Binding("Setup.Error"){Converter=(IValueConverter)Application.Current.FindResource("NonEmpty")});body.Children.Add(error);
         var footerRow=new Grid();footerRow.ColumnDefinitions.Add(new());footerRow.ColumnDefinitions.Add(new(){Width=GridLength.Auto});back=SetupUi.Button(this,"Back",false,"SetupBack");back.HorizontalAlignment=HorizontalAlignment.Left;back.Click+=(_,_)=>{setup.Page--;Refresh();};footerRow.Children.Add(back);
-        var right=new StackPanel{Orientation=Orientation.Horizontal};Grid.SetColumn(right,1);footerRow.Children.Add(right);close=SetupUi.Button(this,"Close",false,"SetupClose");close.Margin=new Thickness(0,0,10,0);close.Click+=async(_,_)=>{if(setup.Busy||setup.Driver.Busy||owner.IsRunning||owner.IsDownloading)await setup.CancelAsync();else Close();};right.Children.Add(close);next=SetupUi.Button(this,"Continue",true,"SetupContinue");next.MinWidth=100;next.Click+=async(_,_)=>await Next();right.Children.Add(next);var footer=SetupUi.Footer(footerRow);Grid.SetRow(footer,2);root.Children.Add(footer);
+        var right=new StackPanel{Orientation=Orientation.Horizontal};Grid.SetColumn(right,1);footerRow.Children.Add(right);close=SetupUi.Button(this,"Close",false,"SetupClose");close.Margin=new Thickness(0,0,10,0);close.Click+=async(_,_)=>{if(setup.Busy||setup.Driver.Busy||owner.IsRunning||owner.IsDownloading)await setup.CancelAsync();else Close();};right.Children.Add(close);
+        skip=SetupUi.Button(this,"Skip for now",false,"SetupSkipModels");
+        skip.Margin=new Thickness(0,0,10,0);
+        skip.Click+=(_,_)=>setup.Page=3;
+        right.Children.Add(skip);
+        next=SetupUi.Button(this,"Continue",true,"SetupContinue");next.MinWidth=100;next.Click+=async(_,_)=>await Next();right.Children.Add(next);var footer=SetupUi.Footer(footerRow);Grid.SetRow(footer,2);root.Children.Add(footer);
         locked.AddRange([workspace,choose,language]);setup.PropertyChanged+=Changed;owner.PropertyChanged+=Changed;owner.T.PropertyChanged+=Changed;
         Closing+=async(_,e)=>{if(closing||!setup.Busy&&!setup.Driver.Busy&&!owner.IsDownloading&&!owner.IsRunning)return;e.Cancel=true;closing=true;await setup.CancelAsync();while(setup.Busy||setup.Driver.Busy||owner.IsRunning||owner.IsDownloading)await Task.Delay(50);Close();};
         Closed+=(_,_)=>{setup.StopEnvironmentSearch();setup.StopModelSearch();computer.Dispose();setup.PropertyChanged-=Changed;owner.PropertyChanged-=Changed;owner.T.PropertyChanged-=Changed;};Loaded+=async(_,_)=>{if(standalone&&!owner.NeedsInitialSetup)await setup.ResumeStartupAsync();if(!closing&&setup.Page==1&&!setup.ComputerScanned&&!setup.Busy)await setup.ScanComputerAsync();};Refresh();
@@ -91,6 +96,8 @@ public sealed class FirstRunWindow : Window
             }
             var busy=setup.Busy||setup.Driver.Busy||owner.IsRunning||owner.IsDownloading||owner.IsChecking;foreach(var control in locked)control.IsEnabled=!busy&&!(System.Windows.Automation.AutomationProperties.GetAutomationId(control)=="BackendPicker"&&setup.Driver.Pending);back.IsEnabled=!busy&&setup.Page>0&&!setup.Driver.Pending;
             statusCard.Visibility=busy&&!(setup.Page==2&&owner.IsDownloading)?Visibility.Visible:Visibility.Collapsed;detail.Visibility=busy?Visibility.Visible:Visibility.Collapsed;progress.Visibility=busy?Visibility.Visible:Visibility.Collapsed;progress.IsIndeterminate=owner.IsRunning||owner.IsDownloading||owner.IsChecking||setup.Busy&&setup.Percent<=0;
+            skip.Visibility=setup.Page==2&&!owner.RequiredModelsReady?Visibility.Visible:Visibility.Collapsed;
+            skip.IsEnabled=!busy;
             close.Visibility=setup.Page==3?Visibility.Collapsed:Visibility.Visible;
             close.Content=owner.T[setup.Busy||setup.Driver.Busy||owner.IsRunning||owner.IsDownloading?"Stop":"Close"];
             next.IsEnabled=!busy&&(setup.Page!=1||!setup.ComputerScanned||!setup.Driver.CanContinue||setup.CanReuseEnvironment||setup.CanDownloadEnvironment);
