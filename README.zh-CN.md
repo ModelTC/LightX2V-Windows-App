@@ -11,6 +11,8 @@
 | Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-Setup.exe) | [`bfaf065`](https://github.com/ModelTC/LightX2V-Windows-App/commit/bfaf065cb17f87b1609b492220815e39b230f945) | 2026-11-28 12:57 |
 | Stable | 尚未提供 | — | — |
 
+**使用 Microsoft Edge 下载时**，如果看到“通常不会下载 LightX2V-Setup.exe”，请先确认安装程序来自[本仓库的官方发布页](https://github.com/ModelTC/LightX2V-Windows-App/releases)。在 Edge 的下载列表中，将鼠标移到 `LightX2V-Setup.exe` 上，点击文件右侧的 **…**，选择 **保留**。如果 Edge 再次询问，展开 **显示详细信息**，然后点击 **仍然保留**。
+
 应用内置 LightX2V 源码、llama.cpp 和 .NET。模型权重与兼容的 Python 环境可在应用中单独准备。
 
 每个通道保留一个安装包。更新 Stable 时替换原包，日常构建更新 Latest。
