@@ -28,7 +28,9 @@ public sealed class EnvironmentSelectionModel : Observable,IDisposable
     public DriverSetupModel Driver {get;}
     HardwareInfo hardware=>Driver.Hardware;
     public bool ManagedSupported=>supportOverride??hardware.Supports(Backend);
-    public string Backend {get=>Backends.Resolve(settings.Backend,hardware);set{if(Busy||Driver.Pending||Backend==value)return;settings.Backend=value;Driver.Backend=value;Candidates.Clear();Selected=null;searched=false;Changed();foreach(var name in new[]{nameof(ManagedSupported),nameof(CanInstall),nameof(Requirements),nameof(ManagedDescription),nameof(Summary)})Changed(name);}}
+    public string Backend=>Driver.Backend;
+    public string BackendLabel=>hardware.Backend.Length==0&&!Driver.Pending?T["Graphics card not identified yet"]:Backends.Label(Backend);
+
     public ObservableCollection<EnvironmentCandidate> Candidates {get;}=[];
     public EnvironmentCandidate? Selected {get;private set;}
     public Action<EnvironmentCandidate>? Chosen;
@@ -49,7 +51,7 @@ public sealed class EnvironmentSelectionModel : Observable,IDisposable
     public ParameterCommand SelectCommand {get;}
     public EnvironmentSelectionModel(AppSettings settings,L10n language,bool? managedSupported=null,IEnvironmentCatalog? catalog=null,DriverSetupModel? driver=null)
     {
-        this.settings=settings.Clone();T=language;this.catalog=catalog??new NativeEnvironmentCatalog();supportOverride=managedSupported;Driver=driver??new DriverSetupModel(Backends.Resolve(settings.Backend),()=>this.settings.Workspace,language);Driver.PropertyChanged+=DriverChanged;Mirror=T.Language=="zh";
+        this.settings=settings.Clone();T=language;this.catalog=catalog??new NativeEnvironmentCatalog();supportOverride=managedSupported;Driver=driver??new DriverSetupModel(Backends.Resolve("auto",HardwareInfo.Refresh()),()=>this.settings.Workspace,language);Driver.PropertyChanged+=DriverChanged;Mirror=T.Language=="zh";
         this.settings.Backend=Driver.Backend;
         SelectCommand=new(value=>{if(value is EnvironmentCandidate candidate&&candidate.Ready&&candidate.Backend==Backend&&!Busy&&Candidates.Contains(candidate)){Selected=candidate;Chosen?.Invoke(candidate);}});
         T.PropertyChanged+=LanguageChanged;

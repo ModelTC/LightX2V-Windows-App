@@ -13,7 +13,7 @@ internal static class DriverStrings
         ["There is not enough disk space. Free up space or choose another save location, then try again."]="磁盘空间不足。请清理一些文件，或换一个保存位置，再重新尝试。",
         ["The graphics software needs an update. Finish the graphics software step above, then check again."]="显卡软件需要更新。请先完成上面的显卡软件安装，再重新检查。",
         ["We could not finish preparing this computer. Try again; the setup log below contains the details."]="这次暂时没准备完成，可以重新尝试。下方的“准备日志”保留了详细原因。",
-        ["1 · Prepare your graphics card"]="1 · 检查显卡软件",
+        ["Check graphics software"]="检查显卡软件",
         ["2 · Prepare the image-generation components"]="2 · 准备生成图片需要的组件",
         ["Checking your graphics software"]="正在检查电脑，请稍等…",
         ["Working"]="正在处理",

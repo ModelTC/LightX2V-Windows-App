@@ -8,7 +8,7 @@ namespace LightX2V.Windows;
 public sealed class DriverSetupCard : Border,IDisposable
 {
     readonly DriverSetupModel model;readonly bool showReadyDetails;readonly TextBlock title,status,message,error,progressLabel,steps;readonly Button install,recheck,page,stop,reset;readonly StackPanel help;readonly ProgressBar progress;readonly TextBlock device;
-    public DriverSetupCard(Window window,DriverSetupModel model,bool autoCheck=true,string headingKey="1 · Prepare your graphics card",bool showReadyDetails=true)
+    public DriverSetupCard(Window window,DriverSetupModel model,bool autoCheck=true,string headingKey="Check graphics software",bool showReadyDetails=true)
     {
         this.model=model;this.showReadyDetails=showReadyDetails;DataContext=model;VerticalAlignment=VerticalAlignment.Top;Background=Brushes.White;BorderBrush=SetupUi.Line;BorderThickness=new Thickness(1);CornerRadius=new CornerRadius(13);Padding=new Thickness(18);Margin=new Thickness(0,0,0,14);
         System.Windows.Automation.AutomationProperties.SetAutomationId(this,"DriverSetupCard");

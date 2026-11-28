@@ -12,7 +12,7 @@ public sealed class EnvironmentPickerWindow : Window
     public EnvironmentSelectionModel Model {get;}
     public EnvironmentCandidate? Result {get;private set;}
     readonly Button search,close,install,choose,manual;readonly Border activity,empty;readonly TextBlock emptyText;
-    readonly DriverSetupCard driverCard;readonly ComboBox backendPicker;readonly ItemsControl candidates;readonly ProgressBar progress;bool closing;
+    readonly DriverSetupCard driverCard;readonly TextBlock backendLabel;readonly ItemsControl candidates;readonly ProgressBar progress;bool closing;
     public EnvironmentPickerWindow(AppSettings settings,L10n language,EnvironmentSelectionModel? model=null)
     {
         Model=model??new EnvironmentSelectionModel(settings,language);DataContext=Model;SetupUi.Resources(this);
@@ -23,7 +23,7 @@ public sealed class EnvironmentPickerWindow : Window
         var summary=new TextBlock{FontSize=12,Foreground=SetupUi.Muted,Margin=new Thickness(0,7,0,0)};summary.SetBinding(TextBlock.TextProperty,"Summary");header.Children.Add(summary);root.Children.Add(header);
         var scroll=new ScrollViewer{VerticalScrollBarVisibility=ScrollBarVisibility.Auto};Grid.SetRow(scroll,1);root.Children.Add(scroll);var body=new StackPanel{Margin=new Thickness(24,0,24,20)};scroll.Content=body;
         driverCard=new DriverSetupCard(this,Model.Driver);body.Children.Add(driverCard);
-        var backendRow=new Grid{Margin=new Thickness(0,0,0,12)};backendRow.ColumnDefinitions.Add(new());backendRow.ColumnDefinitions.Add(new(){Width=GridLength.Auto});var backendTitle=SetupUi.Text("Inference backend",13,true);backendTitle.VerticalAlignment=VerticalAlignment.Center;backendRow.Children.Add(backendTitle);backendPicker=SetupUi.BackendPicker("Backend");Grid.SetColumn(backendPicker,1);backendRow.Children.Add(backendPicker);body.Children.Add(backendRow);
+        var backendRow=new Grid{Margin=new Thickness(0,0,0,12)};backendRow.ColumnDefinitions.Add(new());backendRow.ColumnDefinitions.Add(new(){Width=GridLength.Auto});var backendTitle=SetupUi.Text("Inference backend",13,true);backendTitle.VerticalAlignment=VerticalAlignment.Center;backendRow.Children.Add(backendTitle);backendLabel=new TextBlock{FontSize=13,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(backendLabel,1);backendRow.Children.Add(backendLabel);body.Children.Add(backendRow);
         var requirements=new StackPanel();requirements.Children.Add(SetupUi.Text("Pinned configuration · Native Windows",12,true));
         var versions=new TextBlock{TextWrapping=TextWrapping.Wrap,FontFamily=new("Consolas"),FontSize=11,Foreground=SetupUi.Muted,Margin=new Thickness(0,9,0,0)};versions.SetBinding(TextBlock.TextProperty,"Requirements");requirements.Children.Add(versions);
         body.Children.Add(new Border{Child=requirements,Background=SetupUi.Subtle,CornerRadius=new CornerRadius(13),Padding=new Thickness(16),Margin=new Thickness(0,0,0,18)});
@@ -54,7 +54,7 @@ public sealed class EnvironmentPickerWindow : Window
     void Changed(object? sender,PropertyChangedEventArgs args)=>Refresh();
     void Refresh()
     {
-        if(search==null)return;backendPicker.IsEnabled=!Model.Busy&&!Model.Driver.Pending;search.IsEnabled=!Model.Busy;choose.IsEnabled=!Model.Busy;manual.IsEnabled=!Model.Busy;install.IsEnabled=Model.CanInstall;candidates.IsEnabled=!Model.Busy;
+        if(search==null)return;backendLabel.Text=Model.BackendLabel;search.IsEnabled=!Model.Busy;choose.IsEnabled=!Model.Busy;manual.IsEnabled=!Model.Busy;install.IsEnabled=Model.CanInstall;candidates.IsEnabled=!Model.Busy;
         activity.Visibility=Model.Busy?Visibility.Visible:Visibility.Collapsed;progress.IsIndeterminate=Model.Percent<=0;
         close.Content=Model.T[Model.Busy?"Stop":"Close"];empty.Visibility=!Model.Busy&&Model.Candidates.Count==0?Visibility.Visible:Visibility.Collapsed;
         emptyText.Text=Model.T[Model.Searched?"No compatible environment found. Choose Python manually or install in the workspace.":"Search your computer for a compatible environment"];

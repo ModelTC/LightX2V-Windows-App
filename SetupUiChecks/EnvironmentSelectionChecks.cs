@@ -86,7 +86,7 @@ internal static partial class Program
         await model.SearchAsync();
         var picker = new EnvironmentPickerWindow(settings, L10n.Current, model);
         await Render(picker, 800, 700, "environment-results-zh");
-        Check(Children<ComboBox>((DependencyObject)picker.Content).Single().SelectionBoxItem?.ToString() == "AMD ROCm", "Backend picker shows the user-facing label instead of an internal object");
+        Check(!Children<ComboBox>((DependencyObject)picker.Content).Any() && Children<TextBlock>((DependencyObject)picker.Content).Any(t=>t.Text=="AMD ROCm"), "The detected AMD backend is shown as read-only text");
         Check(Children<TextBlock>((DependencyObject)picker.Content).Any(t => t.Text == L10n.Current["Prepare pinned Python and GPU PyTorch dependencies."]), "Localized explanatory text with punctuation renders in full");
         var buttons = Children<Button>((DependencyObject)picker.Content).Where(b => AutomationProperties.GetAutomationId(b) == "SelectEnvironment").ToArray();
         Check(buttons.Length == 2 && buttons.Count(b => b.IsEnabled) == 1, "Only the compatible environment card offers an enabled selection action");
@@ -103,7 +103,8 @@ internal static partial class Program
         await installing;
         Check(!model.Busy, "Automatic installation cancellation returns the picker to idle");
         fake.DelayInstall = false;
-        model.Backend = "cuda";
+        using var cudaModel = new EnvironmentSelectionModel(settings,L10n.Current,true,fake,
+            new DriverSetupModel("cuda",()=>settings.Workspace,L10n.Current,new FakeDriverPlatform()));
         var cuda = valid with
         {
             Path = Path.Combine(settings.Workspace, "fixture-cuda", "python.exe"),
@@ -115,11 +116,11 @@ internal static partial class Program
         };
         fake.Found = [cuda];
         fake.ProbeResult = cuda;
-        await model.SearchAsync();
-        await model.InstallAsync();
-        Check(fake.LastBackend == "cuda" && model.Candidates.Single().Backend == "cuda", "The CUDA choice reaches search and automatic installation without reusing ROCm");
-        await Render(picker, 800, 700, "environment-cuda");
-        model.Backend = "amd_rocm";
+        await cudaModel.SearchAsync();
+        await cudaModel.InstallAsync();
+        Check(fake.LastBackend == "cuda" && cudaModel.Candidates.Single().Backend == "cuda", "The CUDA driver backend reaches search and installation despite a saved AMD preference");
+        var cudaPicker=new EnvironmentPickerWindow(settings,L10n.Current,cudaModel);
+        await Render(cudaPicker,800,700,"environment-cuda");cudaPicker.Close();
         fake.Found = [];
         await model.SearchAsync();
         await Render(picker, 800, 620, "environment-empty");
