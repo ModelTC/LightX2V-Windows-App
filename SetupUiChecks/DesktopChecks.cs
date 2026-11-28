@@ -117,12 +117,15 @@ internal static partial class Program
         Invoke(model);
         await Task.Delay(230);
         var family = PopupButton("ModelFamily");
-        Check(family != null && family.PointToScreen(new Point()).Y < model.PointToScreen(new Point()).Y,
+        Check(family != null && family.PointToScreen(new Point(0,family.ActualHeight)).Y < model.PointToScreen(new Point()).Y &&
+            Math.Abs(family.PointToScreen(new Point(family.ActualWidth/2,0)).X-model.PointToScreen(new Point(model.ActualWidth/2,0)).X)<2,
             "The model selector opens the model family above its anchor");
-        Invoke(family!);
+        var familyPosition=family!.PointToScreen(new Point());
+        Invoke(family);
         await Task.Delay(200);
         var standard = PopupButton("ModelVariantStandard");
-        Check(standard != null && standard.PointToScreen(new Point()).X > family!.PointToScreen(new Point()).X,
+        Check(standard != null && standard.PointToScreen(new Point()).X > family.PointToScreen(new Point(family.ActualWidth,0)).X &&
+            family.PointToScreen(new Point())==familyPosition,
             "The Standard model choice opens to the right of the family");
         CaptureDesktopWindow(window, "desktop-model-picker");
         Invoke(standard!);

@@ -18,7 +18,7 @@ internal sealed class ModelPicker
     static readonly Brush Selection = new SolidColorBrush(Color.FromRgb(233, 233, 233));
     readonly MainViewModel vm;
     readonly Button anchor, family, standard;
-    readonly Popup popup;
+    readonly Popup popup, variantPopup;
     readonly Border variants;
     readonly TextBlock familyLabel;
     readonly Shape familyCheck, variantCheck;
@@ -27,7 +27,7 @@ internal sealed class ModelPicker
     {
         this.anchor = anchor;
         this.vm = vm;
-        var panels = new StackPanel { Orientation = Orientation.Horizontal, DataContext = vm };
+        var panels = new Grid { DataContext = vm };
         TextElement.SetFontFamily(panels, window.FontFamily);
         KeyboardNavigation.SetTabNavigation(panels, KeyboardNavigationMode.Cycle);
         var familyContent = new StackPanel();
@@ -60,7 +60,7 @@ internal sealed class ModelPicker
         };
         familyContent.Children.Add(family);
         var familyCard = Card(familyContent, 276, 10);
-        var familyBubble = new Grid { Margin = new Thickness(10, 10, 0, 10), VerticalAlignment = VerticalAlignment.Top };
+        var familyBubble = new Grid { Margin = new Thickness(10, 10, 10, 12), VerticalAlignment = VerticalAlignment.Top };
         familyBubble.Children.Add(familyCard);
         var tip = new Shape
         {
@@ -92,7 +92,7 @@ internal sealed class ModelPicker
         };
         standard.PreviewKeyDown += (_, e) =>
         {
-            if (e.Key != Key.Left) return;
+            if (e.Key is not (Key.Left or Key.Tab)) return;
             e.Handled = true;
             HideVariants();
             family.Focus();
@@ -102,19 +102,56 @@ internal sealed class ModelPicker
             Background = Selection, CornerRadius = new CornerRadius(20), Padding = new Thickness(4), Child = standard
         });
         variants = Card(variantContent, 302, 16);
-        variants.Margin = new Thickness(5, 10, 10, 10);
-        variants.Visibility = Visibility.Collapsed;
-        panels.Children.Add(variants);
+        var variantPanel = new Grid { DataContext = vm };
+        TextElement.SetFontFamily(variantPanel, window.FontFamily);
+        variants.Margin = new Thickness(10);
+        variantPanel.Children.Add(variants);
+        var sideTip = new Shape
+        {
+            Width = 8, Height = 16, Data = Geometry.Parse("M8,0 L0,8 8,16"), Fill = Brushes.White,
+            Stroke = SetupUi.Line, Margin = new Thickness(3,0,3,0), VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left, IsHitTestVisible = false
+        };
+        variantPanel.Children.Add(sideTip);
+        variantPopup = new Popup
+        {
+            Child = variantPanel, PlacementTarget = family, Placement = PlacementMode.Custom,
+            StaysOpen = true, AllowsTransparency = true
+        };
+        variantPopup.CustomPopupPlacementCallback = (size, target, _) => [
+            new(new Point(target.Width, (target.Height-size.Height)/2), PopupPrimaryAxis.Vertical),
+            new(new Point(-size.Width, (target.Height-size.Height)/2), PopupPrimaryAxis.Vertical)
+        ];
+        variantPopup.Opened += (_, _) =>
+        {
+            var left = variants.PointToScreen(new Point()).X < family.PointToScreen(new Point()).X;
+            sideTip.HorizontalAlignment = left ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            sideTip.RenderTransformOrigin = new Point(.5,.5);
+            sideTip.RenderTransform = new ScaleTransform(left ? -1 : 1, 1);
+        };
+        variantPanel.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Escape) { e.Handled = true; Close(restoreFocus: true); }
+        };
         popup = new Popup
         {
             Child = panels, PlacementTarget = anchor, Placement = PlacementMode.Custom, StaysOpen = true,
             AllowsTransparency = true, PopupAnimation = PopupAnimation.None
         };
+        // Both sizes come from WPF in the same coordinate system, including on scaled displays.
         popup.CustomPopupPlacementCallback = (size, target, _) => [
-            new(new Point(-10, -familyCard.DesiredSize.Height - 15), PopupPrimaryAxis.Horizontal),
-            new(new Point(-10, target.Height), PopupPrimaryAxis.Horizontal)
+            new(new Point((target.Width-size.Width)/2, -size.Height), PopupPrimaryAxis.Horizontal),
+            new(new Point((target.Width-size.Width)/2, target.Height), PopupPrimaryAxis.Horizontal)
         ];
-        popup.Opened += (_, _) => family.Focus();
+        popup.Opened += (_, _) =>
+        {
+            var below = family.PointToScreen(new Point()).Y > anchor.PointToScreen(new Point()).Y;
+            tip.VerticalAlignment = below ? VerticalAlignment.Top : VerticalAlignment.Bottom;
+            tip.Margin = below ? new Thickness(0,-6,0,0) : new Thickness(0,0,0,-6);
+            tip.RenderTransformOrigin = new Point(.5,.5);
+            tip.RenderTransform = new ScaleTransform(1, below ? -1 : 1);
+            family.Focus();
+        };
         popup.Closed += (_, _) => HideVariants();
         panels.PreviewKeyDown += (_, e) =>
         {
@@ -146,10 +183,10 @@ internal sealed class ModelPicker
     void ShowVariants(bool focus)
     {
         if (!popup.IsOpen) return;
-        if (variants.Visibility != Visibility.Visible)
+        if (!variantPopup.IsOpen)
         {
             family.Background = Selection;
-            variants.Visibility = Visibility.Visible;
+            variantPopup.IsOpen = true;
             if (SystemParameters.ClientAreaAnimation)
                 variants.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160))
                 { EasingFunction = new SineEase(), FillBehavior = FillBehavior.Stop });
@@ -160,7 +197,7 @@ internal sealed class ModelPicker
     void HideVariants()
     {
         variants.BeginAnimation(UIElement.OpacityProperty, null);
-        variants.Visibility = Visibility.Collapsed;
+        variantPopup.IsOpen = false;
         family.Background = Brushes.Transparent;
     }
 
