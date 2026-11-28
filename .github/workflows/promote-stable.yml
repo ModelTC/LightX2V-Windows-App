@@ -22,4 +22,4 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/promote_stable.py
       - name: Record Stable download
-        run: printf '[Download Stable APP](https://github.com/%s/releases/download/stable/LightX2V-APP-Windows-x64.zip)\n' "$GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"
+        run: printf '[Download Stable APP](https://github.com/%s/releases/download/stable/LightX2V-Setup.exe)\n' "$GITHUB_REPOSITORY" >> "$GITHUB_STEP_SUMMARY"

@@ -49,6 +49,7 @@ jobs:
         with:
           name: Windows-package-${{ github.sha }}
           path: |
+            dist/LightX2V-Setup.exe
             dist/LightX2V-APP-Windows-x64.zip
             dist/LightX2V-APP-Windows-x64.zip.sha256
           if-no-files-found: error
@@ -82,4 +83,4 @@ jobs:
         run: python3 scripts/publish_latest.py dist/LightX2V-APP-Windows-x64.zip
       - name: Record download and verification scope
         run: |
-          printf '[Download Latest APP](https://github.com/%s/releases/download/latest/LightX2V-APP-Windows-x64.zip)\n\nSource commit: `%s`. Compilation and package integrity passed. Behavioral and GPU validation run locally; see docs/testing.md.\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          printf '[Download Latest APP](https://github.com/%s/releases/download/latest/LightX2V-Setup.exe)\n\nSource commit: `%s`. Compilation and package integrity passed. Behavioral and GPU validation run locally; see docs/testing.md.\n' "$GITHUB_REPOSITORY" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

@@ -2,7 +2,7 @@
 
 ## Prepare the app
 
-Download the Windows x64 ZIP from this repository's Releases page and choose **Extract All**. Open the extracted folder and run `LightX2V.exe`. Keep the entire folder: extracting only the EXE or running it directly inside the ZIP is not supported.
+Download and run `LightX2V-Setup.exe`. Choose **Install now**, then **Open LightX2V**. The first-run assistant lets you choose the workspace for your models, environment and outputs.
 
 This is an unsigned preview build. The release page provides the package SHA-256 for checking download integrity. If Windows blocks the app, first confirm that it came from this project's Releases page. You do not need to disable Windows protection or change system security settings.
 

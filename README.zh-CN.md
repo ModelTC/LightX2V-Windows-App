@@ -8,7 +8,7 @@
 
 | 通道 | Windows 11 · x64 | 提交 | 日期 (UTC+8) |
 | --- | --- | --- | --- |
-| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`87ee88a`](https://github.com/ModelTC/LightX2V-Windows-App/commit/87ee88a931d0ad4819cf7397aeb05db608c20e45) | 2026-11-25 11:29 |
+| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-Setup.exe) | [`87ee88a`](https://github.com/ModelTC/LightX2V-Windows-App/commit/87ee88a931d0ad4819cf7397aeb05db608c20e45) | 2026-11-25 11:29 |
 | Stable | 尚未提供 | — | — |
 
 应用内置 LightX2V 源码、llama.cpp 和 .NET。模型权重与兼容的 Python 环境可在应用中单独准备。
@@ -17,7 +17,7 @@
 
 [将 Latest 晋升为 Stable](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/promote-stable.yml)
 
-**Windows 首次启动**：下载 ZIP，完整解压后运行 `LightX2V.exe`。安装包未签名。如果 Windows 提示风险，请在[发布页](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/latest)核对来源和 SHA-256。环境配置见[使用说明](docs/getting-started.md)。
+**Windows 首次启动**：运行 `LightX2V-Setup.exe`，点击「立即安装」。安装完成后打开 LightX2V，选择工作区。安装包未签名。如果 Windows 提示风险，请在[发布页](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/latest)核对来源和 SHA-256。环境配置见[使用说明](docs/getting-started.md)。
 
 ### 支持的模型
 
@@ -33,5 +33,5 @@
 git clone https://github.com/ModelTC/LightX2V-Windows-App.git
 cd LightX2V-Windows-App
 .\build.ps1 -Destination .\dist\LightX2V
-.\dist\LightX2V\LightX2V.exe
+.\dist\LightX2V-Setup.exe
 ```

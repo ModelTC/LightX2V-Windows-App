@@ -26,5 +26,6 @@ try {
     & "$PSScriptRoot\scripts\build_launcher.ps1" -Destination $Destination
     & $Python -X utf8 "$PSScriptRoot\scripts\package_app.py" --app $Destination
     if ($LASTEXITCODE -ne 0) { throw 'Portable package verification failed.' }
+    & "$PSScriptRoot\scripts\build_installer.ps1" -Archive (Join-Path (Split-Path $Destination) 'LightX2V-APP-Windows-x64.zip')
 }
 finally { Pop-Location }

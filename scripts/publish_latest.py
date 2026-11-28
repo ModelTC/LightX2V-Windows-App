@@ -14,6 +14,7 @@ import urllib.request
 
 from verify_package import ASSET_NAME, verify
 
+INSTALLER = "LightX2V-Setup.exe"
 PREFIX = "LightX2V-APP-Windows-x64-"
 DISPLAY_TIMEZONE = timezone(timedelta(hours=8))
 DATE_FORMAT = "%Y-%m-%d %H:%M"
@@ -48,7 +49,7 @@ class GitHub:
 
     def upload(self, release_id, name, data):
         path = f"releases/{release_id}/assets?" + urllib.parse.urlencode({"name": name})
-        return self._request("POST", "uploads.github.com", path, data, "application/zip")
+        return self._request("POST", "uploads.github.com", path, data, "application/octet-stream")
 
 
 def list_all(client, path, key=None):
@@ -93,6 +94,14 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest", ori
             or staged.get("digest") != "sha256:" + digest):
         raise RuntimeError("Uploaded asset verification failed; previous download retained")
 
+    installer = archive.with_name(INSTALLER).read_bytes()
+    installer_digest = hashlib.sha256(installer).hexdigest()
+    setup = client.upload(release["id"], f"{PREFIX}{run_id}-{attempt}.exe", installer)
+    if (setup.get("state") != "uploaded" or setup.get("size") != len(installer)
+            or setup.get("digest") != "sha256:" + installer_digest):
+        raise RuntimeError("Installer upload verification failed")
+    old_setup = next((a for a in release.get("assets", []) if a["name"] == INSTALLER), None)
+    setup_backup = setup_active = False
     date = display_date(original_upload_time or staged["created_at"])
     old_path = f"releases/assets/{old['id']}" if old else None
     reference=client.api("GET",f"git/ref/tags/{tag}",missing_ok=True)
@@ -104,6 +113,12 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest", ori
         client.api("PATCH", f"releases/assets/{staged['id']}", {
             "name": ASSET_NAME, "label": f"lightx2v-run:{run_number}; commit:{sha}"})
         renamed=True
+        if old_setup:
+            client.api("PATCH", f"releases/assets/{old_setup['id']}", {"name": f"{PREFIX}backup-{old_setup['id']}.exe"})
+            setup_backup = True
+        client.api("PATCH", f"releases/assets/{setup['id']}", {
+            "name": INSTALLER, "label": f"lightx2v-run:{run_number}; commit:{sha}"})
+        setup_active = True
         if reference:
             client.api("PATCH", f"git/refs/tags/{tag}", {"sha": sha, "force": True})
         else:
@@ -113,12 +128,12 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest", ori
         retention = ("Updated after every successful build; only one Latest APP is kept."
                      if tag == "latest" else "Updated only by manual promotion; only one Stable APP is kept.")
         notes = (
-            f"[Download {tag.title()} APP]({url}/releases/download/{tag}/{ASSET_NAME})\n\n"
+            f"[Download {tag.title()} APP]({url}/releases/download/{tag}/{INSTALLER})\n\n"
             f"{retention} Downloads do not expire automatically.\n\n"
             f"- Commit: `{sha}`\n- Package date (UTC+8): {date}\n- [Publication workflow]({url}/actions/runs/{run_id})\n"
-            "- Windows 11 / x64\n- Unsigned portable package\n"
+            "- Windows 11 / x64\n- Unsigned Windows installer\n"
             "- Includes .NET and pinned inference source; prepare models and Python in the app\n\n"
-            f"SHA-256:\n```text\n{digest}  {ASSET_NAME}\n```\n")
+            f"SHA-256:\n```text\n{installer_digest}  {INSTALLER}\n```\n")
         client.api("PATCH", f"releases/{release['id']}", {
             "name": f"LightX2V · {title}", "target_commitish": sha,
             "body": notes, "draft": False, "prerelease": False, "make_latest": "true" if tag == "latest" else "false"})
@@ -127,6 +142,10 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest", ori
         def restore(method,path,payload=None):
             try: client.api(method,path,payload)
             except Exception as failure: rollback_errors.append(str(failure))
+        if setup_active:
+            restore("PATCH", f"releases/assets/{setup['id']}", {"name": f"{PREFIX}failed-{setup['id']}.exe"})
+        if setup_backup:
+            restore("PATCH", f"releases/assets/{old_setup['id']}", {"name": INSTALLER})
         if renamed:
             restore("PATCH",f"releases/assets/{staged['id']}",{"name":f"{PREFIX}failed-{staged['id']}.zip"})
         if old:
@@ -144,9 +163,9 @@ def publish(client, archive, sha, run_number, run_id, attempt, tag="latest", ori
     # Only retire APP assets managed by this workflow, after successful publication.
     assets = list_all(client, f"releases/{release['id']}/assets")
     for asset in assets:
-        if asset["id"] != staged["id"] and asset["name"].startswith(PREFIX) and asset["name"].endswith(".zip"):
+        if asset["id"] not in (staged["id"], setup["id"]) and asset["name"].startswith(PREFIX) and asset["name"].endswith((".zip", ".exe")):
             client.api("DELETE", f"releases/assets/{asset['id']}")
-    print(f"Published {url}/releases/download/{tag}/{ASSET_NAME}\nSHA-256: {digest}")
+    print(f"Published {url}/releases/download/{tag}/{INSTALLER}\nSHA-256: {installer_digest}")
     return date
 
 
@@ -166,7 +185,7 @@ def record_download(client, tag, sha, date):
             content = base64.b64decode(file["content"]).decode("utf-8")
 
             def row(match):
-                download = match[1] if tag == "latest" else f"[⬇️ {stable_label}]({url}/releases/download/stable/{ASSET_NAME}) · **⭐ {recommended}**"
+                download = match[1] if tag == "latest" else f"[⬇️ {stable_label}]({url}/releases/download/stable/{INSTALLER}) · **⭐ {recommended}**"
                 return f"| {channel} | {download} | [`{sha[:7]}`]({url}/commit/{sha}) | {date} |"
 
             updated, count = pattern.subn(row, content)

@@ -8,7 +8,7 @@ A native Windows app for local image generation and editing with [Qwen-Image-2.1
 
 | Channel | Windows 11 · x64 | Commit | Date (UTC+8) |
 | --- | --- | --- | --- |
-| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip) | [`87ee88a`](https://github.com/ModelTC/LightX2V-Windows-App/commit/87ee88a931d0ad4819cf7397aeb05db608c20e45) | 2026-11-25 11:29 |
+| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-Setup.exe) | [`87ee88a`](https://github.com/ModelTC/LightX2V-Windows-App/commit/87ee88a931d0ad4819cf7397aeb05db608c20e45) | 2026-11-25 11:29 |
 | Stable | Not available yet | — | — |
 
 The app bundles LightX2V source, llama.cpp, and .NET. Model weights and a compatible Python environment are prepared separately in the app.
@@ -17,7 +17,7 @@ Each channel keeps one app package. Updating Stable replaces its previous packag
 
 [Promote Latest to Stable](https://github.com/ModelTC/LightX2V-Windows-App/actions/workflows/promote-stable.yml)
 
-**First launch on Windows:** Download the ZIP, extract the whole folder, and run `LightX2V.exe`. The package is unsigned. If Windows flags it, verify its origin and SHA-256 on the [release page](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/latest). See [Getting started](docs/getting-started.md) for setup.
+**First launch on Windows:** Run `LightX2V-Setup.exe`, install the app, then open LightX2V and choose a workspace. The package is unsigned. If Windows flags it, verify its origin and SHA-256 on the [release page](https://github.com/ModelTC/LightX2V-Windows-App/releases/tag/latest). See [Getting started](docs/getting-started.md) for setup.
 
 ### Supported models
 
@@ -33,5 +33,5 @@ On Windows x64, install .NET SDK 10.0.403, Python 3.12, and Visual Studio C++ x6
 git clone https://github.com/ModelTC/LightX2V-Windows-App.git
 cd LightX2V-Windows-App
 .\build.ps1 -Destination .\dist\LightX2V
-.\dist\LightX2V\LightX2V.exe
+.\dist\LightX2V-Setup.exe
 ```

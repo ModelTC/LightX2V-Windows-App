@@ -1,0 +1,33 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ Title="LightX2V" Width="530" Height="530" MinWidth="420" MinHeight="420"
+ WindowStartupLocation="CenterScreen" Background="#171719" Foreground="White"
+ FontFamily="Segoe UI, Microsoft YaHei UI">
+ <Window.Resources>
+  <Style TargetType="Button">
+   <Setter Property="Cursor" Value="Hand"/>
+   <Setter Property="Padding" Value="18,9"/>
+   <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+    <Border Name="Surface" Background="{TemplateBinding Background}" CornerRadius="9" Padding="{TemplateBinding Padding}">
+     <ContentPresenter HorizontalAlignment="Center"/>
+    </Border>
+    <ControlTemplate.Triggers>
+     <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Surface" Property="Opacity" Value="0.8"/></Trigger>
+     <Trigger Property="IsKeyboardFocused" Value="True"><Setter TargetName="Surface" Property="BorderBrush" Value="#829BFF"/><Setter TargetName="Surface" Property="BorderThickness" Value="2"/></Trigger>
+    </ControlTemplate.Triggers>
+   </ControlTemplate></Setter.Value></Setter>
+  </Style>
+ </Window.Resources>
+ <Grid Margin="28">
+  <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+   <Image Name="Logo" Width="104" Height="104"/>
+   <TextBlock Text="LightX2V" FontSize="36" FontWeight="SemiBold" Margin="0,14,0,0" HorizontalAlignment="Center"/>
+  </StackPanel>
+  <StackPanel Grid.Row="1" HorizontalAlignment="Center">
+   <TextBlock Name="Status" TextAlignment="Center" TextWrapping="Wrap" Margin="0,4"/>
+   <ProgressBar Name="Progress" Visibility="Collapsed" Height="4" Margin="0,8"/>
+   <Button Name="Location" Background="Transparent" Foreground="#D4D4D8"/>
+   <Button Name="Install" IsDefault="True" MinWidth="152" FontSize="17" Background="#FAFAFA" Foreground="#171719" Margin="0,6,0,12"/>
+  </StackPanel>
+ </Grid>
+</Window>

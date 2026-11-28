@@ -1,8 +1,8 @@
 # Latest and Stable
 
-Normal successful branch builds publish one non-expiring Windows x64 package at:
+Normal successful branch builds publish the Windows x64 installer at:
 
-`https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-APP-Windows-x64.zip`
+`https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-Setup.exe`
 
 Pull requests compile and validate packages without publishing. Both publishing and promotion share a concurrency lock. Package provenance requires a clean source checkout, exact source commit, complete per-file hashes, pinned runtime verification and a matching archive digest. New assets are uploaded and verified before replacing the current download. Older successful builds cannot overwrite a newer Latest run. Build artifacts are temporary publisher inputs; Release downloads do not expire.
 
@@ -16,6 +16,6 @@ There is no Windows Stable yet. Complete the Standard-model AMD and RTX scenario
 
 After publishing a verified package, the publisher records the source commit and package upload time (UTC+8) in the Release notes and both README download tables. Stable retains the original Latest package date. The README rows are committed together on `main`; the ZIP includes the standalone documentation rather than a snapshot of the rolling download tables. If the README update fails, the verified package stays published and the workflow reports the error. Rerun publication to repair the tables.
 
-Each channel retains one package. The repository uses the rolling `latest` tag and adds `stable` at the first promotion. The fixed ZIP name is shared by both channels. Its extraction folder is `LightX2V-Windows-<short-commit>`. README and release notes identify the build by source commit and package date. Public release text is English. Application updates checks Stable when available and otherwise checks Latest.
+Each channel retains the installer and its matching ZIP for in-app updates. The installer embeds the verified ZIP, and installs its contents under LightX2V. The repository uses the rolling `latest` tag and adds `stable` at the first promotion. The fixed ZIP name is shared by both channels. Its extraction folder is `LightX2V-Windows-<short-commit>`. README and release notes identify the build by source commit and package date. Public release text is English. Application updates checks Stable when available and otherwise checks Latest.
 
 Install the first commit-named package manually when upgrading from v0.4.3. That release's updater expects a numbered archive layout. The commit-named builds support application updates and can verify earlier numbered packages.

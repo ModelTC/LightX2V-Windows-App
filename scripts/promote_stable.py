@@ -7,7 +7,7 @@ import re
 import tempfile
 import urllib.request
 
-from publish_latest import ASSET_NAME, GitHub, publish, record_download
+from publish_latest import ASSET_NAME, INSTALLER, GitHub, publish, record_download
 from verify_package import verify
 
 
@@ -33,6 +33,14 @@ def promote(client, run_number, run_id, attempt):
         archive.write_bytes(data)
         archive.with_suffix('.zip.sha256').write_text(hashlib.sha256(data).hexdigest()+'  '+ASSET_NAME+'\n',encoding='ascii')
         verify(archive, source_commit=sha, require_clean=True)
+        setup = next(a for a in release["assets"] if a["name"] == INSTALLER)
+        if setup["label"] != asset["label"]:
+            raise RuntimeError("Latest installer and update package have different provenance")
+        with urllib.request.urlopen(setup["browser_download_url"], timeout=120) as response:
+            installer = response.read()
+        if len(installer) != setup["size"] or "sha256:" + hashlib.sha256(installer).hexdigest() != setup["digest"]:
+            raise RuntimeError("Latest installer digest mismatch")
+        archive.with_name(INSTALLER).write_bytes(installer)
         date = publish(client, archive, sha, run_number, run_id, attempt,
                        tag="stable", original_upload_time=asset["created_at"])
         record_download(client, "stable", sha, date)

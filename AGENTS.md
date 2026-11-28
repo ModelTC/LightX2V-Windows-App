@@ -13,4 +13,4 @@
 
 - Inference source is fixed to official LightX2V 0.6.1 (`43c6a11bb65b7357f06e9603fa92249bc16b484e`) with unused directories and assets removed during packaging. Retain the original contents of bundled engine files. Both backend profiles must share this source; never resolve a moving branch at build or runtime.
 - No current preferences means first-time setup. Do not infer configuration from a developer directory or load workspace history before explicit workspace confirmation. Do not silently import legacy preferences or expose legacy import in the first-run wizard.
-- The public ZIP has only LightX2V.exe, app and docs at its top level. Keep layout ownership centralized and maintain both legacy package verification and manifest-only uninstall.
+- The public installer is LightX2V-Setup.exe. Its embedded update ZIP has only LightX2V.exe, app and docs at its top level. Keep layout ownership centralized and maintain both legacy package verification and manifest-only uninstall.
