@@ -8,7 +8,7 @@ A native Windows app for local image generation and editing with [Qwen-Image-2.1
 
 | Channel | Windows 11 · x64 | Commit | Date (UTC+8) |
 | --- | --- | --- | --- |
-| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-Setup.exe) | [`bfaf065`](https://github.com/ModelTC/LightX2V-Windows-App/commit/bfaf065cb17f87b1609b492220815e39b230f945) | 2026-11-28 12:57 |
+| Latest | [Download Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-Setup.exe) | [`db4a810`](https://github.com/ModelTC/LightX2V-Windows-App/commit/db4a81023d2632566abd08925bb4f212e7b913fc) | 2026-11-28 14:08 |
 | Stable | Not available yet | — | — |
 
 **Downloading with Microsoft Edge.** If Edge says that `LightX2V-Setup.exe` “isn’t commonly downloaded,” first confirm you downloaded it from [this repository’s releases](https://github.com/ModelTC/LightX2V-Windows-App/releases). In the Edge downloads list, hover over the file, click **…** next to its name, and select **Keep**. If Edge asks again, expand **Show more** and click **Keep anyway**.
