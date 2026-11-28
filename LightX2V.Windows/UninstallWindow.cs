@@ -117,7 +117,7 @@ public sealed class UninstallWindow : Window
             foreach (var (group, label, detail) in new[]
             {
                 ("models", "Uninstall model weights", "Image generation and prompt enhancement model weights."),
-                ("workspace", "Uninstall workspace records", "Generated images, history, program files, caches and logs."),
+                ("workspace", "Uninstall workspace records", "Generated images, history, caches and logs."),
                 ("application", "Uninstall app and configuration", "The app, preferences, workspace location records and its shortcuts.")
             })
             {
@@ -134,7 +134,7 @@ public sealed class UninstallWindow : Window
                 {
                     var environmentBody = new Border { Margin = new Thickness(20, 8, 0, 0) };
                     var environment = Choice(AppMaintenance.ManagedEnvironmentGroup,
-                        SetupUi.Text("Also remove managed Python environments", 11, muted: true),
+                        SetupUi.Text("Also remove managed Python environments and inference source", 11, muted: true),
                         defaultSelected: false);
                     environmentBody.Child = environment;
                     card.Children.Add(environmentBody);

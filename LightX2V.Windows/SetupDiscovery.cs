@@ -14,7 +14,7 @@ public sealed record EnvironmentCandidate(string Path,bool Ready,string Detail)
     public string Device {get;init;}="";
     public long PythonLength {get;init;}
     public long PythonModifiedUtcTicks {get;init;}
-    internal bool CheckTimedOut {get;init;}
+    public bool CheckTimedOut {get;init;}
     public string BackendLabel=>Backends.Label(Backend);
     public string ResourceSummary=>GpuTotal>0?$"GPU {GpuTotal/1073741824.0:F1} GiB · {L10n.Current["Available"]} {GpuFree/1073741824.0:F1} GiB · RAM {RamTotal/1073741824.0:F1} GiB":"";
     public IReadOnlyDictionary<string,string> Packages {get;init;}=new Dictionary<string,string>();
@@ -29,7 +29,7 @@ public sealed record EnvironmentSearchResult(IReadOnlyList<EnvironmentCandidate>
 
 public static class SetupDiscovery
 {
-    public static TimeSpan EnvironmentSearchTimeout {get;}=TimeSpan.FromSeconds(45);
+    public static TimeSpan EnvironmentSearchTimeout {get;}=TimeSpan.FromSeconds(210);
     static IEnumerable<string> PreferredPythonPaths(AppSettings settings)
     {
         if(settings.Python.Length>0)yield return settings.Python;
@@ -60,7 +60,7 @@ public static class SetupDiscovery
         foreach(var root in new[]{"Documents","Desktop","Projects","Developer"})Scan(Path.Combine(home,root),0);
         return found.Take(40).ToArray();
     }
-    public static async Task<EnvironmentCandidate> Probe(string python,string workspace,CancellationToken token,string backend="auto",int timeoutSeconds=90)
+    public static async Task<EnvironmentCandidate> Probe(string python,string workspace,CancellationToken token,string backend="auto",int timeoutSeconds=180)
     {
         var folder=Path.Combine(workspace,"setup","probes",Guid.NewGuid().ToString("N"));var request=Path.Combine(folder,"request.json");Files.Write(request,new{protocol=1,backend});
         using var bridge=new BridgeClient();var ready=false;var detail="";var gate=new object();EnvironmentCandidate? metadata=null;
@@ -107,7 +107,7 @@ public static class SetupDiscovery
         var completion=EnvironmentSearchCompletion.Completed;
         void Enqueue(IEnumerable<string> candidates)
         {
-            foreach(var path in candidates)if(File.Exists(path)&&queued.Add(path))paths.Enqueue(path);
+            foreach(var path in candidates)if(File.Exists(path)&&queued.Add(SetupPaths.Short(path)))paths.Enqueue(path);
         }
         Enqueue(PreferredPythonPaths(settings));
         Task<string[]>? discovery=Task.Run(()=>PythonPaths(settings,searchToken).ToArray(),searchToken);
@@ -116,7 +116,13 @@ public static class SetupDiscovery
             while(paths.Count>0||pending.Count>0||discovery!=null)
             {
                 searchToken.ThrowIfCancellationRequested();
-                while(paths.Count>0&&pending.Count<2)pending.Add(Probe(paths.Dequeue(),settings.Workspace,searchToken,settings.Backend,30));
+                while(paths.Count>0&&pending.Count<2)
+                {
+                    var path=paths.Dequeue();
+                    var managed=File.Exists(Path.Combine(Path.GetDirectoryName(path)!,".lightx2v-environment.json"));
+                    var timeout=managed||path.Equals(settings.Python,StringComparison.OrdinalIgnoreCase)?180:30;
+                    pending.Add(Probe(path,settings.Workspace,searchToken,settings.Backend,timeout));
+                }
                 var waiting=pending.Cast<Task>().ToList();
                 if(discovery!=null)waiting.Add(discovery);
                 var completed=await Task.WhenAny(waiting).WaitAsync(searchToken);

@@ -98,6 +98,7 @@ internal static partial class Program
         var managed=Path.GetDirectoryName(managedPython)!;Directory.CreateDirectory(managed);File.WriteAllText(Path.Combine(managed,".lightx2v-environment.json"),"{}");
         File.WriteAllText(managedPython,"Managed Python discovery fixture");
         var unmanaged=Path.Combine(allSettings.Workspace,"environments","keep-unmanaged");Directory.CreateDirectory(unmanaged);File.WriteAllText(Path.Combine(unmanaged,"keep.txt"),"Keep this unmanaged environment");
+        var retainedSource=Path.Combine(allSettings.Workspace,"runtimes","managed-source");Directory.CreateDirectory(retainedSource);File.WriteAllText(Path.Combine(retainedSource,".lightx2v-source.json"),"{}");
         var groupedPlan = AppMaintenance.Discover(allSettings, allPrefs, allApp);
         var allPlanFile = Path.Combine(allRoot, "plan.json");
         async Task RemoveGroups(params string[] groups)
@@ -110,13 +111,13 @@ internal static partial class Program
         await RemoveGroups("workspace", "application");
         Check(File.Exists(Path.Combine(allApp,"user-note.txt"))&&!File.Exists(Path.Combine(allApp,"LightX2V.Windows.exe"))&&
             !Directory.Exists(allPrefs)&&!Directory.Exists(Path.Combine(allSettings.Workspace,"outputs"))&&
-            Directory.Exists(Path.Combine(allSettings.Workspace,"models"))&&File.Exists(managedPython),
+            Directory.Exists(Path.Combine(allSettings.Workspace,"models"))&&File.Exists(managedPython)&&Directory.Exists(retainedSource),
             "Keeping model weights while removing workspace and app data also preserves the managed Python");
         var fresh = AppSettings.Fresh(allSettings.Workspace);
         Check(SetupDiscovery.PythonPaths(fresh).Contains(managedPython, StringComparer.OrdinalIgnoreCase),
             "First-use discovery finds the managed Python after preferences were removed");
         await RemoveGroups(AppMaintenance.ManagedEnvironmentGroup);
-        Check(!Directory.Exists(managed)&&File.Exists(Path.Combine(unmanaged,"keep.txt"))&&
+        Check(!Directory.Exists(managed)&&!Directory.Exists(retainedSource)&&File.Exists(Path.Combine(unmanaged,"keep.txt"))&&
             Directory.Exists(Path.Combine(allSettings.Workspace,"models")),
             "Explicitly selecting managed environments removes only the owned Python environment");
         await UninstallShortcutChecks(maintenance);

@@ -70,6 +70,7 @@ internal static class SetupStrings
         ["Local environments"]="本机环境",
         ["No compatible environment found"]="未找到符合要求的环境",
         ["No compatible environment found. Choose Python manually or install in the workspace."]="未找到符合要求的环境。可以手动选择 Python 程序，或在工作目录中自动安装。",
+        ["Check timed out"]="检查超时",
         ["Needs attention"]="需修复",
         ["Available"]="可选择",
         ["Use this environment"]="使用此环境",

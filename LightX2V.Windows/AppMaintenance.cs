@@ -87,7 +87,7 @@ public static class AppMaintenance
                 var directory=Path.Combine(root,folder);
                 if(Directory.Exists(directory))foreach(var child in Directory.EnumerateDirectories(directory))
                     if(File.Exists(Path.Combine(child,marker)))
-                        Add(child, folder == "environments" ? ManagedEnvironmentGroup : "workspace");
+                        Add(child, ManagedEnvironmentGroup);
             }
             foreach(var file in new[]{"workspace.json","workspace.json.bak"})Add(Path.Combine(root,file),"workspace");
             foreach(var model in new[]{record.Model,record.T2IDirectory,record.I2IDirectory}.Where(p=>!string.IsNullOrWhiteSpace(p)))
