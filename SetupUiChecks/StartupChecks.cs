@@ -9,10 +9,10 @@ internal static partial class Program
 {
     sealed class StartupHost : IStartupHost
     {
-        public FirstRunWindow? Wizard;public int WorkspaceShows,Exits,SetupShows;
+        public SettingsWindow? Wizard;public int WorkspaceShows,Exits,SetupShows;
         public Task<bool> ShowSetupAsync(MainViewModel model)
         {
-            SetupShows++;Wizard=new FirstRunWindow(model,standalone:true);
+            SetupShows++;Wizard=new SettingsWindow(model,firstRun:true);
             var result=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             Wizard.Closed+=(_,_)=>result.TrySetResult(Wizard.Completed);return result.Task;
         }
@@ -32,68 +32,23 @@ internal static partial class Program
     static async Task StartupChecks()
     {
         var fixture=StartupFixture("startup-install-cuda");var downloads=new FakeModelDownloader{Hold="turbo",EtaSeconds=120};
+        Files.Write(Path.Combine(fixture.Preferences,"preferences.json"),new Preferences{WorkspaceConfirmed=false,Settings=fixture.Settings});
         using(var vm=new MainViewModel(fixture.Preferences,downloads,fixture.Catalog,fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
         {
             Check(vm.UseAutomaticDownloadSource&&!vm.UseHuggingFace&&!vm.UseModelScope&&vm.Settings.DownloadSource=="auto","A fresh workspace defaults to automatic model-download source selection");
-            vm.Prompt="保留我的创作草稿";var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();var wizard=host.Wizard!;
+            var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();var wizard=host.Wizard!;
             Check(host.SetupShows==1&&host.WorkspaceShows==0&&!startup.IsCompleted,"A fresh install opens only setup; the workspace is not constructed before setup finishes");
             Check(wizard.Owner==null&&wizard.ShowInTaskbar&&wizard.WindowStartupLocation==WindowStartupLocation.CenterScreen&&wizard.ResizeMode==ResizeMode.CanResize,"Initial setup is an independent taskbar window with normal minimize/maximize controls and no modal workspace owner");
-            await vm.Setup.BeginWorkspaceAsync();await WaitForSearch(vm.Setup);Check(fixture.Catalog.SearchCalls==1,"Continuing from save location automatically searches compatible environments");
-            await vm.Setup.PrepareEnvironmentAsync(true);
-            Check(vm.Setup.Error==""&&vm.Ready&&vm.Setup.EnvironmentReady&&vm.Setup.Page==2,"Automatic CUDA preparation verifies and advances directly to model preparation without a manual rescan");
-            Check(vm.Setup.Environments.Single().Ready&&vm.Setup.Selected==vm.Setup.Environments[0]&&vm.Setup.UseExisting&&vm.Setup.EnvironmentSummary.Contains("1"),"A newly installed environment immediately updates the list, count and selected environment");
-            Check(fixture.Catalog.InstallCalls==1&&fixture.Catalog.InstalledProbeCalls==1&&fixture.Catalog.ProbeCalls==0&&fixture.Catalog.SearchCalls==1,"Installation uses one post-install GPU probe, with no duplicate connection probe or second environment search");
-            Check(vm.Settings.Python==fixture.Catalog.InstallResult&&Files.Read<Preferences>(Path.Combine(fixture.Preferences,"preferences.json"))!.Settings.Python==fixture.Catalog.InstallResult,"The verified Python path is saved before continuing");
-            vm.T2ICard.Path=fixture.Settings.T2IDirectory;vm.I2ICard.Path=fixture.Settings.I2IDirectory;
-            vm.EnhancementEnabled=true;
-            vm.TurboCard.Path=Path.Combine(fixture.Settings.Workspace,"missing-download");var downloading=vm.Setup.DownloadModelsAsync();await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            Check(vm.IsDownloading&&host.WorkspaceShows==0&&wizard.IsEnabled&&wizard.Owner==null,"During model download only the independent, enabled setup window exists");
-            Check(downloads.Requests.Single().Resource=="turbo"&&downloads.Requests.Single().Source=="auto","First-time download requests only the base model with automatic source selection even when enhancement was previously enabled");
-            await Render(wizard,760,660,"startup-download-eta-zh");
-            var etaLine=DownloadEtaLine(wizard,vm.TurboCard);
-            var downloadSummary=Children<TextBlock>((DependencyObject)wizard.Content).Single(t=>AutomationProperties.GetAutomationId(t)=="SetupDownloadSummary");
-            Check(vm.TurboCard.DownloadEta=="预计还需约 2 分钟"&&etaLine.Text==vm.TurboCard.DownloadEta&&downloadSummary.Text.Contains(vm.TurboCard.DownloadEta),"The wizard shows the Chinese remaining-time estimate in both the model card and overall download summary");
-            vm.SetLanguage("en");await Render(wizard,620,470,"startup-download-eta-en-small");
-            Check(vm.TurboCard.DownloadEta=="About 2 min remaining"&&etaLine.Text==vm.TurboCard.DownloadEta&&downloadSummary.Text.Contains(vm.TurboCard.DownloadEta),"An active wizard download updates its card and summary estimates when switching to English");
-            vm.SetLanguage("zh");downloads.ReportProgress("downloading",null,0);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            Check(vm.TurboCard.DownloadEta=="正在估算剩余时间…"&&etaLine.Text==vm.TurboCard.DownloadEta&&downloadSummary.Text.Contains(vm.TurboCard.DownloadEta),"A wizard download with no usable speed shows that remaining time is still being estimated");
-            downloads.ReportProgress("checking",120);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            Check(vm.TurboCard.DownloadEta==""&&etaLine.Text==""&&!downloadSummary.Text.Contains("预计"),"Checksum verification clears the wizard's transfer-time estimate from the card and summary");
-            wizard.WindowState=WindowState.Minimized;Check(wizard.WindowState==WindowState.Minimized&&vm.IsDownloading,"Minimizing setup does not cancel or pause the active download");wizard.WindowState=WindowState.Normal;
-            await vm.Setup.CancelAsync();await downloading;
-            Check(!vm.IsDownloading&&!startup.IsCompleted&&host.WorkspaceShows==0,"Stopping a download keeps the user in setup without revealing a workspace");
-            downloads.ReportProgress("downloading",120);await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            Check(vm.TurboCard.DownloadEta==""&&etaLine.Text=="","Cancellation clears the remaining-time estimate and ignores late progress from the cancelled download");
-            downloads.Hold=null;downloads.Phase="downloading";await vm.Setup.DownloadModelsAsync();
-            Check(vm.RequiredModelsReady&&vm.Setup.CanContinue&&downloads.Requests.Count==2&&downloads.Requests.All(r=>r.Resource=="turbo")&&!vm.T2ICard.Ready&&!vm.I2ICard.Ready,"Base-model completion unlocks setup without requesting either optional enhancement model");
-            await Render(wizard,760,660,"startup-models-only");
-            var cards=Children<ContentControl>((DependencyObject)wizard.Content).Where(c=>c.Content is ModelCard).ToArray();
-            Check(cards.Length==1&&ReferenceEquals(cards[0].Content,vm.TurboCard),"The first-time model page presents only the base-model card");
-            var routes=Children<RadioButton>((DependencyObject)wizard.Content).Where(r=>r.GroupName=="ModelSource").ToArray();
-            Check(routes.Length==3&&routes.Single(r=>r.IsChecked==true).Content?.ToString()==vm.T["Automatic (recommended)"],"The wizard presents automatic selection as the selected recommended route alongside manual sources");
-            vm.UseHuggingFace=true;await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            Check(routes.Single(r=>r.IsChecked==true).Content?.ToString()=="Hugging Face","The wizard source controls follow source changes made through the shared view model");vm.UseAutomaticDownloadSource=true;
-            vm.SetLanguage("en");await Render(wizard,620,470,"startup-models-en-small");
-            vm.SetLanguage("zh");await Render(wizard,620,470,"startup-models-zh-small");
-            ClickOffscreen(CompletionAction(wizard));await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            Check(vm.Setup.Page==3&&!startup.IsCompleted&&host.WorkspaceShows==0,"The completion page still precedes creation of the workspace");
-            Check(vm.Setup.Error=="","A completed configuration does not retain an earlier Download stopped warning");
-            await Render(wizard,760,660,"startup-ready-only");ClickOffscreen(CompletionAction(wizard));await startup;
-            Check(wizard.Completed&&host.WorkspaceShows==1&&host.Exits==0&&vm.Prompt=="保留我的创作草稿"&&!vm.IsRunning,"Start creating opens the workspace exactly once and preserves the draft without starting inference");
-            vm.EnhancementEnabled=false;
-            Check(vm.CanGenerate&&!vm.T2ICard.Ready&&!vm.I2ICard.Ready,"The completed base-model setup permits ordinary generation with both optional models absent");
-        }
-        fixture=StartupFixture("startup-install-amd","amd_rocm");
-        using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))
-        {
-            var host=new StartupHost();var startup=new StartupCoordinator(vm,host).StartAsync();var wizard=host.Wizard!;
-            await vm.Setup.BeginWorkspaceAsync();await vm.Setup.PrepareEnvironmentAsync(true);
-            Check(vm.Ready&&vm.Setup.Page==2&&vm.Setup.Selected?.Backend=="amd_rocm"&&fixture.Catalog.SearchCalls==1&&fixture.Catalog.InstalledProbeCalls==1,"AMD preparation also publishes and selects its verified environment without another search");
-            var skip=Children<Button>((DependencyObject)wizard.Content).Single(b=>AutomationProperties.GetAutomationId(b)=="SetupSkipModels");
-            Check(skip.Visibility==Visibility.Visible&&skip.IsEnabled,"Model download can be deferred");
-            ClickOffscreen(skip);Check(vm.Setup.Page==3,"Skipping advances to the completion page");
-            ClickOffscreen(CompletionAction(wizard));await startup;
-            Check(host.WorkspaceShows==1&&!vm.RequiredModelsReady&&!vm.CanGenerate&&vm.TurboCard.DownloadCommand.CanExecute(null),"The workspace opens with on-demand download available and image generation gated");
+            await Render(wizard,640,460,"first-run-settings");
+            var controls=Children<FrameworkElement>((DependencyObject)wizard.Content).ToLookup(c=>AutomationProperties.GetAutomationId(c));
+            var save=(Button)controls["SettingsSave"].Single();
+            Check(!save.IsEnabled&&!controls["SearchEnvironment"].Single().IsEnabled&&controls.Contains("SettingsLanguage")&&controls.Contains("SearchEnvironment")&&!controls.Contains("SetupDownloadModels"),"Welcome shows language, workspace and environment, and requires a Python path before Save");
+            ((TextBox)controls["WorkspacePath"].Single()).Text=fixture.Settings.Workspace;
+            ((TextBox)controls["PythonPath"].Single()).Text=fixture.Catalog.InstallResult;
+            Check(save.IsEnabled,"Save becomes available after choosing the workspace and Python");
+            ClickOffscreen(save);
+            await startup.WaitAsync(TimeSpan.FromSeconds(60));
+            Check(wizard.Completed&&host.WorkspaceShows==1&&vm.Ready&&!vm.NeedsInitialSetup&&!vm.RequiredModelsReady&&downloads.Requests.Count==0,"Save verifies the environment and opens the workspace without downloading any model");
         }
         fixture=StartupFixture("startup-cancel-probe");fixture.Catalog.DelayProbe=true;
         using(var vm=new MainViewModel(fixture.Preferences,environmentCatalog:fixture.Catalog,driverPlatform:fixture.Platform,modelDiscovery:new ModelDiscovery([],[])))

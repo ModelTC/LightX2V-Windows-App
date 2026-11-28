@@ -5,7 +5,7 @@ Windows baseline: `88333e1` (v0.3.12). Mac source remains unchanged.
 
 | Area | Reference / baseline evidence | Target and acceptance |
 | --- | --- | --- |
-| Initial setup | Mac GeneralSettingsView: three settings cards; Windows FirstRunWindow: four pages | Retain the mature Windows four-step first-run wizard following user feedback. General settings uses three compact cards. Preserve driver/environment/model preparation, cancellation and restart; no sample generation gate. |
+| Initial setup | Mac GeneralSettingsView | Show language, workspace and PyTorch environment on one page. Save opens the workspace after verification. |
 | Workspace / welcome | Mac Views: 232 / flexible / 320 columns; Windows MainWindow already uses three columns | Match spacing, hierarchy, controls and disabled states; retain Windows captions. Review both languages and 100/150/200% display scaling. |
 | Model selection | Mac ModelSelector: family then variant; Windows fixed text | Family / Standard choice. INT8 intentionally absent. Existing workspaces use Standard. |
 | Image import | Mac InputImages maximumCount=8, 100 MB / 40 MP, batch rollback; Windows maximum=3, file picker only | One policy used by C# and Python. Picker, drop, paste and result-as-reference share atomic import. Test 1/3/8, ninth rejection and damaged mixed batch. |
@@ -29,6 +29,6 @@ INT8 remains deferred. Existing inference pins and resource planning stay unchan
 
 The user's five Mac desktop screenshots supplement the pinned source baseline: four workspace states (both inspector sections expanded, both collapsed, only generation settings expanded, only model preparation expanded) and the compact general-settings dialog. Windows keeps its native caption controls. Match the four primary result actions, compact model cards with PE-T2I/PE-I2I labels, muted idle enhancement cards when enhancement is off, and configured/status badges in the three settings cards. Download guides share the Mac repository/command/link/copy layout; automatic source routing remains an additional Windows capability in a single-row source selector.
 
-First-run refinement: after reviewing the Mac startup settings and environment installer, retain Windows' four-step initial setup. A configured workspace opens immediately; only genuinely missing environment/model resources return to setup. Finishing the base-model preparation selects Standard. The general-settings dialog remains separate, with environment discovery in its own window and no setup-assistant shortcut.
+First-run settings use the same three cards as general settings. Environment discovery and installation open in a separate dialog. Users download models in the workspace.
 
 The v0.4.2 behavior and acceptance scope are recorded in [its release notes](releases/v0.4.2.md).

@@ -65,7 +65,7 @@ Model startup checks read small configuration files and weight headers. Successf
 
 First-use environment discovery prefers the selected and managed executables, publishes candidates incrementally, and runs independently of the blocking preparation state. The wizard can select or prepare a verified candidate before the remaining search finishes. Search has a 45-second overall budget; filesystem discovery also runs off the UI thread with a bounded outer wait. Reusing a candidate checks its backend and executable fingerprint, and never persists GPU readiness across app launches.
 
-`StartupCoordinator` retains the four-step Windows setup surface when the environment or base model is missing, or a driver installation is pending. General settings uses the compact three-card dialog shown in the Mac references. The initial surface is shown with ordinary `Show()` and a taskbar entry, and the workspace is created only after it finishes. Configured workspaces open without an automatic GPU probe.
+`StartupCoordinator` opens the three-card settings window in first-run mode when workspace or environment setup is needed. The initial surface is shown with ordinary `Show()` and a taskbar entry, and the workspace is created only after it finishes. Configured workspaces open without an automatic GPU probe.
 
 `SetupController` supports preview preparation without committing the edited workspace. Settings commit a prepared, matched environment only when saved. Existing setup, driver, download and first-send verification services remain authoritative.
 

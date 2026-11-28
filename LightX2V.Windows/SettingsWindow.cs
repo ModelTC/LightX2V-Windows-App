@@ -6,43 +6,44 @@ using Microsoft.Win32;
 
 namespace LightX2V.Windows;
 
-// General settings edits a draft; first-time preparation retains its dedicated Windows wizard.
+// Workspace and environment changes are committed together on Save.
 public sealed class SettingsWindow : Window
 {
-    readonly MainViewModel vm;readonly Grid contentRoot;
+    readonly bool firstRun;readonly MainViewModel vm;readonly Grid contentRoot;
     readonly TextBox workspace,python;
-    readonly Button save,close;
+    readonly Button save,close,search;
     Button? uninstall,updates;
     readonly TextBlock summary,error,workspaceState,pythonState;
 
     bool refreshing,closing,draftBusy;string draftBackend;CancellationTokenSource? draftCancellation;TaskCompletionSource? draftFinished;
     public bool Completed {get;private set;}
 
-    public SettingsWindow(MainViewModel vm)
+    public SettingsWindow(MainViewModel vm,bool firstRun=false)
     {
-        this.vm=vm;draftBackend=vm.Settings.Backend;DataContext=vm;SetupUi.Resources(this);
+        this.firstRun=firstRun;this.vm=vm;draftBackend=vm.Settings.Backend;DataContext=vm;SetupUi.Resources(this);
         Width=Math.Min(640,SystemParameters.WorkArea.Width);Height=Math.Min(520,SystemParameters.WorkArea.Height);
         MinWidth=Math.Min(620,Width);MinHeight=Math.Min(450,Height);
-        WindowStartupLocation=WindowStartupLocation.CenterOwner;
-        ShowInTaskbar=false;Background=Brushes.White;Foreground=SetupUi.Ink;FontFamily=new("Segoe UI, Microsoft YaHei UI");
+        WindowStartupLocation=firstRun?WindowStartupLocation.CenterScreen:WindowStartupLocation.CenterOwner;
+        ShowInTaskbar=firstRun;Background=Brushes.White;Foreground=SetupUi.Ink;FontFamily=new("Segoe UI, Microsoft YaHei UI");
         var root=new Grid();contentRoot=root;root.RowDefinitions.Add(new(){Height=GridLength.Auto});root.RowDefinitions.Add(new());root.RowDefinitions.Add(new(){Height=GridLength.Auto});root.RowDefinitions.Add(new(){Height=GridLength.Auto});Content=root;
         var header=new Grid{Margin=new Thickness(12,10,12,14)};header.ColumnDefinitions.Add(new(){Width=new GridLength(36)});header.ColumnDefinitions.Add(new());header.ColumnDefinitions.Add(new(){Width=GridLength.Auto});root.Children.Add(header);header.Children.Add(SetupUi.Logo());
         var titles=new StackPanel{Margin=new Thickness(12,0,0,0)};Grid.SetColumn(titles,1);header.Children.Add(titles);
-        titles.Children.Add(SetupUi.Text("General settings",18,true));titles.Children.Add(SetupUi.Text("3 settings · Change the language anytime",11,false,true));
+        titles.Children.Add(SetupUi.Text(firstRun?"Welcome to LightX2V":"General settings",18,true));titles.Children.Add(SetupUi.Text("3 settings · Change the language anytime",11,false,true));
         summary=new TextBlock{FontSize=11,Foreground=SetupUi.Muted,VerticalAlignment=VerticalAlignment.Center};Grid.SetColumn(summary,2);header.Children.Add(summary);
         var body=new StackPanel{Margin=new Thickness(12,0,12,8)};Grid.SetRow(body,1);root.Children.Add(body);
         var languageRow=Heading(1,"Language");
         var language=new ComboBox{Style=(Style)Application.Current.FindResource("LanguagePicker"),Width=180,MinHeight=32,Height=32,FontSize=12,VerticalContentAlignment=VerticalAlignment.Center,ItemsSource=new[]{"简体中文","English"},SelectedIndex=vm.T.Language=="zh"?0:1,HorizontalAlignment=HorizontalAlignment.Right};
         System.Windows.Automation.AutomationProperties.SetAutomationId(language,"SettingsLanguage");var languageBox=new StackPanel{Orientation=Orientation.Horizontal};var globe=SetupUi.Icon(SetupUi.Globe,14);globe.Margin=new Thickness(0,0,8,0);languageBox.Children.Add(globe);languageBox.Children.Add(language);Grid.SetColumn(languageBox,1);languageRow.Children.Add(languageBox);language.SelectionChanged+=(_,_)=>vm.SetLanguage(language.SelectedIndex==0?"zh":"en");languageRow.Margin=new Thickness(0);body.Children.Add(SettingsCard(languageRow));
         var work=new StackPanel();var workHeading=Heading(2,"LightX2V workspace");workspaceState=StateLabel(workHeading);work.Children.Add(workHeading);
-        workspace=PathField(work,vm.Settings.Workspace,"WorkspacePath",false);
+        workspace=PathField(work,firstRun&&!vm.WorkspaceConfirmed?"":vm.Settings.Workspace,"WorkspacePath",false);
         workHeading.SetBinding(ToolTipProperty,"T[Settings, history, images, logs and caches are stored here.]");body.Children.Add(SettingsCard(work));
         var environment=new StackPanel();var environmentHeading=Heading(3,"PyTorch environment");pythonState=StateLabel(environmentHeading);environment.Children.Add(environmentHeading);
         python=PathField(environment,vm.Settings.Python,"PythonPath",true);
-        var search=SetupUi.Button(this,"Search local environments",false,"SearchEnvironment");
+        search=SetupUi.Button(this,"Search local environments",false,"SearchEnvironment");
         var searchContent=new StackPanel{Orientation=Orientation.Horizontal};var searchIcon=SetupUi.Icon(SetupUi.Search,13);searchIcon.Margin=new Thickness(0,0,7,0);searchContent.Children.Add(searchIcon);searchContent.Children.Add(SetupUi.Text("Search local environments",11,true));search.Content=searchContent;search.Margin=new Thickness(0,6,0,0);search.MinHeight=26;search.Height=26;search.Padding=new Thickness(10,5,10,5);search.HorizontalAlignment=HorizontalAlignment.Left;search.Click+=async(_,_)=>await SearchEnvironmentAsync();environment.Children.Add(search);
         /* Environment preparation lives in a separate dialog, leaving this page compact. */
         body.Children.Add(SettingsCard(environment));
+        if(!firstRun)
         {
             var maintenance=new StackPanel{Orientation=Orientation.Horizontal,HorizontalAlignment=HorizontalAlignment.Right,Margin=new Thickness(0,8,0,0)};
             updates=SetupUi.Button(this,"Application updates",false,"SettingsUpdates");
@@ -57,7 +58,7 @@ public sealed class SettingsWindow : Window
         var footer=SetupUi.Footer(actions);Grid.SetRow(footer,3);root.Children.Add(footer);
         workspace.TextChanged+=(_,_)=>Refresh();python.TextChanged+=(_,_)=>Refresh();
         vm.PropertyChanged+=Changed;vm.Setup.PropertyChanged+=Changed;vm.T.PropertyChanged+=Changed;
-        Closing+=async(_,e)=>{if(closing||!Busy)return;e.Cancel=true;closing=true;await StopOperationsAsync();Close();};
+        Closing+=async(_,e)=>{if(Completed||closing||!Busy)return;e.Cancel=true;closing=true;await StopOperationsAsync();Close();};
         root.Width=624;
         root.Measure(new Size(624,double.PositiveInfinity));
         var naturalHeight=root.DesiredSize.Height;root.Height=naturalHeight;
@@ -85,6 +86,13 @@ public sealed class SettingsWindow : Window
     {
         var grid=new Grid();grid.ColumnDefinitions.Add(new());grid.ColumnDefinitions.Add(new(){Width=new GridLength(38)});
         var field=new TextBox{Text=value,MinHeight=44,VerticalContentAlignment=VerticalAlignment.Center,Padding=new Thickness(8),FontSize=12,BorderThickness=new Thickness(0),Background=Brushes.Transparent};System.Windows.Automation.AutomationProperties.SetAutomationId(field,id);grid.Children.Add(field);
+        if(firstRun)
+        {
+            var hint=SetupUi.Text(executable?"Choose python.exe or search local environments":"Choose a folder or paste its full path",12,false,true);
+            hint.VerticalAlignment=VerticalAlignment.Center;hint.Margin=new Thickness(8,0,0,0);hint.IsHitTestVisible=false;
+            void UpdateHint()=>hint.Visibility=field.Text.Length==0?Visibility.Visible:Visibility.Collapsed;
+            field.TextChanged+=(_,_)=>UpdateHint();UpdateHint();grid.Children.Add(hint);
+        }
         var choose=SetupUi.Button(this,"Choose…",false);choose.Style=(Style)FindResource("IconButton");choose.Width=30;choose.Height=30;choose.Margin=new Thickness(0,0,5,0);choose.MinWidth=30;choose.Padding=new Thickness(2);choose.Content=SetupUi.Icon(SetupUi.Folder);choose.Click+=(_,_)=>{if(executable){var picker=new OpenFileDialog{Filter="Python|python.exe"};if(picker.ShowDialog(this)==true)field.Text=picker.FileName;}else{var picker=new OpenFolderDialog();if(picker.ShowDialog(this)==true)field.Text=picker.FolderName;}};Grid.SetColumn(choose,1);grid.Children.Add(choose);parent.Children.Add(new Border{BorderBrush=SetupUi.Line,BorderThickness=new Thickness(1),CornerRadius=new CornerRadius(8),Child=grid});return field;
     }
     public Task SearchEnvironmentAsync()
@@ -94,7 +102,9 @@ public sealed class SettingsWindow : Window
         {
             var draft=vm.Settings.Clone();draft.Workspace=workspace.Text.Trim();draft.Python=python.Text.Trim();draft.Backend=draftBackend;draft.ValidateWorkspace();
             var picker=new EnvironmentPickerWindow(draft,vm.T,vm.Setup.CreateEnvironmentSelection(draft)){Owner=this};
-            if(picker.ShowDialog()==true&&picker.Result is {Ready:true} selected){python.Text=selected.Path;draftBackend=selected.Backend;}
+            var accepted=picker.ShowDialog();
+            vm.Setup.Driver.RestoreWorkspace();
+            if(accepted==true&&picker.Result is {Ready:true} selected){python.Text=selected.Path;draftBackend=selected.Backend;}
         }
         catch(Exception ex){error.Text=vm.T[ex.Message];}
         Refresh();return Task.CompletedTask;
@@ -106,13 +116,14 @@ public sealed class SettingsWindow : Window
             draftBusy=true;draftCancellation=new();draftFinished=new(TaskCreationOptions.RunContinuationsAsynchronously);Refresh();
             var settings=vm.Settings.Clone();settings.Workspace=workspace.Text.Trim();settings.Python=python.Text.Trim();settings.Backend=draftBackend;
             var changed=settings.Workspace!=vm.Settings.Workspace||settings.Python!=vm.Settings.Python||settings.Backend!=vm.Settings.Backend;
-            if(changed)
+            if(firstRun||changed)
             {
                 var (ready,probe)=await vm.Setup.VerifyDraftAsync(settings,draftCancellation.Token);
                 if(closing||draftCancellation.IsCancellationRequested)return;
                 vm.CommitVerifiedEnvironment(ready,probe);
             }
             else vm.ApplySettings(settings);
+            if(firstRun)vm.SelectStandardModel();
             Completed=true;Close();
         }
         catch(OperationCanceledException) when(draftCancellation?.IsCancellationRequested==true){}
@@ -135,11 +146,12 @@ public sealed class SettingsWindow : Window
         if(refreshing||save==null)return;refreshing=true;
         try
         {
-            Title="LightX2V · "+vm.T["General settings"];
+            Title="LightX2V · "+vm.T[firstRun?"Welcome to LightX2V":"General settings"];
             var configured=(Path.IsPathFullyQualified(workspace.Text)?1:0)+(File.Exists(python.Text)?1:0)+1;summary.Text=vm.T["Configured"]+$" {configured} / 3";
-            workspace.IsEnabled=python.IsEnabled=!Busy&&!vm.Setup.Driver.Pending;save.IsEnabled=!Busy&&Path.IsPathFullyQualified(workspace.Text)&&!vm.Setup.Driver.Pending;
+            search.IsEnabled=!Busy&&Path.IsPathFullyQualified(workspace.Text.Trim());
+            workspace.IsEnabled=python.IsEnabled=!Busy&&!vm.Setup.Driver.Pending;save.IsEnabled=!Busy&&(!firstRun||File.Exists(python.Text.Trim()))&&Path.IsPathFullyQualified(workspace.Text)&&!vm.Setup.Driver.Pending;
             workspaceState.Text=vm.T[Path.IsPathFullyQualified(workspace.Text)&&Directory.Exists(workspace.Text)?"Configured":"Not configured"];
-            pythonState.Text=vm.T[vm.Ready&&python.Text==vm.Settings.Python?"Check passed":"Not checked"];
+            pythonState.Text=vm.T[string.IsNullOrWhiteSpace(python.Text)?"Not configured":vm.Ready&&python.Text==vm.Settings.Python?"Check passed":"Not checked"];
             pythonState.Foreground=vm.Ready&&python.Text==vm.Settings.Python?SetupUi.Green:SetupUi.Muted;
             if(uninstall!=null)uninstall.IsEnabled=!Busy;
             if(updates!=null)updates.IsEnabled=!Busy;

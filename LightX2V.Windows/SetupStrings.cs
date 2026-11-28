@@ -4,6 +4,8 @@ internal static class SetupStrings
     public static readonly IReadOnlyDictionary<string,string> Chinese=new Dictionary<string,string>
     {
         ["Graphics detection could not finish. Your driver may already be installed. Scan again."]="显卡检测暂未完成，这不代表驱动没有安装。请重新扫描。",
+        ["Choose a folder or paste its full path"]="选择文件夹，或粘贴完整路径",
+        ["Choose python.exe or search local environments"]="选择环境中的 python.exe，或搜索本机环境",
         ["Skip for now"]="暂时跳过",
         ["Setup complete"]="配置完成",
         ["Start creating"]="开始创作",
@@ -24,7 +26,7 @@ internal static class SetupStrings
         ["The download did not finish. Please try again."]="下载未完成，请重试。",
         ["The downloaded files are incomplete. Retry the automatic download."]="下载后的文件不完整，请重试自动下载。",
         ["Download stopped; downloaded files are kept"]="下载已停止，已下载的文件会保留",
-        ["Search local environments"]="重新搜索本机组件",
+        ["Search local environments"]="搜索本机环境",
         ["Download required components automatically"]="自动下载所需组件",
         ["Environment search stopped. Search again to finish checking this computer."]="本机环境搜索已停止。请重新搜索以完成检查。",
         ["Environment search timed out. Search again to finish checking this computer."]="本机环境搜索超时。请重新搜索以完成检查。",

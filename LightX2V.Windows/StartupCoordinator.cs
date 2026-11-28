@@ -27,7 +27,7 @@ internal sealed class WpfStartupHost(Application application) : IStartupHost
     {
         application.ShutdownMode=ShutdownMode.OnExplicitShutdown;
         var completion=new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var wizard=new FirstRunWindow(model,standalone:true);
+        var wizard=new SettingsWindow(model,firstRun:true);
         application.MainWindow=wizard;
         wizard.Closed+=(_,_)=>completion.TrySetResult(wizard.Completed);
         wizard.Show();

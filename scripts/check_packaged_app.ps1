@@ -34,7 +34,7 @@ try {
             $window = [System.Windows.Automation.AutomationElement]::FromHandle($process.MainWindowHandle)
             $scope = [System.Windows.Automation.TreeScope]::Descendants
             $id = [System.Windows.Automation.AutomationElement]::AutomationIdProperty
-            $setup = $window.FindFirst($scope, [System.Windows.Automation.PropertyCondition]::new($id, 'SetupContinue'))
+            $setup = $window.FindFirst($scope, [System.Windows.Automation.PropertyCondition]::new($id, 'SettingsSave'))
             $workspace = $window.FindFirst($scope, [System.Windows.Automation.PropertyCondition]::new($id, 'AddImages'))
             if ($null -ne $setup) { $mode = 'setup'; break }
             if ($null -ne $workspace -and $workspace.Current.IsEnabled) { $mode = 'workspace'; break }

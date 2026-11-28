@@ -23,7 +23,7 @@ public partial class MainWindow : Window
         MinHeight = Math.Min(MinHeight, initialArea.Height);
         Width = Math.Min(Width, initialArea.Width);
         Height = Math.Min(Height, initialArea.Height);
-        vm.RequestSetup = () => {if(!Application.Current.Windows.OfType<FirstRunWindow>().Any())new FirstRunWindow(vm){Owner=this}.ShowDialog();};
+        vm.RequestSetup = () => {if(!Application.Current.Windows.OfType<SettingsWindow>().Any())new SettingsWindow(vm,firstRun:true){Owner=this}.ShowDialog();};
         vm.RequestSettings = () => new SettingsWindow(vm) { Owner = this }.ShowDialog();
         Conversation.ScrollChanged+=(_,e)=>
         {

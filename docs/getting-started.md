@@ -8,7 +8,7 @@ This is an unsigned preview build. The release page provides the package SHA-256
 
 ## Complete first-time setup
 
-The Windows four-step assistant is retained: choose a workspace, prepare the computer, download required image files, then start creating. Hardware scanning, official driver guidance, checked environment selection and automatic installation keep their existing flow. Choose **Skip for now** to enter the workspace without downloading a model. When you want to generate images, download the base image model from the right sidebar. Finishing preparation selects Standard.
+Choose your language and workspace, then select a Windows Python executable or choose **Search local environments** to find or prepare a compatible PyTorch environment. Select **Save** to verify the environment and open the workspace. Download models from the right sidebar when you need them.
 
 For later changes, **General settings** uses three compact cards: language, workspace and PyTorch environment. Environment search and preview preparation do not switch your active workspace until you save. Environment search and installation open in a separate dialog. WSL and a system CUDA Toolkit are not required; the portable package includes .NET.
 
@@ -44,6 +44,6 @@ Each creation remembers its size, aspect ratio and enhancement preference. Reusi
 
 General settings includes **Uninstall** with model weights, workspace records, and app/configuration groups. Managed Python environments are kept by default. Select **Also remove managed Python environments** to delete them. To reuse a kept environment after reinstalling, select the previous workspace in first-time setup and let the app verify its Python environment. Review the exact paths before confirming. External resources are unchecked by default; overlapping retained resources and directory links are rejected. Application removal follows the packaged file manifest and keeps other files placed in the application folder. A packaged application is needed to launch its maintenance helper. A failed maintenance job leaves a diagnostic under `%LOCALAPPDATA%\LightX2V-maintenance`. A dedicated desktop shortcut to the selected application is included in the uninstall preview.
 
-With no saved current-user configuration, the four-step first-run assistant opens. Old development folders are never imported automatically. Entering the computer step automatically searches for compatible environments. You can reuse a verified environment as soon as it appears. Automatic download is offered when the search completes without a compatible environment. Entering the model step automatically searches existing locations and then local fixed disks. Folder buttons can select locations excluded from automatic search. Existing saved user preferences continue to restore across upgrades.
+With no saved configuration, the welcome window opens. Existing users return to their configured workspace.
 
 The package keeps runtime files in `app` and documentation/licenses in `docs`. Keep both beside the public launcher. Models and workspaces are separate. Inference uses the verified bundled LightX2V 0.6.1 source; an external checkout is never silently used for generation or overwritten.

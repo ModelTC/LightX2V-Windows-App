@@ -9,7 +9,7 @@
 - App-authored log file text is English. Preserve user input, model output and third-party logs in their original form.
 - Mac parity is pinned to `65acaee0c063200651629cb21df7c46711687e65`. INT8 is deferred. Do not upgrade inference pins as part of UI work.
 
-- Retain the existing Windows four-step first-run wizard. The three compact settings cards and provided Mac desktop screenshots guide general settings and workspace visuals; do not replace the mature Windows preparation flow with the daily settings dialog.
+- First-run settings share the three compact language, workspace and Python environment cards with general settings. Save verifies the environment and opens the workspace. Models are downloaded on demand.
 
 - Inference source is fixed to official LightX2V 0.6.1 (`43c6a11bb65b7357f06e9603fa92249bc16b484e`) with unused directories and assets removed during packaging. Retain the original contents of bundled engine files. Both backend profiles must share this source; never resolve a moving branch at build or runtime.
 - No current preferences means first-time setup. Do not infer configuration from a developer directory or load workspace history before explicit workspace confirmation. Do not silently import legacy preferences or expose legacy import in the first-run wizard.
