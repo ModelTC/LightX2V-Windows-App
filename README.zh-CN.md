@@ -8,7 +8,7 @@
 
 | 通道 | Windows 11 · x64 | 提交 | 日期 (UTC+8) |
 | --- | --- | --- | --- |
-| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-Setup.exe) | [`a00cae5`](https://github.com/ModelTC/LightX2V-Windows-App/commit/a00cae566f238002147a10bd69558af6af83ae4f) | 2026-11-28 14:43 |
+| Latest | [下载 Latest APP](https://github.com/ModelTC/LightX2V-Windows-App/releases/download/latest/LightX2V-Setup.exe) | [`c4573a0`](https://github.com/ModelTC/LightX2V-Windows-App/commit/c4573a0f4bfdabc2ccee6ffc349bb41e6524e023) | 2026-11-28 14:47 |
 | Stable | 尚未提供 | — | — |
 
 **使用 Microsoft Edge 下载时**，如果看到“通常不会下载 LightX2V-Setup.exe”，请先确认安装程序来自[本仓库的官方发布页](https://github.com/ModelTC/LightX2V-Windows-App/releases)。在 Edge 的下载列表中，将鼠标移到 `LightX2V-Setup.exe` 上，点击文件右侧的 **…**，选择 **保留**。如果 Edge 再次询问，展开 **显示详细信息**，然后点击 **仍然保留**。
